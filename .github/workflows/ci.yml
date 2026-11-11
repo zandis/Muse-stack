@@ -1,0 +1,72 @@
+name: config
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PyYAML
+        run: python -m pip install "pyyaml>=6,<7"
+      - name: Validate rendered config without provider keys
+        run: python scripts/validate_config.py
+
+  boot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the proxy with a master key and no provider keys
+        run: |
+          set -eu
+          printf 'LITELLM_MASTER_KEY=sk-ci-master\n' > .env
+          docker compose up -d
+          for _ in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:4000/health/liveliness; then
+              echo
+              curl -fsS -H "Authorization: Bearer sk-ci-master" http://127.0.0.1:4000/v1/models
+              echo
+              python3 scripts/smoke_test.py
+              exit 0
+            fi
+            sleep 3
+          done
+          docker compose logs
+          exit 1
+      - name: Start again with one fake provider key and do not call it
+        if: success()
+        run: |
+          set -eu
+          docker compose down
+          printf 'LITELLM_MASTER_KEY=sk-ci-master\nGEMINI_API_KEY=sk-ci-not-a-real-gemini-key\n' > .env
+          docker compose up -d
+          for _ in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:4000/health/liveliness >/dev/null; then
+              python3 - << 'PY'
+          import json, urllib.request
+          req = urllib.request.Request(
+              "http://127.0.0.1:4000/v1/models",
+              headers={"Authorization": "Bearer sk-ci-master"},
+          )
+          with urllib.request.urlopen(req, timeout=20) as response:
+              ids = {item["id"] for item in json.load(response).get("data", [])}
+          needed = {"fast", "cheap", "smart", "long-context", "embed", "gemini-3.8-flash"}
+          missing = needed - ids
+          if missing or "rerank" in ids:
+              raise SystemExit(f"unexpected models: missing={missing} rerank={'rerank' in ids} ids={sorted(ids)}")
+          print("partial key exposed", ", ".join(sorted(needed)))
+          PY
+              exit 0
+            fi
+            sleep 3
+          done
+          docker compose logs
+          exit 1

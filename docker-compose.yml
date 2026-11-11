@@ -1,0 +1,41 @@
+# Muse stack: LiteLLM proxy. Provider keys come from .env and are optional.
+#
+#   cp .env.example .env
+#   # set LITELLM_MASTER_KEY at minimum
+#   docker compose up -d
+#
+# The image is the multi-arch build on ghcr.io (linux/amd64 and linux/arm64).
+# The Docker Hub litellm/litellm tags are amd64-only and will not run on an
+# Oracle Cloud Ampere VM. Spend logs are a separate compose file:
+# docker-compose.spend.yml.
+
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.108.5
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
+      LITELLM_PORT: "4000"
+      LITELLM_NUM_WORKERS: ${LITELLM_NUM_WORKERS:-1}
+      MUSE_ALLOW_PAID_FALLBACK: ${MUSE_ALLOW_PAID_FALLBACK:-false}
+      MUSE_DISABLE_PROVIDERS: ${MUSE_DISABLE_PROVIDERS:-}
+    ports:
+      # Loopback by default. Set MUSE_BIND=0.0.0.0 only behind a firewall or TLS proxy.
+      - "${MUSE_BIND:-127.0.0.1}:${MUSE_PORT:-4000}:4000"
+    volumes:
+      - ./config:/opt/muse/config:ro
+      - ./scripts:/opt/muse/scripts:ro
+    entrypoint: ["/bin/sh", "/opt/muse/scripts/entrypoint.sh"]
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness')
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s

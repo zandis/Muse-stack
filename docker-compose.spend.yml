@@ -1,0 +1,38 @@
+# Optional Postgres for LiteLLM spend logs and the admin UI's virtual keys.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.spend.yml up -d
+#
+# Set POSTGRES_PASSWORD and LITELLM_SALT_KEY in .env first. LITELLM_SALT_KEY
+# encrypts credentials stored in the database. Do not rotate it after the
+# first successful boot or those rows become unreadable.
+#
+# Models stay in the rendered config (STORE_MODEL_IN_DB=false). The database
+# is for spend, not for the routing table.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: llmproxy
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: litellm
+    volumes:
+      - muse_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U llmproxy -d litellm"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  litellm:
+    environment:
+      DATABASE_URL: postgresql://llmproxy:${POSTGRES_PASSWORD}@db:5432/litellm
+      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:?set LITELLM_SALT_KEY once and keep it}
+      STORE_MODEL_IN_DB: "False"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  muse_pg:

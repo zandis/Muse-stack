@@ -1,0 +1,494 @@
+# Muse stack provider catalog.
+#
+# scripts/render_config.py turns this file plus the process environment into
+# the LiteLLM config. A provider is omitted when its env var is empty or when
+# its id is listed in MUSE_DISABLE_PROVIDERS, so a missing key cannot fail
+# startup.
+#
+# join:
+#   always          — part of the public alias (fast, smart, ...) whenever the key is set
+#   paid_fallback   — direct model name only, unless MUSE_ALLOW_PAID_FALLBACK=true
+#
+# order: lower is tried first inside an alias. Equal orders are load-balanced
+# with simple-shuffle, weighted by rpm. rpm values are routing weights, not a
+# promise of the provider's real quota.
+#
+# verified describes what was checked on 2026-11-11. See README for the gaps.
+
+aliases:
+  fast:
+    mode: chat
+    fallbacks: [cheap, smart]
+    context_window_fallback: long-context
+  cheap:
+    mode: chat
+    fallbacks: [fast, smart]
+    context_window_fallback: long-context
+  smart:
+    mode: chat
+    fallbacks: [cheap, fast]
+    context_window_fallback: long-context
+  long-context:
+    mode: chat
+    fallbacks: [smart]
+  embed:
+    mode: embedding
+  rerank:
+    mode: rerank
+
+providers:
+  - id: gemini
+    env: GEMINI_API_KEY
+    tier: free
+    key_url: https://aistudio.google.com/apikey
+    notes: >-
+      Google AI Studio free tier. The pricing page marks the models below
+      "Free of charge" and says free-tier content is used to improve Google's
+      products. Numeric RPM/RPD are shown in AI Studio and were not copied here.
+    deployments:
+      - id: gemini-3.1-flash-lite
+        model: gemini/gemini-3.1-flash-lite
+        mode: chat
+        aliases: [fast, cheap]
+        order: 1
+        rpm: 10
+        context_tokens: 1048576
+        join: always
+        verified: gemini-pricing-and-litellm-1.108.5
+        notes: Free of charge on the Gemini pricing page. 1,048,576-token window is from the LiteLLM 1.108.5 model map.
+      - id: gemini-2.5-flash-lite
+        model: gemini/gemini-2.5-flash-lite
+        mode: chat
+        aliases: [cheap]
+        order: 1
+        rpm: 15
+        context_tokens: 1048576
+        join: always
+        verified: gemini-pricing-and-litellm-1.108.5
+        notes: Free of charge. Older Flash-Lite, kept because free-tier quotas are often higher than newer Flash models.
+      - id: gemini-3.5-flash-lite
+        model: gemini/gemini-3.5-flash-lite
+        mode: chat
+        aliases: [cheap]
+        order: 1
+        rpm: 10
+        context_tokens: 1048576
+        join: always
+        verified: gemini-pricing-and-litellm-1.108.5
+        notes: Free of charge on the standard tier of the pricing page.
+      - id: gemini-3.8-flash
+        model: gemini/gemini-3.8-flash
+        mode: chat
+        aliases: [smart, long-context]
+        order: 1
+        rpm: 8
+        context_tokens: 1048576
+        join: always
+        verified: gemini-pricing-and-litellm-1.108.5
+        notes: Free of charge. Pricing page calls it the most capable Flash model. The 1,048,576 window is from LiteLLM's map; the pricing page did not restate it.
+      - id: gemini-2.5-flash
+        model: gemini/gemini-2.5-flash
+        mode: chat
+        aliases: [long-context]
+        order: 1
+        rpm: 8
+        context_tokens: 1048576
+        join: always
+        verified: gemini-pricing-page
+        notes: Free of charge. Pricing page states a 1M token context window.
+      - id: gemini-2.5-pro
+        model: gemini/gemini-2.5-pro
+        mode: chat
+        aliases: [smart, long-context]
+        order: 2
+        rpm: 3
+        context_tokens: 1048576
+        join: always
+        verified: gemini-pricing-and-litellm-1.108.5
+        notes: Free of charge, but historically a much tighter daily cap than Flash. Order 2 so Flash and Groq are preferred.
+      - id: gemini-embedding-2
+        model: gemini/gemini-embedding-2
+        mode: embedding
+        aliases: [embed]
+        order: 1
+        rpm: 10
+        join: always
+        verified: gemini-pricing-and-litellm-1.108.5
+        notes: Free of charge for text, image, audio, and video input. Output dimension was not stated on the pricing page. LiteLLM maps max input to 8,192 tokens.
+
+  - id: groq
+    env: GROQ_API_KEY
+    tier: free
+    key_url: https://console.groq.com/keys
+    notes: >-
+      Public models page lists openai/gpt-oss-20b and openai/gpt-oss-120b as
+      production models (131,072 context). That page's rate-limit column is the
+      Developer plan (250K TPM, 1K RPM). Free-plan caps are lower and are shown
+      at https://console.groq.com/settings/limits. The models API returned 401
+      without a key. llama-3.3-70b-versatile is enterprise-only on that page.
+    deployments:
+      - id: groq-gpt-oss-20b
+        model: groq/openai/gpt-oss-20b
+        mode: chat
+        aliases: [fast, cheap]
+        order: 1
+        rpm: 30
+        context_tokens: 131072
+        join: always
+        verified: groq-models-page-and-litellm-1.108.5
+        notes: About 1,000 tokens/sec on the Groq models page. 131k context, so it is not in long-context.
+      - id: groq-gpt-oss-120b
+        model: groq/openai/gpt-oss-120b
+        mode: chat
+        aliases: [smart]
+        order: 1
+        rpm: 20
+        context_tokens: 131072
+        join: always
+        verified: groq-models-page-and-litellm-1.108.5
+        notes: Larger GPT-OSS model. Same 131,072 context. Not in long-context.
+
+  - id: cohere
+    env: COHERE_API_KEY
+    tier: trial
+    key_url: https://dashboard.cohere.com/api-keys
+    notes: >-
+      Trial keys are free and, per Cohere's rate-limit docs, capped at 1,000
+      calls per month. Chat is additionally about 20 requests per minute.
+      Order 2 so Gemini and Groq absorb traffic first.
+    deployments:
+      - id: cohere-command-r7b
+        model: cohere_chat/command-r7b-12-2024
+        mode: chat
+        aliases: [fast, cheap]
+        order: 2
+        rpm: 5
+        context_tokens: 128000
+        join: always
+        verified: cohere-models-page-and-litellm-1.108.5
+        notes: Small Command model, 128k context, 4k max output on the models page.
+      - id: cohere-command-a
+        model: cohere_chat/command-a-03-2025
+        mode: chat
+        aliases: [smart, long-context]
+        order: 2
+        rpm: 4
+        context_tokens: 256000
+        join: always
+        verified: cohere-models-page-and-litellm-1.108.5
+        notes: Command A, 256k context. command-a-plus-05-2026 is newer but the models page lists it at 128k, so it is not the long-context pick.
+      - id: cohere-embed-v5-fast
+        model: cohere/embed-v5.0-fast
+        mode: embedding
+        aliases: [embed]
+        order: 2
+        rpm: 5
+        join: always
+        verified: cohere-models-page-and-litellm-1.108.5
+        notes: Default output dimension on the models page is 2048, with 256/512/768/1024/1536/2048 available. Do not mix these vectors with Gemini or Jina vectors.
+      - id: cohere-rerank-v4-fast
+        model: cohere/rerank-v4.0-fast
+        mode: rerank
+        aliases: [rerank]
+        order: 1
+        rpm: 5
+        join: always
+        verified: cohere-models-page-and-litellm-1.108.5
+        notes: Live on the models page (32k). Cohere recommends rerank-v5.0-fast for new projects; that id is not in the LiteLLM 1.108.5 price map, so v4.0-fast is what the proxy is configured to call.
+
+  - id: openrouter
+    env: OPENROUTER_API_KEY
+    tier: free
+    key_url: https://openrouter.ai/keys
+    extra_headers:
+      HTTP-Referer: https://github.com/zandis/muse-stack
+      X-Title: Muse AIMedics
+    notes: >-
+      Last resort. Only :free catalog ids, plus the openrouter/free router.
+      The id list was taken from the public models API on 2026-11-11 (zero
+      prompt and completion price). Free variants are removed without notice
+      and are rate-limited per account. A fallback from a :free model to a
+      paid OpenRouter model would bill; this catalog does not list paid ids.
+    deployments:
+      - id: openrouter-gemma-4-26b-free
+        model: openrouter/google/gemma-4-26b-a4b-it:free
+        mode: chat
+        aliases: [fast]
+        order: 9
+        rpm: 2
+        context_tokens: 262144
+        join: always
+        verified: openrouter-models-api-2026-11-11
+        notes: 262,144 context on the public catalog.
+      - id: openrouter-lfm-free
+        model: openrouter/liquid/lfm-2.5-2.6b:free
+        mode: chat
+        aliases: [cheap]
+        order: 9
+        rpm: 2
+        context_tokens: 65536
+        join: always
+        verified: openrouter-models-api-2026-11-11
+        notes: Small free model, 65,536 context.
+      - id: openrouter-gemma-4-31b-free
+        model: openrouter/google/gemma-4-31b-it:free
+        mode: chat
+        aliases: [smart]
+        order: 9
+        rpm: 2
+        context_tokens: 262144
+        join: always
+        verified: openrouter-models-api-2026-11-11
+      - id: openrouter-nemotron-ultra-free
+        model: openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
+        mode: chat
+        aliases: [smart, long-context]
+        order: 9
+        rpm: 1
+        context_tokens: 1000000
+        join: always
+        verified: openrouter-models-api-2026-11-11
+        notes: Catalog context 1,000,000. Free endpoints for a model this large are often slow or busy.
+      - id: openrouter-nemotron-lightning-free
+        model: openrouter/nvidia/nemotron-3.5-lightning:free
+        mode: chat
+        aliases: [long-context]
+        order: 9
+        rpm: 1
+        context_tokens: 1000000
+        join: always
+        verified: openrouter-models-api-2026-11-11
+      - id: openrouter-free-router
+        model: openrouter/openrouter/free
+        mode: chat
+        aliases: [fast, cheap, smart, long-context]
+        order: 9
+        rpm: 1
+        context_tokens: 200000
+        join: always
+        verified: openrouter-models-api-2026-11-11
+        notes: OpenRouter's free-models router. It picks a different free model per request, so answers are not stable. Catalog context 200,000.
+
+  - id: siliconflow
+    env: SILICONFLOW_API_KEY
+    tier: metered
+    key_url: https://cloud.siliconflow.com/account/ak
+    api_base: https://api.siliconflow.com/v1
+    notes: >-
+      International OpenAI-compatible endpoint. LiteLLM 1.108.5 has no
+      siliconflow/ provider, so chat and embeddings use the openai/ prefix
+      with this api_base, and rerank uses hosted_vllm (which posts to
+      {api_base}/rerank, i.e. https://api.siliconflow.com/v1/rerank).
+      The models API returned 401 without a key. The pricing page offers $1
+      of starting credit and did not list permanently free model ids in the
+      HTML that was fetched.
+    deployments:
+      - id: siliconflow-qwen-3-5-9b
+        model: openai/Qwen/Qwen3.5-9B
+        mode: chat
+        aliases: [fast, cheap]
+        order: 3
+        rpm: 5
+        join: always
+        verified: partial
+        notes: >-
+          NOT VERIFIED as an API id. The pricing page (fetched 2026-11-11)
+          shows the display name Qwen3.5-9B. The Qwen/ prefix is the usual
+          SiliconFlow pattern. If this 404s, the router cools the deployment
+          and continues. Confirm the id in the SiliconFlow console and edit
+          this file.
+      - id: siliconflow-bge-m3
+        model: openai/BAAI/bge-m3
+        mode: embedding
+        aliases: [embed]
+        order: 2
+        rpm: 5
+        join: always
+        verified: siliconflow-docs-example
+        notes: BAAI/bge-m3 is the embedding id in SiliconFlow's own FastGPT guide. Output dimension is 1024 for bge-m3. Free-of-charge status was not on the pricing HTML that was fetched.
+      - id: siliconflow-bge-reranker
+        model: hosted_vllm/BAAI/bge-reranker-v2-m3
+        mode: rerank
+        aliases: [rerank]
+        order: 2
+        rpm: 5
+        join: always
+        verified: siliconflow-rerank-api-example
+        notes: The rerank API docs use model BAAI/bge-reranker-v2-m3 and POST /v1/rerank.
+
+  - id: jina
+    env: JINA_API_KEY
+    tier: trial
+    key_url: https://jina.ai/api-dashboard
+    notes: >-
+      LiteLLM reads JINA_API_KEY (also JINA_AI_API_KEY). Embeddings go to
+      https://api.jina.ai/v1/embeddings. The current free token allowance was
+      not re-checked; treat the key as metered until you confirm it in the
+      Jina dashboard.
+    deployments:
+      - id: jina-embeddings-v3
+        model: jina_ai/jina-embeddings-v3
+        mode: embedding
+        aliases: [embed]
+        order: 2
+        rpm: 5
+        join: always
+        verified: jina-site-and-litellm-docs
+        notes: jina-embeddings-v3 is on jina.ai and is the LiteLLM Jina example. Default dimension 1024. The site also advertises v5 embeddings, which are not wired here.
+      - id: jina-reranker-v2
+        model: jina_ai/jina-reranker-v2-base-multilingual
+        mode: rerank
+        aliases: [rerank]
+        order: 2
+        rpm: 5
+        join: always
+        verified: jina-reranker-page-and-litellm-1.108.5
+        notes: Pointwise reranker, present in the LiteLLM 1.108.5 price map. The site also lists jina-reranker-v3 and v3.5 (listwise); those were not wired.
+
+  - id: novita
+    env: NOVITA_API_KEY
+    tier: paid
+    key_url: https://novita.ai/settings/key-management
+    api_base: https://api.novita.ai/v3/openai
+    notes: >-
+      Prices below are from the public models list at
+      https://api.novita.ai/v3/openai/models on 2026-11-11 (USD per 1M tokens).
+      There is no permanent free chat tier in that list. Deployments stay off
+      the public aliases unless MUSE_ALLOW_PAID_FALLBACK=true. The direct
+      model name still works when the key is set.
+    deployments:
+      - id: novita-llama-3.1-8b
+        model: novita/meta-llama/llama-3.1-8b-instruct
+        mode: chat
+        aliases: [fast, cheap]
+        order: 4
+        rpm: 10
+        context_tokens: 16384
+        join: paid_fallback
+        verified: novita-models-api-2026-11-11
+        notes: $0.02 / $0.05 per 1M tokens. Context 16,384.
+      - id: novita-gpt-oss-120b
+        model: novita/openai/gpt-oss-120b
+        mode: chat
+        aliases: [cheap, smart]
+        order: 4
+        rpm: 8
+        context_tokens: 131072
+        join: paid_fallback
+        verified: novita-models-api-2026-11-11
+        notes: $0.05 / $0.25 per 1M tokens. Context 131,072.
+      - id: novita-qwen3.8-flash
+        model: novita/qwen/qwen3.8-flash
+        mode: chat
+        aliases: [long-context]
+        order: 4
+        rpm: 6
+        context_tokens: 1000000
+        join: paid_fallback
+        verified: novita-models-api-2026-11-11
+        notes: $0.15 / $0.47 per 1M tokens. Context 1,000,000.
+
+  - id: deepseek
+    env: DEEPSEEK_API_KEY
+    tier: paid
+    key_url: https://platform.deepseek.com/api_keys
+    api_base: https://api.deepseek.com/v1
+    notes: >-
+      Paid. Official pricing page (fetched 2026-11-11) lists deepseek-flash
+      (DeepSeek-V4.1-Flash-1017) and deepseek-v4-pro (DeepSeek-V4-Pro-0813),
+      both 1M context, base URL https://api.deepseek.com. The legacy names
+      deepseek-chat and deepseek-reasoner are gone. LiteLLM's default base is
+      the /beta FIM host, so api_base is set explicitly. Off the public
+      aliases unless MUSE_ALLOW_PAID_FALLBACK=true.
+    deployments:
+      - id: deepseek-flash
+        model: deepseek/deepseek-flash
+        mode: chat
+        aliases: [cheap, smart, long-context]
+        order: 6
+        rpm: 8
+        context_tokens: 1000000
+        join: paid_fallback
+        verified: deepseek-pricing-page-and-litellm-1.108.5
+        notes: Cache-miss input about $0.15 off-peak / $0.30 peak per 1M; output $0.60 / $1.20. Peak hours are on the pricing page.
+      - id: deepseek-v4-pro
+        model: deepseek/deepseek-v4-pro
+        mode: chat
+        aliases: [smart, long-context]
+        order: 6
+        rpm: 4
+        context_tokens: 1000000
+        join: paid_fallback
+        verified: deepseek-pricing-page-and-litellm-1.108.5
+        notes: Cache-miss input about $0.66 off-peak / $1.32 peak per 1M; output $1.98 / $3.96.
+
+  - id: voyage
+    env: VOYAGE_API_KEY
+    tier: paid
+    key_url: https://dash.voyageai.com/api-keys
+    notes: >-
+      Paid embeddings and rerank. voyage-4-lite and rerank-3-lite are the
+      current low-latency models on the Voyage docs. Off the public aliases
+      unless MUSE_ALLOW_PAID_FALLBACK=true. voyage-4-lite defaults to 1024
+      dimensions.
+    deployments:
+      - id: voyage-4-lite
+        model: voyage/voyage-4-lite
+        mode: embedding
+        aliases: [embed]
+        order: 5
+        rpm: 5
+        join: paid_fallback
+        verified: voyage-embeddings-docs-and-litellm-1.108.5
+        notes: 32,000 token context. Dimensions 1024 (default), 256, 512, 2048. Same vector space as the rest of the voyage-4 series, not as Gemini or Jina.
+      - id: voyage-rerank-3-lite
+        model: voyage/rerank-3-lite
+        mode: rerank
+        aliases: [rerank]
+        order: 5
+        rpm: 5
+        join: paid_fallback
+        verified: voyage-reranker-docs-and-litellm-1.108.5
+        notes: 32,000 token context. Scores are not comparable with Cohere or Jina scores.
+
+  - id: nvidia_nim
+    env: NVIDIA_NIM_API_KEY
+    tier: paid
+    key_url: https://build.nvidia.com/settings/api-keys
+    api_base: https://integrate.api.nvidia.com/v1
+    notes: >-
+      Optional. build.nvidia.com keys are credit-metered. Model ids below were
+      on the unauthenticated GET https://integrate.api.nvidia.com/v1/models
+      response on 2026-11-11. Listing does not mean a trial key can call them.
+      Off the public aliases unless MUSE_ALLOW_PAID_FALLBACK=true.
+      nvidia/nemotron-3.5-embed-1b is pinned only; its dimension was not verified,
+      so it is not placed in the shared embed alias.
+    deployments:
+      - id: nim-gpt-oss-20b
+        model: nvidia_nim/openai/gpt-oss-20b
+        mode: chat
+        aliases: [fast, cheap]
+        order: 5
+        rpm: 5
+        join: paid_fallback
+        verified: nvidia-models-list-2026-11-11
+        notes: Present on the public NIM model list. Credit cost was not verified.
+      - id: nim-nemotron-3-ultra
+        model: nvidia_nim/nvidia/nemotron-3-ultra-550b-a55b
+        mode: chat
+        aliases: [smart, long-context]
+        order: 5
+        rpm: 2
+        context_tokens: 1000000
+        join: paid_fallback
+        verified: partial
+        notes: Id is on the NIM model list. The 1,000,000 context figure is from the OpenRouter free catalog entry for the same model name, not from an NVIDIA context page.
+      - id: nim-embed
+        model: nvidia_nim/nvidia/nemotron-3.5-embed-1b
+        mode: embedding
+        aliases: []
+        order: 5
+        rpm: 2
+        join: paid_fallback
+        verified: nvidia-models-list-2026-11-11
+        notes: Pinned as nim-embed only. Dimension not verified. Do not insert these vectors into an index built with embed.
