@@ -83,7 +83,7 @@ The decisions above do not all fit in three months with one or two engineers, an
 | **6. Credits and exchange (testnet)** | 8–12 | Credits ledger; one job type end to end; consent and receipts anchored on a test network | Built alongside, as decided, but only one job type until there are users to trade with |
 | **Later** | after 12 | Japanese and Korean; email and calendar; chat-app interface; always-on worker; more job types; data sales; real money; co-operative and token; medical | Each needs users, or a licence, or both |
 
-With the Rust rebuild, twelve weeks is tight for two engineers even with this phasing. What I would cut first if time runs short, in this order: the chat-app interface, email and calendar, the always-on worker in the user's cloud, the second job type, Android or iOS (ship one phone platform first).
+With the Rust rebuild, twelve weeks is tight for two engineers even with this phasing. What I would cut first if time runs short, in this order: the chat-app interface, email and calendar, the always-on worker in the user's cloud, the second job type. The owner decided that iPhone and Android ship together or not at all, so if mobile does not fit, both phone apps move to after week twelve and the desktop app launches first on the same core.
 
 ## 5. How each step is built
 
@@ -170,10 +170,13 @@ From the legal check (US case law verified; other jurisdictions from secondary s
 | Scope | Section 4 | Phasing and the cut list |
 | Singapore licensing once money or a token arrives | The regulator says it will generally not license token services | No real money in v1; legal advice before any change |
 
-## 10. Decisions still needed from the owner
+## 10. Later decisions, now settled
 
-1. Which first job type for the exchange phase.
-2. Whether the discovery bot's approver is the owner or a hired maintainer.
-3. Whether Japanese and Korean can wait until after the first Taiwan users, as phased here.
-4. Which phone platform ships first if only one fits.
-5. The decay rate for credits and the size of a new user's overdraft.
+| Question | Decision |
+|---|---|
+| First job type in the exchange | Spare local compute: one user's computer runs an open model for another user's request; both sign the receipt that creates the credit |
+| Who approves catalogue changes | The owner at first; a maintainer once it takes more than about an hour a week |
+| Japanese and Korean | After the first Taiwan users. All text is built translation-ready from the start. |
+| Phone platforms | iPhone and Android ship together, or mobile waits. Neither is favoured. |
+| Credit decay | Half every 30 days. A setting, not hard-coded. |
+| New user's overdraft | Small (about one hour of typical local-model use), growing as the user repays and contributes |
