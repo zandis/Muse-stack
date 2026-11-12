@@ -174,6 +174,11 @@ class FakeUpstream:
             return 429, {"error": {"message": "Rate limit reached for requests per minute", "type": "requests", "code": "rate_limit_exceeded"}}, {
                 "retry-after": "2",
             }
+        if behaviour.startswith("429_retry_after:"):
+            # A plain rate-limit 429 that says how long to stay away, in seconds.
+            return 429, {"error": {"message": "Rate limit reached", "type": "requests", "code": "rate_limit_exceeded"}}, {
+                "retry-after": behaviour.split(":", 1)[1],
+            }
         if behaviour == "429_daily":
             return 429, GEMINI_DAILY_BODY, {}
         if behaviour == "401":

@@ -56,6 +56,14 @@ What it adds:
 Response headers `x-muse-provider`, `x-muse-deployment` and `x-muse-privacy`
 say where a request went. Set `MUSE_DISABLE_HOOK=true` to run the plain proxy.
 
+A provider's `Retry-After` on a 429 is honoured twice over. LiteLLM cools that
+one deployment for the stated time (the rendered config sets no `allowed_fails`
+and no per-deployment `cooldown_time`, either of which would defeat this). The
+hook adds what LiteLLM does not do: the same block for every alias and worker
+that shares the upstream, kept across restarts, plus daily and monthly quotas.
+`MUSE_COOLDOWN_FALLBACK_S` (default 30) is only used for a failure that carries
+no `Retry-After`.
+
 Known limits: calling a deployment by its id skips the block list (privacy
 still applies); server errors are left to the proxy's own per-alias cooldown;
 the 429 formats for Gemini, OpenRouter and Cohere are parsed from community
