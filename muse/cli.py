@@ -968,82 +968,6 @@ def cmd_dash(args: argparse.Namespace) -> int:
     return 0
 
 
-# ------------------------------------------------------------------- health
-
-
-def _health_vault_path(args: argparse.Namespace) -> Path:
-    if getattr(args, "vault", None):
-        return Path(args.vault).expanduser()
-    from muse.health.vault import default_vault_path
-
-    return default_vault_path()
-
-
-def cmd_health_app(args: argparse.Namespace) -> int:
-    """Start the health assistant's web app on loopback."""
-    try:
-        from muse.health.app.server import serve
-        from muse.health.app.services import build_services
-        from muse.health.tenant import TenantError, load_tenant
-    except ImportError as exc:
-        _err(f"The health assistant needs the 'health' extra: pip install -e '.[health]' ({exc.name} is missing).")
-        return 1
-    try:
-        tenant = load_tenant(args.tenant, _env())
-    except TenantError as exc:
-        _err(f"Tenant settings problem: {exc}")
-        return 1
-    try:
-        services = build_services(tenant, _health_vault_path(args), _env())
-    except Exception as exc:
-        _err(f"Could not start the health assistant: {type(exc).__name__}: {exc}")
-        return 1
-    url = f"http://127.0.0.1:{args.port}"
-    print(f"{tenant.display_name}: {url} (Ctrl-C to stop)")
-    print("Health content is only sent to models in the tenant's privacy class "
-          f"({', '.join(tenant.allowed_privacy)}). Without one, the assistant still handles records and reminders.")
-    try:
-        serve(services, host="127.0.0.1", port=args.port, open_browser=not args.no_open)
-    except KeyboardInterrupt:
-        pass
-    except OSError as exc:
-        _err(f"Could not start on port {args.port}: {exc}")
-        return 1
-    return 0
-
-
-def cmd_health_import(args: argparse.Namespace) -> int:
-    """Create a vault from an exported archive, e.g. when moving from the hospital install."""
-    try:
-        from muse.health.contracts import VaultError, WrongPassphrase
-        from muse.health.vault import LocalVault
-    except ImportError as exc:
-        _err(f"The health assistant needs the 'health' extra: pip install -e '.[health]' ({exc.name} is missing).")
-        return 1
-    dest = _health_vault_path(args)
-    if dest.exists():
-        _err(f"A vault already exists at {dest}. Refusing to overwrite it; choose another --vault path.")
-        return 1
-    # The passphrase is always required: it is what proves no record was
-    # removed from the archive on the way here.
-    passphrase = sys.stdin.readline().rstrip("\n") if args.stdin else getpass.getpass("Vault passphrase: ")
-    try:
-        vault = LocalVault.import_archive(args.archive, dest, passphrase=passphrase)
-        vault.unlock(passphrase)
-        count = len(vault.list(limit=100000))
-        vault.lock()
-    except WrongPassphrase:
-        dest.unlink(missing_ok=True)
-        _err("Wrong passphrase, or the archive was altered. Nothing was imported.")
-        return 1
-    except (VaultError, OSError) as exc:
-        dest.unlink(missing_ok=True)
-        _err(f"Could not import the archive: {exc}")
-        return 1
-    print(f"Imported {count} records into {dest}. Open it with: muse health app")
-    return 0
-
-
 def cmd_env(args: argparse.Namespace) -> int:
     url = _proxy_url()
     print("# Point an OpenAI-compatible client at the Muse proxy. Use: eval \"$(muse env)\"")
@@ -1129,20 +1053,6 @@ def build_parser() -> argparse.ArgumentParser:
     da.add_argument("--port", type=int, default=4180)
     da.add_argument("--no-open", action="store_true")
     da.set_defaults(func=cmd_dash)
-
-    h = sub.add_parser("health", help="the health-management assistant")
-    hsub = h.add_subparsers(dest="health_cmd", required=True)
-    ha = hsub.add_parser("app", help="start the assistant's web app on 127.0.0.1")
-    ha.add_argument("--tenant", help="tenant id in config/tenants (default: MUSE_TENANT or demo-hospital)")
-    ha.add_argument("--port", type=int, default=4190)
-    ha.add_argument("--vault", help="vault file (default: ~/.muse/health/vault.sqlite)")
-    ha.add_argument("--no-open", action="store_true")
-    ha.set_defaults(func=cmd_health_app)
-    hi = hsub.add_parser("import", help="create a vault from an exported archive")
-    hi.add_argument("archive")
-    hi.add_argument("--vault", help="where to create the vault (default: ~/.muse/health/vault.sqlite)")
-    hi.add_argument("--stdin", action="store_true", help="read the passphrase from stdin")
-    hi.set_defaults(func=cmd_health_import)
 
     e = sub.add_parser("env", help="export lines for an OpenAI-compatible client")
     e.add_argument("--show-master-key", action="store_true", help="print the real key instead of the variable name")

@@ -12,11 +12,11 @@ from pathlib import Path
 
 import pytest
 
-from muse.health import crypto
-from muse.health.contracts import VaultError, VaultLocked, WrongPassphrase
-from muse.health.mandates import LocalMandateBook
-from muse.health.receipts import LocalReceiptLog
-from muse.health.vault import MAX_TEXT_BYTES, LocalVault
+from muse.trust import crypto
+from muse.trust.contracts import VaultError, VaultLocked, WrongPassphrase
+from muse.trust.mandates import LocalMandateBook
+from muse.trust.receipts import LocalReceiptLog
+from muse.trust.vault import MAX_TEXT_BYTES, LocalVault
 
 PW = "correct horse battery staple"
 KDF = crypto.INSECURE_TEST_KDF
@@ -160,7 +160,7 @@ def test_corrupted_header_is_vault_error_not_wrong_passphrase(vault: LocalVault)
 
 
 def test_forged_header_with_fixed_checksum_gives_only_wrong_passphrase(vault: LocalVault) -> None:
-    from muse.health import vault as vault_mod
+    from muse.trust import vault as vault_mod
     conn = raw(vault.path)
     h = dict(conn.execute("SELECT * FROM header").fetchone())
     h["kdf"] = json.dumps({"alg": "scrypt", "n": 2**11, "r": 8, "p": 1})   # attacker lowers cost

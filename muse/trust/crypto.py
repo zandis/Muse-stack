@@ -41,7 +41,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from muse.health.contracts import VaultError, WrongPassphrase
+from muse.trust.contracts import VaultError, WrongPassphrase
 
 KEY_BYTES = 32
 NONCE_BYTES = 12

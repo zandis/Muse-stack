@@ -72,7 +72,7 @@ class Item:
 
 
 class Vault(Protocol):
-    """Encrypted store. See muse/health/vault.py."""
+    """Encrypted store. See muse/trust/vault.py."""
 
     def is_unlocked(self) -> bool: ...
     def unlock(self, passphrase: str) -> None: ...
@@ -196,21 +196,3 @@ class BotReply:
     safety: str | None = None                 # None | "urgent" | "declined_medical_advice" | "no_model"
     receipts: tuple[int, ...] = ()            # receipt seq numbers produced by this turn
     route: str | None = None                  # "provider/deployment (privacy)" for display
-
-
-@dataclass(frozen=True)
-class Tenant:
-    """Who issues the app. A hospital during the pilot, the company later."""
-
-    id: str
-    display_name: str
-    issuer: str                               # "hospital" | "company"
-    locale: str = "zh-TW"
-    default_privacy: str = "local"
-    allowed_privacy: tuple[str, ...] = ("local",)
-    pilot_ref: str = ""                       # IRB or quality-improvement reference, if any
-    consent_version: str = ""
-    consent_text: str = ""
-    emergency_text: str = ""
-    contact: str = ""
-    features: dict[str, bool] = field(default_factory=dict)   # e.g. {"exchange_addon": False}

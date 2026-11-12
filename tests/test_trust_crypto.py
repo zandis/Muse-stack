@@ -6,8 +6,8 @@ import unicodedata
 
 import pytest
 
-from muse.health import crypto
-from muse.health.contracts import VaultError, WrongPassphrase
+from muse.trust import crypto
+from muse.trust.contracts import VaultError, WrongPassphrase
 
 KDF = crypto.INSECURE_TEST_KDF
 

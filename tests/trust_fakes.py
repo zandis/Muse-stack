@@ -1,8 +1,8 @@
 """In-memory fakes of the health contracts, for bot tests.
 
-Deliberately simple and independent of muse/health/vault.py, mandates.py and
+Deliberately simple and independent of muse/trust/vault.py, mandates.py and
 receipts.py, which are built in parallel. They follow the Protocols in
-muse/health/contracts.py exactly.
+muse/trust/contracts.py exactly.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import re
 from dataclasses import replace
 from typing import Any, Callable
 
-from muse.health.contracts import (
+from muse.trust.contracts import (
     Action,
     Decision,
     Item,

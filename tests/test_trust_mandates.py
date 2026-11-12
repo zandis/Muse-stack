@@ -9,16 +9,14 @@ from pathlib import Path
 
 import pytest
 
-from muse.health import crypto
-from muse.health.contracts import Action, Tenant, VaultError, VaultLocked
-from muse.health.mandates import (
+from muse.trust import crypto
+from muse.trust.contracts import Action, VaultError, VaultLocked
+from muse.trust.mandates import (
     LocalMandateBook,
     canonical_mandate,
-    default_bot_mandate,
     verify,
 )
-from muse.health.tenant import load_tenant
-from muse.health.vault import LocalVault, iso_utc
+from muse.trust.vault import LocalVault, iso_utc
 
 PW = "correct horse battery staple"
 T0 = 1_750_000_000.0
@@ -272,19 +270,3 @@ def test_two_books_same_file(book: LocalMandateBook, vault: LocalVault) -> None:
     assert other.check("bot", Action("vault.read")).allowed
     other.revoke(m.id)
     assert not book.check("bot", Action("vault.read")).allowed
-
-
-def test_default_bot_mandate_hospital_company_english(book: LocalMandateBook) -> None:
-    hospital = default_bot_mandate(load_tenant("demo-hospital"))
-    assert hospital["grantee"] == "bot" and hospital["record_kinds"] == () and hospital["expires_at"] is None
-    assert set(hospital["scopes"]) == {"vault.read", "items.write", "draft.letter", "llm.local"}
-    assert "院內" in hospital["purpose"]
-    company = default_bot_mandate(load_tenant("company"))
-    assert "llm.private" in company["scopes"] and "llm.cloud" not in company["scopes"]
-    english = default_bot_mandate(Tenant(id="x", display_name="X", issuer="company", locale="en-US"))
-    assert english["purpose"].startswith("Answer my questions")
-    m = book.grant(**company)
-    assert book.check("bot", Action("vault.read", ("lab",), "private")).allowed
-    assert not book.check("bot", Action("vault.read", ("lab",), "cloud")).allowed
-    assert not book.check("bot", Action("vault.write")).allowed
-    assert m.purpose == company["purpose"]

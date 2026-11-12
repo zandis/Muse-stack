@@ -27,9 +27,9 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from muse.health import crypto
-from muse.health.contracts import SCOPES, Action, Decision, Mandate, Tenant, VaultError
-from muse.health.vault import (
+from muse.trust import crypto
+from muse.trust.contracts import SCOPES, Action, Decision, Mandate, VaultError
+from muse.trust.vault import (
     RECORD_KINDS,
     LocalVault,
     check_id,
@@ -258,31 +258,3 @@ class LocalMandateBook:
 
 def _replace_sig(m: Mandate, signature: str) -> Mandate:
     return dataclasses.replace(m, signature=signature)
-
-
-_PURPOSE = {
-    "zh": "回答我對自己健康紀錄的問題、整理用藥與回診提醒，並草擬（不寄出）病歷申請或看診問題。紀錄內容只會送到{where}的模型。",
-    "en": "Answer my questions about my own health records, keep my medication and appointment reminders, and draft (never send) records requests or visit questions. Record content only goes to {where} models.",
-}
-_WHERE = {
-    ("zh", False): "本機或院內",
-    ("zh", True): "本機、院內，或已確認不訓練、不人工審閱",
-    ("en", False): "local or on-premises",
-    ("en", True): "local, on-premises or contractually private (no training, no human review)",
-}
-
-
-def default_bot_mandate(tenant: Tenant) -> dict[str, Any]:
-    """Arguments for the standard first-run grant: book.grant(**default_bot_mandate(t))."""
-    private = "private" in tenant.allowed_privacy
-    scopes = ["vault.read", "items.write", "draft.letter", "llm.local"]
-    if private:
-        scopes.append("llm.private")
-    lang = "zh" if tenant.locale.lower().startswith("zh") else "en"
-    return {
-        "grantee": "bot",
-        "scopes": tuple(scopes),
-        "purpose": _PURPOSE[lang].format(where=_WHERE[(lang, private)]),
-        "record_kinds": (),
-        "expires_at": None,
-    }

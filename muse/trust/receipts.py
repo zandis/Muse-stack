@@ -36,9 +36,9 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
-from muse.health import crypto
-from muse.health.contracts import Receipt, VaultError, VerifyResult
-from muse.health.vault import LocalVault, has_control_chars, iso_utc
+from muse.trust import crypto
+from muse.trust.contracts import Receipt, VaultError, VerifyResult
+from muse.trust.vault import LocalVault, has_control_chars, iso_utc
 
 RECEIPT_DOMAIN = "receipt"
 HEAD_DOMAIN = "receipt-head"

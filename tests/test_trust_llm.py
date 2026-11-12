@@ -10,8 +10,8 @@ from typing import Any
 
 import pytest
 
-from muse.health.contracts import LLMRefused, LLMUnavailable
-from muse.health.llm import GatewayLLM, RequestTooLarge, UnverifiedRoute
+from muse.trust.contracts import LLMRefused, LLMUnavailable
+from muse.trust.llm import GatewayLLM, RequestTooLarge, UnverifiedRoute
 
 KEY = "sk-muse-test-SECRET-0123456789abcdef"
 GOOD = {"x-muse-provider": "local_openai", "x-muse-deployment": "local-model__smart", "x-muse-privacy": "local"}

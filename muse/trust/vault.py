@@ -46,8 +46,8 @@ from pathlib import Path
 from typing import Any, get_args
 
 from muse import paths
-from muse.health import crypto
-from muse.health.contracts import (
+from muse.trust import crypto
+from muse.trust.contracts import (
     Item,
     ItemKind,
     Record,

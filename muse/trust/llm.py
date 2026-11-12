@@ -36,7 +36,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from muse import policy
-from muse.health.contracts import LLMRefused, LLMResult, LLMUnavailable
+from muse.trust.contracts import LLMRefused, LLMResult, LLMUnavailable
 
 DEFAULT_URL = "http://127.0.0.1:4000"
 MARK = "[muse]"
