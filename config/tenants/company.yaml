@@ -1,0 +1,21 @@
+# Tenant used once the company issues the app itself. A user moves here by
+# exporting their vault from the hospital install and importing it.
+display_name: Muse 健康管理助理
+issuer: company
+locale: zh-TW
+default_privacy: local
+# "private" is only usable for providers whose policy in config/providers.yaml
+# says, after someone has read their terms, that they neither train on nor
+# review prompts. Until one does, this behaves like local-only.
+allowed_privacy: [local, private]
+pilot_ref: ""
+consent_version: "company-0.1"
+consent_text: |
+  健康管理助理幫你整理自己的健康紀錄、說明報告內容、提醒回診與用藥、準備看診
+  問題。它不是醫師，不會診斷或建議治療。紀錄以只有你知道的密碼加密，內容只會
+  送到你裝置上的模型，或已確認不訓練、不人工審閱的服務。每次讀取都有紀錄。
+emergency_text: 如果有緊急狀況，請立即撥打 119 或前往急診。
+contact: ""
+features:
+  exchange_addon: false
+  cloud_models: false

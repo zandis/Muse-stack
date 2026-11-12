@@ -1,0 +1,20 @@
+# Example tenant for a hospital pilot. Copy and edit; nothing here is real.
+display_name: 示範醫院 健康管理助理（試辦）
+issuer: hospital
+locale: zh-TW
+# Health content only goes to models the hospital runs itself.
+default_privacy: local
+allowed_privacy: [local]
+pilot_ref: "試辦計畫編號（IRB 或品質改善案號，待填）"
+consent_version: "demo-0.1"
+consent_text: |
+  這是試辦中的健康管理助理。它幫你整理自己的健康紀錄、用白話說明報告內容、
+  提醒回診與用藥、準備看診時想問的問題。它不是醫師，不會診斷，也不會建議你
+  調整治療或藥物。你的紀錄以只有你知道的密碼加密；助理讀取紀錄時，內容只會
+  送到本院院內的模型。每一次讀取都會留下你看得到的紀錄。你可以隨時停止使用
+  並帶走或刪除全部資料。
+emergency_text: 如果有胸痛、呼吸困難、意識改變、大量出血或其他緊急狀況，請立即撥打 119 或前往急診。
+contact: "試辦窗口（待填）"
+features:
+  exchange_addon: false
+  cloud_models: false
