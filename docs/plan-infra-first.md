@@ -18,7 +18,8 @@ The order of work, fixed by the owner:
 | Area | Decision |
 |---|---|
 | First user | Any individual, non-technical |
-| Platform | Desktop app, everything local; chat apps as a second interface |
+| Platform | Desktop and mobile apps, each able to work alone, everything local; chat apps as a second interface |
+| Core technology | One portable Rust core (routing, rationing, vault, receipts) wrapped by Tauri apps for Mac, Windows, Linux, iOS and Android |
 | Access to services | Guided sign-up; the user's own accounts and keys |
 | Languages | Traditional Chinese, English, Japanese, Korean |
 | Licence | Open core, paid extras |
@@ -29,7 +30,7 @@ The order of work, fixed by the owner:
 | Routing | Readable fixed rules |
 | Priorities | 1. Spend nothing unless approved. 2. Never interrupt the active app. 3. Use free quota before it resets. |
 | Paid fallback | Automatic up to a daily cap (default US$1) |
-| Consumer subscriptions | Excluded |
+| Personal subscriptions | Hand-off to the provider's own app, plus sign-in only where a provider officially allows it. Never routed through directly, never shared or exchanged. |
 | Providers hosted in mainland China | Allowed, labelled, never used for private requests |
 | Default privacy class | Standard |
 | Bot, first version | Answer over the user's files; research reports; recurring chores; set up the user's free services |
@@ -39,13 +40,15 @@ The order of work, fixed by the owner:
 | Memory | Local, editable by the user |
 | Jobs | Bot services to other agents, paid human tasks, verified machine work, sharing and exchanging spare resources |
 | Capacity for jobs | The user's own hardware and paid keys only |
-| Exchange accounting | Non-transferable credits; a token later, as tokenised credits |
+| Exchange accounting | Non-transferable credits that decay when unused, created only by service receipts both sides signed; a token later, as the co-operative's contribution record |
 | Real money in v1 | None. Credits and test networks only. |
 | Payout, when enabled | User chooses; bank transfer by default |
 | Revenue | Free router, paid features, a cut on earnings |
 | Data for sale | Usage statistics, ratings and preferences, expert judgments, own documents |
 | Decentralized means | Company holds no data or keys; consent verifiable by anyone; payments bypass the company; user governance |
-| Blockchain's roles | Payment rail, proof layer, a resource to ration |
+| Blockchain's roles | Payment rail, proof layer, a resource to ration. Base first, test network only in v1. |
+| On-chain permissions | The bot's mandates are installed as smart-account limits, so the chain refuses anything outside them |
+| Governance | Co-operative: one member one vote, surplus shared by contribution |
 | Expected buyers | AI labs and model providers; researchers |
 | Medical | Last; steward model with its own entity |
 | Company | Singapore; Taiwan users first |
@@ -64,22 +67,23 @@ On branch `ccr-645e0264-bn082z`:
 
 Parked on `health-assistant-pack`: the health assistant and its web app.
 
-Not started: the desktop app, guided sign-up, the general bot, connectors, the catalogue beyond AI, the discovery bot, credits and exchange, add-on loading, Japanese and Korean.
+Not started: the portable Rust core, the desktop and mobile apps, guided sign-up, subscription hand-off, the general bot, connectors, the catalogue beyond AI, the discovery bot, credits and exchange, smart-account mandates, add-on loading, Japanese and Korean.
 
 ## 4. Scope against time
 
-The decisions above do not all fit in three months with one or two engineers. This is the phasing I recommend. It keeps every decision; it only orders them.
+The decisions above do not all fit in three months with one or two engineers, and choosing a portable Rust core for desktop and mobile adds a rebuild: the router that exists today is Python and stays as the reference implementation, with its tests as the conformance suite for the Rust core. This is the phasing I recommend. It keeps every decision; it only orders them.
 
 | Phase | Weeks | Delivers | Why this order |
 |---|---|---|---|
 | **1. Router that rations** | 1–3 | Per-app keys and budgets, paid cap, background queue, real-key test checklist, routing rules file | It is the product, and everything else calls it |
-| **2. Guided setup + desktop shell** | 2–6 | Installable desktop app (Traditional Chinese and English); the bot walks the user through each free service; menu-bar glance | The 90-day number is services connected per user; this is what moves it |
-| **3. Catalogue beyond AI** | 4–8 | Storage, compute and chain allowances tracked and shown; discovery bot proposing catalogue changes for approval | Tracking is cheap once the catalogue schema is general; no automation risk |
-| **4. General bot** | 5–10 | Answer over files, research reports, recurring chores, all through the vault, mandates and receipts; cloud drives first | Needs phases 1–2; drives before email because read-only file access is the lowest-risk connector |
-| **5. Credits and exchange (testnet)** | 6–12 | Credits ledger; one job type end to end; consent and receipts anchored on a test network | Built alongside, as decided, but only one job type until there are users to trade with |
-| **Later** | after 12 | Japanese and Korean; email and calendar; chat-app interface; more job types; data sales; real money; token; medical | Each needs users, or a licence, or both |
+| **2. Portable core** | 2–7 | Rust core passing the Python conformance tests: catalogue, quota tracking, rationing rules, privacy classes, vault and receipts; calls providers directly | Desktop and mobile both depend on it |
+| **3. Guided setup + apps** | 4–9 | Tauri desktop app first, then iOS and Android from the same code (Traditional Chinese and English); the bot walks the user through each free service; subscription hand-off | The 90-day number is services connected per user; this is what moves it |
+| **4. Catalogue beyond AI** | 5–9 | Storage, compute and chain allowances tracked and shown; discovery bot proposing catalogue changes for approval | Tracking is cheap once the catalogue schema is general; no automation risk |
+| **5. General bot** | 7–12 | Answer over files, research reports, recurring chores, all through the vault, mandates and receipts; cloud drives first | Needs phases 1–3; drives before email because read-only file access is the lowest-risk connector |
+| **6. Credits and exchange (testnet)** | 8–12 | Credits ledger; one job type end to end; consent and receipts anchored on a test network | Built alongside, as decided, but only one job type until there are users to trade with |
+| **Later** | after 12 | Japanese and Korean; email and calendar; chat-app interface; always-on worker; more job types; data sales; real money; co-operative and token; medical | Each needs users, or a licence, or both |
 
-Three things I would cut from the first three months if time runs short, in this order: the chat-app interface, email and calendar, the second job type.
+With the Rust rebuild, twelve weeks is tight for two engineers even with this phasing. What I would cut first if time runs short, in this order: the chat-app interface, email and calendar, the always-on worker in the user's cloud, the second job type, Android or iOS (ship one phone platform first).
 
 ## 5. How each step is built
 
@@ -109,17 +113,52 @@ Three things I would cut from the first three months if time runs short, in this
 - Chat logs are not offered: free text cannot be anonymised and contains other people's information.
 - Medical: steward organisation per country, compute inside a protected environment, results only. Detailed in the earlier review.
 
-## 6. Rules that keep it clean
+## 6. How the bot operates
+
+One bot per user. It loads a skill when a job needs one. It has one memory and one set of permissions.
+
+| Question | Rule |
+|---|---|
+| Where it runs | On whichever of the user's devices is awake. For always-on chores, guided setup can deploy a small worker into the user's own free compute allowance. It holds only encrypted data and the keys the user chose to place there. The company runs nothing. |
+| What starts it | The user asks; a schedule; an event in a connected account; the router signalling that free quota is about to reset. |
+| Budget | Each job type has a default ceiling (requests, tokens, minutes, paid cents). The bot shows an estimate before a large job and stops at the ceiling, reporting what it finished. The user can raise it for that job. |
+| What it may do alone | Read and summarise. |
+| What needs confirmation | Every write, send, sign-up or purchase. |
+| Identity when acting outward | The user's own account, after the user confirms each message. No disclosure line is added. Some platforms' rules restrict undisclosed automation; each connector must check its platform's terms before sending. |
+| When unsure, or a step fails | Finish what is safe and reversible, stop before the rest, and ask one clear question with what was done so far. |
+| Other people's bots | Only inside a standing mandate the user granted (for example: exchange up to N credits a day of local compute; never share files). Each exchange leaves a receipt. Anything outside the mandate needs confirmation. |
+| Subscriptions | The bot prepares the prompt and context and opens the provider's own app; the user runs it there and the bot takes the answer back. |
+| Oversight | A daily summary; a pause-everything switch on every device; an undo list for reversible actions; an alert on unusual activity (a spending jump, a new service contacted, repeated failures). |
+
+Every action runs under a mandate and leaves a receipt. A mandate, a consent to share data, and a limit on a chain transaction are the same object.
+
+## 7. Credits and chain
+
+The design follows from what Muse trades: capacity that expires.
+
+- **Credits decay.** An unused credit shrinks over time. It circulates or disappears; it cannot be held as an investment. Users are told plainly that credits are not savings.
+- **Credits come only from service.** A credit is created when one user's resource serves another and both sign the receipt. Nobody can issue credits from nothing, the company included. A new user gets a small overdraft so a first exchange can happen.
+- **Only resources the user owns** can be exchanged: their own hardware, capacity they pay for. Never free tiers, never subscriptions.
+- **Mandates are enforced on-chain.** The user's wallet is a smart account. A mandate is installed as a delegation with the same limits (amount, recipient, expiry). A compromised bot cannot exceed them.
+- **Proof layer.** Receipts and consents stay off-chain and encrypted; only batch roots are anchored. No user-level information goes on a public chain.
+- **Chain as a resource.** The router tracks free RPC allowances and fees like any other quota.
+- **Later, a co-operative.** One verified person, one vote. Surplus is shared in proportion to contribution, read from the contribution record. The token, when it comes, is that record. It is not a coin sold to raise money.
+- **v1 moves no real money.** Base test network only. Cash-out, stablecoin settlement and the co-operative need legal advice first; Singapore's regulator says it will generally not license token services, so the entity that eventually runs them may need to sit elsewhere.
+
+Not verified: whether decaying, service-issued credits and a contribution-based co-operative stay outside payment and securities rules in Singapore and Taiwan. That is my design judgment, not a legal finding.
+
+## 8. Rules that keep it clean
 
 From the legal check (US case law verified; other jurisdictions from secondary sources; not legal advice):
 
-- One account and one key per provider. No rotation, no pooling between people, no consumer-subscription logins.
+- One account and one key per provider. No rotation, no pooling between people.
+- Subscriptions are used only through the provider's own app or an officially permitted sign-in.
 - Honour every rate limit and ban. Never route around a refusal.
 - Truthful client identity.
 - Describe the product as a quota-aware router for the user's own accounts. Never as a way to bypass limits.
 - The company holds no keys, data or funds.
 
-## 7. Open risks
+## 9. Open risks
 
 | Risk | Why it matters | What reduces it |
 |---|---|---|
@@ -131,9 +170,10 @@ From the legal check (US case law verified; other jurisdictions from secondary s
 | Scope | Section 4 | Phasing and the cut list |
 | Singapore licensing once money or a token arrives | The regulator says it will generally not license token services | No real money in v1; legal advice before any change |
 
-## 8. Decisions still needed from the owner
+## 10. Decisions still needed from the owner
 
-1. Which first job type for phase 5.
+1. Which first job type for the exchange phase.
 2. Whether the discovery bot's approver is the owner or a hired maintainer.
-3. Which desktop technology (affects who can be hired).
-4. Whether Japanese and Korean can wait until after the first Taiwan users, as phased here.
+3. Whether Japanese and Korean can wait until after the first Taiwan users, as phased here.
+4. Which phone platform ships first if only one fits.
+5. The decay rate for credits and the size of a new user's overdraft.
