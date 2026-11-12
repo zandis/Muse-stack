@@ -272,6 +272,7 @@ class Queue:
         try:
             conn.execute("PRAGMA busy_timeout=5000")
             conn.execute("PRAGMA journal_mode=DELETE")
+            conn.execute("PRAGMA secure_delete=ON")  # an erased prompt must not linger in free pages
             conn.executescript(SCHEMA)
             if write:
                 conn.execute("BEGIN IMMEDIATE")
@@ -785,8 +786,6 @@ class Runner:
     def token_for(self, allow_paid: bool, refresh: bool = False) -> str:
         name = app_for(allow_paid)
         if refresh or name not in self.tokens:
-            if refresh and isinstance(self.env, dict):
-                self.env.pop(TOKEN_VARS[name], None)
             self.tokens[name] = ensure_app(name, self.env)
         return self.tokens[name]
 

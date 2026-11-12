@@ -62,6 +62,43 @@ the 429 formats for Gemini, OpenRouter and Cohere are parsed from community
 reports, not official documentation, and are marked `unconfirmed` in
 `muse/quota.py`.
 
+### Applications, paid cap and queue
+
+Each program that uses the proxy can have its own key, so you can see what each one uses and ration free quota between them.
+
+```bash
+muse apps preset cline --for cline        # or open-webui, librechat, continue, aider, n8n, script
+muse apps add notes --priority background --daily-requests 300
+muse apps list                            # today's use, caps and what was turned away
+muse apps set notes --daily-tokens 500000 # also: --priority, --allow-paid / --no-paid, --privacy, --note
+muse apps rotate notes                    # new key, the old one stops working
+muse apps rm notes
+```
+
+A key (`sk-muse-app-...`) is shown once, with the base URL and key to paste into the tool. Muse keeps only a hash. To keep keys out of logs, `muse apps add|preset|rotate` print one only when stdout is a terminal, or when you pass `--show-token`; otherwise they refuse before changing anything. `preset` prints each tool's own setup steps and marks any it could not confirm in the tool's documentation as UNVERIFIED.
+
+The rules, in plain words:
+
+- **Interactive** apps (a chat window you are typing in) are never held back. **Normal** apps keep a small reserve of each allowance free for interactive ones. **Background** apps step aside while an interactive app is active (`MUSE_ACTIVE_WINDOW_S`, default 2 minutes) and keep a larger reserve, except in the last hour before a daily allowance resets, when they may use what would be wasted.
+- A per-app daily cap (requests or tokens) ends that app's day at the cap until local midnight.
+- Paid providers are used only by apps allowed to, only while today's paid spend is under `MUSE_DAILY_PAID_CAP_USD` (default 1.00; 0 turns paid use off), and only when the price is known.
+- A request that is turned away gets HTTP 429 with `x-muse-ration: defer:<reason>` (try again later; nothing was sent upstream) or `refuse:<reason>` (not today), plus `Retry-After`. A 429 without that header comes from a provider.
+
+The background queue runs non-urgent jobs on allowance that would otherwise be wasted, without getting in the way of what you are doing:
+
+```bash
+muse queue add "Summarise the attached notes" --alias cheap --by 08:00   # "-" reads the prompt from stdin
+muse queue add-file notes.txt --do "summarise"      # a folder queues one job per file (at most 50)
+muse queue add-batch prompts.txt                    # several prompts, separated by a line of ---, one job
+muse queue run                                      # Ctrl-C to stop; --once, --until-idle, --max-jobs N
+muse queue list ; muse queue show ID --output ; muse queue cancel ID ; muse queue clear --done
+muse pause ; muse resume                            # stops and restarts the queue; the proxy keeps working
+```
+
+Jobs live in `~/.muse/queue.sqlite` (separate from the usage ledger because they hold your prompts; a finished job's prompt is erased). Results are written to `~/.muse/queue-out/` or the path you give, never to the ledger or a log. The runner is a background app named `queue` that Muse creates and keeps (its key is stored in the key store and never printed). It does what the proxy says: a deferral is retried after `Retry-After` plus a little random delay, an app cap holds all queue jobs until midnight, a provider 429 or server error backs off exponentially, a privacy refusal is final, and a job past its `--by` deadline fails instead of paying. The queue is free-only unless a job is added with `--allow-paid`, which uses a second managed app (`queue-paid`) that is still bound by the daily paid cap. `muse status` and the dashboard show the apps, the paid total and the queue.
+
+To check the real providers with your own keys, see [docs/real-key-checklist.md](docs/real-key-checklist.md).
+
 ## Trust layer
 
 `muse/trust` holds what the bot and later data sales are built on: an encrypted

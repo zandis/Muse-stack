@@ -313,7 +313,8 @@ def _paid_queue_lines(snap: Mapping[str, Any], now: datetime, paint: Paint) -> l
         if reset and cap > 0:
             text += f"  (resets in {reset})"
         if paid.get("unknown_cost_calls"):
-            text += f"  {paid['unknown_cost_calls']} call(s) of unknown cost"
+            n = int(paid["unknown_cost_calls"])
+            text += f"  {n} unpriced {'call' if n == 1 else 'calls'}"
         out.append(paint(_fit(text, WIDTH), style))
     queue = snap.get("queue")
     if isinstance(queue, Mapping):
@@ -1626,8 +1627,9 @@ def build_parser() -> argparse.ArgumentParser:
             sp.add_argument("--priority", choices=list(apps_priorities()), default=None if sp.prog.endswith(("set", "preset")) else "normal")
         sp.add_argument("--daily-requests", type=int, metavar="N", default=None, help="most successful requests per local day")
         sp.add_argument("--daily-tokens", type=int, metavar="N", default=None, help="most tokens per local day")
-        sp.add_argument("--allow-paid", dest="allow_paid", action=argparse.BooleanOptionalAction, default=None,
-                        help="may this app use paid providers (default: no for background, yes otherwise)")
+        sp.add_argument("--allow-paid", dest="allow_paid", action="store_const", const=True, default=None,
+                        help="this app may use paid providers (default: no for background, yes otherwise)")
+        sp.add_argument("--no-paid", dest="allow_paid", action="store_const", const=False, help="this app never uses paid providers")
         sp.add_argument("--privacy", choices=list(_PRIVACY_WORDS), default=None, help="default privacy class for this app")
         sp.add_argument("--note", default=None, help="one line to remember what this app is")
 
