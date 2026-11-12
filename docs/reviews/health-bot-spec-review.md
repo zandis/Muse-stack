@@ -1,6 +1,8 @@
 # 健康管理助理規格審查（對 v0.1）
 
-2026-11-12。審查範圍：`docs/health-bot-spec.md` v0.1，以及同分支上的 `muse/health/contracts.py`、`muse/health/tenant.py`、`config/tenants/*.yaml`。本文件不是法律意見。
+2026-11-12。審查範圍：`docs/health-bot-spec.md` v0.1，以及同分支在 commit `6889c96` 上的 `muse/health/contracts.py`、`muse/health/tenant.py`、`config/tenants/*.yaml`。本文件不是法律意見。
+
+審查完成後，同一分支又推上 `3869b5e`（WIP：vault、mandates、receipts、bot、web app 與測試）。該 commit 不在本次審查範圍內；HB-01 到 HB-18、HB-22 對 v0.1 規格仍然成立。與程式碼落差有關的 HB-19 到 HB-21 在下方依該 WIP 做了補充，但沒有對那 11,000 行新程式做完整審查。
 
 **總評：** 方向是對的。核心 app 只做使用者委託的健康助理，資料交換預設關閉，再加上授權（mandate）、收據和「沒有允許的模型就停，不改送別處」，跟設計規劃書 v0.2 的 Part B 對得起來。但 §2「只有使用者打得開」與實際架構矛盾，試點前必須先改；其餘必改項同樣要在規格裡給出具體選擇，不能留給實作時再決定。
 
@@ -106,13 +108,15 @@ v0.1 §1 說「只做一件事：請立即就醫」，§6 卻說「顯示在回�
 
 v0.1 §10 指向 README 的「Health bot」一節，但那一節不存在。
 
-### HB-20 — 規格讀起來像已經做好了，程式碼只有介面
+### HB-20 — 規格讀起來像已經做好了，審查當下只有介面
 
-`contracts.py` 寫的 `muse/health/vault.py` 不存在。目前只有介面（`contracts.py`）和 tenant 載入器（`tenant.py`）以及兩份範例設定，沒有保險庫、授權簿、收據日誌、助理或網頁客戶端的實作，也沒有健康助理的測試。
+在審查所依據的 `6889c96`：`contracts.py` 寫的 `muse/health/vault.py` 不存在。當時只有介面（`contracts.py`）和 tenant 載入器（`tenant.py`）以及兩份範例設定，沒有保險庫、授權簿、收據日誌、助理或網頁客戶端的實作，也沒有健康助理的測試。
+
+之後的 `3869b5e` 補上了這些模組與測試，但 commit 說明寫的是 WIP（web app 測試有過，vault 與 bot 仍在完成中）。該實作仍是伺服器端解鎖（`POST /api/unlock` 把密碼送到 app 伺服器），授權仍用保險庫 Ed25519 簽發，KDF 是 scrypt 而非本審查建議的 Argon2id。換句話說，HB-01、HB-02、HB-10 在程式碼裡也還沒對上規格 v0.2。收據已能把參照存成 HMAC（`keyed_refs`），但 `contracts.py` 仍暴露 `content_sha256`。
 
 ### HB-21 — 分支狀態
 
-這份規格在 `ccr-645e0264-bn082z` 分支上。這個分支沒有開 PR，有 16 個 commit，其中好幾個是 WIP，而且是從 PR #1 的閘道長出來的，沒有包含 PR #2 的修補。合併前需要整理（rebase 和 squash）。本審查不處理該分支的程式碼整理。
+這份規格在 `ccr-645e0264-bn082z` 分支上。這個分支沒有開過程式碼 PR，在審查當時有 16 個 commit，其後又多了 `3869b5e` 這筆 WIP。分支是從 PR #1 的閘道長出來的，沒有包含 PR #2 的修補。合併前需要整理（rebase 和 squash）。本審查不處理該分支的程式碼整理。
 
 ## 創新建議
 
@@ -124,4 +128,4 @@ v0.1 §10 指向 README 的「Health bot」一節，但那一節不存在。
 
 1. 改出規格 v0.2，對以上每一項給出具體選擇（見 `docs/health-bot-spec.md`）。
 2. 實作跟進列在規格 v0.2 的 §10：客戶端解密、HMAC 參照、WebAuthn 授權、閘道簽章、檢查點錨定、隱私詞彙對照的程式碼，以及 `content_sha256` 更名。
-3. `ccr-645e0264-bn082z` 上的 WIP 程式碼在合併前另行 rebase / squash，並補上 PR #2 的修補；不在本文件範圍內。
+3. `ccr-645e0264-bn082z` 上的 WIP 程式碼（含 `3869b5e`）在合併前另行 rebase / squash，並補上 PR #2 的修補，再對齊規格 v0.2（客戶端解密、WebAuthn、Argon2id）；不在本文件範圍內。

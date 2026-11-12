@@ -237,18 +237,24 @@ app 伺服器 ── 只存密文的保險庫、授權簿、加密的收據日�
 
 本節只列目前 repo 裡實際存在的東西，以及還沒做的項目。規格描述的是目標設計，不是已完成的產品。
 
-**現在有的（分支 `ccr-645e0264-bn082z`）：**
+**文件與介面：**
 
 - 本文件（`docs/health-bot-spec.md`）與審查（`docs/reviews/health-bot-spec-review.md`）
-- `muse/health/contracts.py`：保險庫、授權、收據、助理的介面與資料形狀；沒有實作
-- `muse/health/tenant.py` 與 `config/tenants/demo-hospital.yaml`、`company.yaml`
+- `muse/health/contracts.py`、`muse/health/tenant.py`、`config/tenants/demo-hospital.yaml`、`company.yaml`
 - 閘道本身的隱私等級（`public` / `standard` / `private` / `local`）在資源管理器裡已存在，來自 PR #1 這條線
+- README 仍然沒有「Health bot」一節（v0.1 §10 的指引無效）
 
-**現在沒有的：**
+**程式碼現況（`ccr-645e0264-bn082z` 在 `3869b5e`）：** 審查所看的 `6889c96` 只有介面。之後同一分支推上 WIP，新增了 `muse/health/vault.py`、`crypto.py`、`mandates.py`、`receipts.py`、`bot.py`、`muse/health/app/` 與一批測試。該 commit 自己說明：web app 測試有過，vault 與 bot 仍在完成中。這不是規格 v0.2 的完整實作，和本文件有幾處明確落差：
 
-- `muse/health/vault.py` 不存在（`contracts.py` 有提到）
-- README 沒有「Health bot」一節（v0.1 §10 的指引無效）
-- 沒有網頁客戶端、WebCrypto 解密、授權簿、收據日誌、助理、閘道 attestation、外部檢查點、HMAC 參照的實作，也沒有健康助理測試
-- `contracts.py` 仍使用 `content_sha256` 與兩套隱私詞彙；對照表尚未寫進程式碼，屬後續實作
+| 規格 v0.2 | WIP `3869b5e` 目前的做法 |
+|---|---|
+| 客戶端解密（WebCrypto）；伺服器只存密文 | 解鎖在伺服器：`POST /api/unlock` 把密碼送到 app 伺服器，明文在伺服器記憶體 |
+| KDF 為 Argon2id | `scrypt`（AEAD 已是 AES-256-GCM，這點相符） |
+| 敏感授權用 WebAuthn 在場確認 | 授權仍由保險庫 Ed25519 金鑰簽發 |
+| 收據以 HMAC 指稱紀錄 | 收據可經 `keyed_refs` 存 HMAC，但 `contracts.py` 仍暴露 `content_sha256`；呼叫端常傳入明文雜湊再包裝 |
+| 閘道 attestation、外部檢查點 | 尚未看到 |
+| 隱私詞彙對照表寫進程式碼 | 尚未寫入；兩套名稱仍在 |
 
-**分支現況（合併程式碼前的作業，不是本文件的工作）：** `ccr-645e0264-bn082z` 尚未開過程式碼 PR，含 16 個 commit（其中數個是 WIP），從 PR #1 的閘道長出，尚未含 PR #2 的修補。合併前需要 rebase / squash，並補上 PR #2 的修正。本規格 PR 只改文件，以該分支為 base，不整理那些 commit。
+對齊以上落差、替換 `content_sha256`、以及把對照表寫進 `contracts.py` / `tenant.py`，都列為後續實作，不在本文件 PR 範圍。
+
+**分支現況（合併程式碼前的作業，不是本文件的工作）：** `ccr-645e0264-bn082z` 尚未開過程式碼 PR，含多個 WIP commit，從 PR #1 的閘道長出，尚未含 PR #2 的修補。合併前需要 rebase / squash，並補上 PR #2 的修正，再把 WIP 對齊本規格。本規格 PR 只改文件，以該分支為 base，不整理那些 commit，也不改程式碼。
