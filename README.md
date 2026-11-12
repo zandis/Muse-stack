@@ -70,6 +70,18 @@ the 429 formats for Gemini, OpenRouter and Cohere are parsed from community
 reports, not official documentation, and are marked `unconfirmed` in
 `muse/quota.py`.
 
+### Keeping the catalogue honest
+
+Every fact in `config/providers.yaml` and `config/resources/*.yaml` is dated (`checked_on`) and cites the provider's own page (`source_urls`). `muse catalog check` only reads:
+
+```bash
+muse catalog check            # which entries were checked more than 30 days ago (no network)
+muse catalog check --pages    # fetch each source page once; say which ones changed since the last check
+muse catalog check --leads    # names on a public lead list that the catalogue lacks (names to look up, not facts)
+```
+
+It never edits the catalogue, never adds a provider, never signs up for anything and never sends a key. A "changed" page means a person should re-read it and edit the entry by hand. Page fingerprints are kept in `~/.muse/catalog-pages.json`. The rules the catalogue check enforces: official API hosts only, one entry and one key per provider, and consumer subscriptions (ChatGPT, Claude, Gemini apps) are hand-off only and can never be an API route.
+
 ### Connecting helpers
 
 `muse connect` adds one helper at a time. Muse only guides you: it never fills in, clicks or signs in on a provider's website, and it never takes a key on the command line.
