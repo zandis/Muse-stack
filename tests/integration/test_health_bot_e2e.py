@@ -237,3 +237,4 @@ def test_c_without_the_hook_the_client_refuses_to_trust_the_answer(start_proxy, 
     relaxed = bot_for(proxy, vault, mandates, receipts, strict=False).chat("what did my HbA1c report say?")
     assert leaked not in relaxed.text  # the bot's own route check still withholds it (privacy not reported)
     assert marker not in proxy.log_text()
+    print("C-ROUTES", [m for m, _ in body_upstream.bodies])
