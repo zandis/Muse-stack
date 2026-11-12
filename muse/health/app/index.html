@@ -1,0 +1,1213 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<title>健康管理助理</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b6a61'/%3E%3Cpath d='M16 7v18M7 16h18' stroke='white' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+:root{
+  color-scheme:light dark;
+  --bg:#f5f6f2; --surface:#ffffff; --surface2:#eef1ec; --ink:#1c2321; --muted:#53605a; --line:#d3d9d2;
+  --accent:#0b6a61; --accent-ink:#ffffff; --accent-soft:#e1f1ee;
+  --ok:#12713c; --warn:#8a4b00; --bad:#b3261e; --info:#24559f;
+  --bad-soft:#fdecea; --warn-soft:#fff3e0; --info-soft:#e8f0fb; --ok-soft:#e5f4ea;
+  --user-bubble:#0b6a61; --user-ink:#ffffff;
+  --font:system-ui,-apple-system,"Segoe UI","PingFang TC","Noto Sans TC","Microsoft JhengHei",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --nav-h:68px; --top-h:56px; --navoff:calc(var(--nav-h) + env(safe-area-inset-bottom));
+  --r:14px;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#111614; --surface:#1a201d; --surface2:#232b27; --ink:#e9eeea; --muted:#a2b0a9; --line:#334039;
+    --accent:#5cd6c5; --accent-ink:#06211d; --accent-soft:#17332f;
+    --ok:#6fd99a; --warn:#f0b455; --bad:#ff8c82; --info:#8fb8ff;
+    --bad-soft:#3a1d1a; --warn-soft:#33260f; --info-soft:#1b2a40; --ok-soft:#173222;
+    --user-bubble:#2d7f75; --user-ink:#ffffff;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.55 var(--font);overflow-wrap:anywhere;min-height:100vh}
+h1,h2,h3,h4,p,ul,ol,figure{margin:0}
+ul,ol{padding:0;list-style:none}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:6px}
+.sr{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.skip{position:absolute;left:8px;top:-80px;background:var(--surface);padding:10px 14px;border-radius:8px;z-index:100;border:2px solid var(--accent)}
+.skip:focus{top:8px}
+svg.i{width:1.25em;height:1.25em;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.25em}
+[hidden]{display:none!important}
+
+/* shell */
+body.app{display:block}
+#top{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:8px;min-height:var(--top-h);padding:6px 12px;background:var(--surface);border-bottom:1px solid var(--line)}
+#top .brand{flex:1;min-width:0;font-weight:700;font-size:1rem;display:flex;gap:8px;align-items:center}
+#top .brand span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#top .brand .logo{width:30px;height:30px;border-radius:8px;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;flex:none}
+#top .brand .logo svg{width:20px;height:20px}
+main{display:block;max-width:760px;margin:0 auto;padding:18px 16px calc(var(--navoff) + 28px);outline:none}
+body.auth main{padding-bottom:40px;max-width:560px}
+#tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;display:grid;grid-template-columns:repeat(5,1fr);height:var(--navoff);padding-bottom:env(safe-area-inset-bottom);background:var(--surface);border-top:1px solid var(--line)}
+#tabs a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:44px;color:var(--muted);text-decoration:none;font-size:.8125rem;font-weight:600;line-height:1.2;text-align:center;padding:4px 2px}
+#tabs a svg{width:26px;height:26px}
+#tabs a[aria-current="page"]{color:var(--accent)}
+#tabs a[aria-current="page"] svg{stroke-width:2.6}
+#tabs a[aria-current="page"] span{text-decoration:underline;text-underline-offset:4px;text-decoration-thickness:2px}
+@media (min-width:900px){
+  body.app{display:grid;grid-template-columns:230px minmax(0,1fr);grid-template-rows:auto 1fr;--navoff:0px}
+  #top{grid-column:1/-1}
+  #tabs{position:sticky;top:var(--top-h);grid-column:1;grid-row:2;align-self:start;display:flex;flex-direction:column;gap:4px;height:auto;padding:14px 12px;border-top:0;border-right:1px solid var(--line);background:transparent;min-height:calc(100vh - var(--top-h))}
+  #tabs a{flex-direction:row;justify-content:flex-start;gap:12px;font-size:1.0625rem;padding:10px 14px;border-radius:12px;min-height:50px;text-align:left}
+  #tabs a[aria-current="page"]{background:var(--accent-soft)}
+  #tabs a[aria-current="page"] span{text-decoration:none}
+  main{grid-column:2;grid-row:2;width:100%;padding:28px 32px 48px}
+  body.auth{display:block}
+}
+
+/* type */
+h1{font-size:1.6rem;line-height:1.25;font-weight:700;letter-spacing:.01em}
+h2{font-size:1.3rem;line-height:1.3;font-weight:700}
+h3{font-size:1.1rem;line-height:1.35;font-weight:700}
+.lead{font-size:1.0625rem;color:var(--muted)}
+.muted{color:var(--muted)}
+.small{font-size:.9375rem}
+.page-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.page-head h1{flex:1;min-width:8rem}
+.stack{display:grid;gap:14px}
+.stack.tight{gap:8px}
+.sec{margin-top:26px}
+.sec>h2{margin-bottom:10px}
+.row-between{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+
+/* controls */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:8px 18px;border-radius:12px;border:2px solid var(--line);background:var(--surface);color:var(--ink);font-weight:600;cursor:pointer;text-decoration:none;line-height:1.2}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.danger{border-color:var(--bad);color:var(--bad)}
+.btn.danger.solid{background:var(--bad);color:#fff}
+.btn.block{display:flex;width:100%}
+.btn.small{min-height:44px;padding:6px 14px;font-size:.9375rem}
+.btn.quiet{border-color:transparent;background:transparent;color:var(--accent)}
+.btn.icon{padding:0;width:48px}
+.btn:disabled,.btn[aria-busy="true"]{opacity:.55;cursor:not-allowed}
+.field{display:grid;gap:6px}
+.field>label,.field>.lbl{font-weight:600}
+.field .hint{color:var(--muted);font-size:.9375rem}
+.in{width:100%;min-height:48px;padding:10px 14px;border:2px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink)}
+textarea.in{min-height:120px;resize:vertical;line-height:1.5}
+.in:focus-visible{border-color:var(--accent);outline-offset:1px}
+.pw{display:flex;gap:8px}
+.pw .in{flex:1;min-width:0}
+.check{display:flex;gap:12px;align-items:flex-start;padding:10px 0}
+.check input{width:26px;height:26px;margin:2px 0 0;flex:none;accent-color:var(--accent)}
+.err{display:flex;gap:8px;align-items:flex-start;color:var(--bad);font-weight:600;background:var(--bad-soft);border:1px solid var(--bad);border-radius:10px;padding:10px 12px}
+.err svg{margin-top:.2em}
+.seg{display:inline-flex;border:2px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:transparent;min-height:44px;padding:6px 16px;font-weight:600;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.seg button+button{border-left:2px solid var(--line)}
+
+/* cards */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.card.flat{background:transparent}
+.card h2,.card h3{margin-bottom:6px}
+.note{display:flex;gap:10px;align-items:flex-start;border-radius:12px;padding:12px 14px;border:1px solid var(--line);background:var(--surface2)}
+.note svg{margin-top:.2em;flex:none}
+.note.info{background:var(--info-soft);border-color:var(--info)}
+.note.info svg{color:var(--info)}
+.note.warn{background:var(--warn-soft);border-color:var(--warn)}
+.note.warn svg{color:var(--warn)}
+.note.ok{background:var(--ok-soft);border-color:var(--ok)}
+.note.ok svg{color:var(--ok)}
+.note.bad{background:var(--bad-soft);border-color:var(--bad)}
+.note.bad svg{color:var(--bad)}
+.note .body{display:grid;gap:8px;min-width:0;flex:1}
+.cols2{display:grid;gap:12px}
+@media (min-width:640px){.cols2{grid-template-columns:1fr 1fr}}
+.bullets li{position:relative;padding-left:24px;margin:6px 0}
+.bullets li::before{content:"";position:absolute;left:6px;top:.7em;width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.bullets.no li::before{background:var(--bad)}
+.consent{white-space:pre-line;border:2px solid var(--line);border-radius:12px;padding:14px;background:var(--surface);max-height:16rem;overflow:auto}
+.strength{display:grid;gap:4px}
+.strength .bars{display:flex;gap:4px}
+.strength .bars i{flex:1;height:8px;border-radius:4px;background:var(--surface2);box-shadow:inset 0 0 0 1px var(--line)}
+.strength .bars i.on{background:var(--accent);box-shadow:none}
+.strength[data-s="0"] .bars i.on,.strength[data-s="1"] .bars i.on{background:var(--warn)}
+
+/* chat */
+.chat{display:flex;flex-direction:column;min-height:calc(100dvh - var(--top-h) - var(--navoff) - 46px)}
+.msgs>*{scroll-margin-bottom:calc(var(--navoff) + 130px)}
+.msgs{flex:1;display:grid;gap:14px;align-content:start;padding-bottom:16px}
+.bubble{max-width:88%;padding:12px 16px;border-radius:18px;white-space:pre-wrap}
+.bubble.user{justify-self:end;background:var(--user-bubble);color:var(--user-ink);border-bottom-right-radius:6px}
+.bot{justify-self:start;width:min(100%,640px);display:grid;gap:10px}
+.bot .answer{background:var(--surface);border:1px solid var(--line);border-radius:18px;border-bottom-left-radius:6px;padding:14px 16px;white-space:pre-wrap}
+.bot .meta{display:flex;flex-wrap:wrap;gap:6px 14px;color:var(--muted);font-size:.875rem;align-items:center}
+.bot .meta span,.bot .meta button{display:inline-flex;gap:6px;align-items:center}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:8px;min-height:44px;max-width:100%;padding:6px 14px;border:2px solid var(--line);border-radius:999px;background:var(--surface);cursor:pointer;font-size:.9375rem;font-weight:600;text-align:left}
+.chip:hover{border-color:var(--accent)}
+.chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.cites-l{font-size:.875rem;color:var(--muted);font-weight:600}
+.urgent{border:3px solid var(--bad);background:var(--bad-soft);border-radius:var(--r);padding:16px;display:grid;gap:8px}
+.urgent h3{display:flex;gap:10px;align-items:center;color:var(--bad);font-size:1.25rem}
+.urgent p{font-size:1.125rem;font-weight:600}
+.change{border:2px dashed var(--accent);border-radius:var(--r);padding:14px;background:var(--surface);display:grid;gap:10px}
+.change .acts{display:flex;gap:10px;flex-wrap:wrap}
+.change .st{display:flex;gap:8px;align-items:center;font-weight:600}
+.starters{display:grid;gap:10px;margin:8px 0 18px}
+.starters .chip{border-radius:14px;min-height:52px;padding:10px 16px;white-space:normal}
+.starters .chip span{white-space:normal}
+.composer{position:sticky;bottom:var(--navoff);background:var(--bg);padding:10px 0 6px;border-top:1px solid var(--line);margin:0 -2px}
+.composer form{display:flex;gap:8px;align-items:flex-end}
+.composer textarea{min-height:52px;max-height:9rem;flex:1;resize:none;padding:12px 14px}
+.composer .btn{min-height:52px}
+.disclaimer{display:flex;gap:6px;align-items:center;justify-content:center;color:var(--muted);font-size:.8125rem;padding-top:6px}
+.typing{color:var(--muted);display:flex;gap:8px;align-items:center}
+.dots i{display:inline-block;width:8px;height:8px;margin-right:3px;border-radius:50%;background:var(--muted);animation:blink 1.2s infinite both}
+.dots i:nth-child(2){animation-delay:.2s}.dots i:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
+
+/* lists */
+.list{display:grid;gap:10px}
+.row{display:flex;gap:12px;align-items:center;width:100%;min-height:64px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);text-align:left;cursor:pointer}
+button.row:hover{border-color:var(--accent)}
+.row .ic{flex:none;width:44px;height:44px;border-radius:12px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center}
+.row .ic svg{width:24px;height:24px}
+.row .tx{flex:1;min-width:0;display:grid;gap:2px}
+.row .tt{font-weight:650;line-height:1.35}
+.row .mt{color:var(--muted);font-size:.9375rem}
+.mhead{position:sticky;top:var(--top-h);z-index:5;background:var(--bg);padding:10px 0 6px;font-size:1rem;font-weight:700;color:var(--muted);margin:0}
+.item{display:grid;gap:4px;padding:14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+.item .top{display:flex;gap:10px;justify-content:space-between;align-items:flex-start}
+.item .name{font-weight:700;font-size:1.0625rem}
+.item .acts{display:flex;gap:6px;flex-shrink:0}
+.when{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap;font-weight:600;color:var(--accent)}
+.nw{white-space:nowrap}
+.soon{font-weight:700;color:var(--warn)}
+.next{display:grid;gap:10px;background:var(--accent-soft);border-color:var(--accent)}
+.next li{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.next .d{font-weight:700}
+.recbody{white-space:pre-wrap;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;line-height:1.7}
+
+/* trust */
+.mandate{display:grid;gap:8px}
+.mandate .stt{display:inline-flex;gap:6px;align-items:center;font-weight:700}
+.mandate .stt.active{color:var(--ok)}
+.mandate .stt.off{color:var(--muted)}
+.scopes li{display:flex;gap:10px;align-items:flex-start;margin:4px 0}
+.scopes svg{margin-top:.25em;color:var(--accent)}
+.feed{display:grid;gap:10px}
+.rc{display:grid;gap:4px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);border-left-width:6px}
+.rc.e-none{border-left-color:var(--ok)}
+.rc.e-local{border-left-color:var(--info)}
+.rc.e-private,.rc.e-cloud{border-left-color:var(--warn);background:var(--warn-soft)}
+.rc .ts{color:var(--muted);font-size:.875rem}
+.rc .what{font-weight:600}
+.rc .eg{display:inline-flex;gap:8px;align-items:center;font-size:.9375rem;font-weight:600}
+.rc.e-none .eg{color:var(--ok)}.rc.e-local .eg{color:var(--info)}.rc.e-private .eg,.rc.e-cloud .eg{color:var(--warn)}
+.rc .dt{color:var(--muted);font-size:.875rem}
+
+/* dialog, toast, banner */
+dialog.dlg{border:0;border-radius:18px;padding:0;max-width:min(520px,calc(100vw - 24px));width:100%;background:var(--surface);color:var(--ink);box-shadow:0 20px 60px rgba(0,0,0,.35)}
+dialog.dlg::backdrop{background:rgba(10,15,13,.55)}
+.dlg form,.dlg .inner{padding:20px;display:grid;gap:14px}
+.dlg .acts{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+#toast{position:fixed;left:12px;right:12px;bottom:calc(var(--navoff) + 12px);z-index:60;display:grid;justify-items:center;pointer-events:none}
+#toast div{background:var(--ink);color:var(--bg);padding:12px 18px;border-radius:12px;font-weight:600;max-width:520px;box-shadow:0 6px 24px rgba(0,0,0,.3)}
+@media (min-width:900px){#toast{left:230px}}
+#idle{position:sticky;top:var(--top-h);z-index:29;background:var(--warn-soft);border-bottom:2px solid var(--warn);padding:10px 14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:center}
+@media (min-width:900px){#idle{grid-column:1/-1}}
+.center{text-align:center}
+.empty{text-align:center;padding:28px 12px;color:var(--muted);display:grid;gap:10px;justify-items:center}
+.empty svg{width:42px;height:42px;color:var(--accent)}
+.loading{padding:30px;text-align:center;color:var(--muted)}
+.hero{display:grid;gap:8px;margin-bottom:6px}
+.lang-btn{min-height:44px;padding:6px 12px;border-radius:10px;border:2px solid var(--line);background:var(--surface);font-weight:600;cursor:pointer}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px}
+.kv dt{color:var(--muted)}.kv dd{margin:0;font-weight:600}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body class="auth">
+<a class="skip" href="#main" id="skip">跳到主要內容</a>
+<header id="top" role="banner"></header>
+<div id="idle" role="alert" hidden></div>
+<main id="main" tabindex="-1" aria-live="off"></main>
+<nav id="tabs" aria-label="主選單" hidden></nav>
+<div id="toast" role="status" aria-live="polite"></div>
+<noscript><p style="padding:20px">這個應用程式需要啟用 JavaScript。 This app needs JavaScript.</p></noscript>
+<script>
+'use strict';
+/* ====================================================================== i18n */
+const T = {
+zh: {
+ 'app.name':'健康管理助理','nav.chat':'助理','nav.records':'紀錄','nav.reminders':'提醒','nav.trust':'授權與紀錄','nav.settings':'設定','nav.label':'主選單',
+ 'skip':'跳到主要內容','lang.switch':'English','lang.name':'語言','lock':'鎖定','lock.now':'立即鎖定','close':'關閉','cancel':'取消','ok':'好','save':'儲存','delete':'刪除','edit':'修改','add':'新增','back':'返回','retry':'重試','loading':'載入中…',
+ 'boot.fail':'無法連線到本機服務。請確認應用程式仍在執行，然後重試。',
+ 'setup.title':'歡迎使用','setup.lead':'先花一分鐘了解這個助理能做什麼、不能做什麼，再為你的資料設定一組密碼。',
+ 'setup.is.h':'它可以幫你','setup.is.1':'整理你自己的健康紀錄（報告、藥單、看診紀錄）','setup.is.2':'用白話說明報告上的內容','setup.is.3':'記錄用藥、回診與提醒','setup.is.4':'幫你準備看診時想問醫師的問題',
+ 'setup.not.h':'它不會','setup.not.1':'診斷疾病，或取代醫師','setup.not.2':'建議你換藥、停藥或改變劑量','setup.not.3':'在緊急狀況時救你。有緊急狀況請打 119',
+ 'setup.consent.h':'使用說明與同意','setup.consent.ver':'同意書版本：{v}','setup.consent.chk':'我已閱讀並了解上面的說明，同意使用。',
+ 'setup.pw.h':'設定你的密碼','setup.pw.warn.h':'請記住這組密碼','setup.pw.warn':'密碼忘記了就無法找回，任何人（包括醫院和我們）都沒辦法替你打開資料。建議寫在紙上，放在安全的地方。',
+ 'pw.label':'密碼','pw.confirm':'再輸入一次密碼','pw.show':'顯示','pw.hide':'隱藏','pw.hint':'至少 {n} 個字元。用幾個詞連在一起，例如四個不相關的詞，既好記也不容易被猜到。',
+ 'str.label':'密碼強度：','str.0':'太弱','str.1':'普通','str.2':'不錯','str.3':'很好',
+ 'setup.go':'建立我的保管庫','setup.busy':'建立中…',
+ 'setup.e.consent':'請先勾選同意。','setup.e.short':'密碼至少需要 {n} 個字元。','setup.e.match':'兩次輸入的密碼不一樣。',
+ 'unlock.title':'歡迎回來','unlock.lead':'輸入你的密碼來打開保管庫。','unlock.go':'解鎖','unlock.busy':'解鎖中…','unlock.forgot':'忘記密碼無法找回。如果你有匯出的備份，也需要原來的密碼才能開啟。',
+ 'unlock.expired':'為了保護你的資料，已經自動鎖定。請重新輸入密碼。','unlock.locked':'已鎖定。','unlock.deleted':'所有資料已刪除。',
+ 'idle.warn':'為了保護你的資料，{n} 秒後會自動鎖定。','idle.keep':'繼續使用',
+ 'chat.title':'助理','chat.ph':'輸入你的問題…','chat.send':'送出','chat.label':'輸入你的問題','chat.thinking':'助理正在整理答案…',
+ 'chat.disclaimer':'助理不是醫師，內容不是醫療建議。','chat.start.h':'你可以這樣問','chat.start.lead':'助理只會根據你保管庫裡的紀錄回答。點選下面的問題就能開始。',
+ 'chat.s1':'幫我用白話解釋最近的抽血報告','chat.s2':'我現在有哪些藥？','chat.s3':'下次回診我該問醫師什麼？','chat.s4':'幫我整理最近的紀錄重點',
+ 'chat.you':'你','chat.bot':'助理','chat.cites':'依據的紀錄','chat.gone':'已刪除的紀錄','chat.acts':'{n} 筆活動紀錄','chat.clear':'清除對話',
+ 'chat.fail':'送出失敗，你的問題還在輸入框裡，可以再試一次。','chat.retry':'再試一次',
+ 'urgent.h':'這可能是緊急狀況','urgent.fallback':'如果有緊急狀況，請立即撥打 119 或前往急診。','urgent.call':'撥打 119',
+ 'decl.h':'這個問題需要由醫師判斷','decl.p':'助理不能建議你要不要換藥、停藥或調整劑量，因為這需要醫師了解你的整體狀況。助理可以幫你把問題記下來，帶去問醫師。','decl.add':'把這個問題加入看診提問清單','decl.added':'已加入看診提問清單',
+ 'nomodel.h':'這次沒有使用任何模型','nomodel.p':'目前沒有可用的院內模型，所以你的紀錄沒有被讀取，也沒有被送到任何地方。',
+ 'change.h':'助理想幫你做這件事','change.note':'確認之前不會儲存任何東西。','change.yes':'確認儲存','change.no':'取消','change.saved':'已儲存','change.cancelled':'已取消，沒有儲存','change.fail':'沒有儲存成功',
+ 'route.local.hospital':'由院內模型處理','route.local.company':'由你本機上的模型處理','route.private':'由已確認不留存、不訓練的合作服務處理','route.cloud':'由外部雲端服務處理',
+ 'route.none':'沒有任何內容離開這裡','route.unknown':'處理位置：{r}',
+ 'rec.title':'紀錄','rec.search':'搜尋紀錄標題','rec.search.l':'搜尋紀錄標題','rec.add':'新增紀錄','rec.none.h':'還沒有任何紀錄','rec.none.p':'把檢驗報告、藥單或看診紀錄貼上或匯入，助理才能幫你整理。','rec.nomatch':'找不到標題符合的紀錄。要搜尋內容，請到「助理」直接問。',
+ 'rec.count':'共 {n} 筆','rec.month':'{y} 年 {m} 月','rec.nodate':'未註明日期','rec.src':'來源','rec.date':'日期','rec.kind':'種類','rec.added':'加入於 {d}','rec.explain':'請助理用白話說明','rec.explain.q':'請用白話說明這份紀錄：「{t}」','rec.del':'刪除這筆紀錄',
+ 'rec.del.h':'刪除這筆紀錄？','rec.del.p':'「{t}」會從你的保管庫永久刪除，無法復原。','rec.deleted':'已刪除','rec.gone':'找不到這筆紀錄。',
+ 'add.title':'新增紀錄','add.paste':'貼上文字','add.file':'匯入檔案','add.k':'種類','add.t':'標題','add.t.ph':'例如：十月抽血報告','add.d':'日期（可不填）','add.s':'來源（可不填）','add.s.ph':'例如：示範醫院 檢驗科','add.x':'內容','add.x.ph':'把報告文字貼在這裡','add.go':'儲存這筆紀錄',
+ 'add.e.t':'請輸入標題。','add.e.x':'請貼上內容。','add.saved':'已儲存',
+ 'imp.pick':'選擇檔案','imp.types':'支援 txt、md、pdf、json、csv，單一檔案不超過 {mb} MB。','imp.local':'匯入時不會把內容送到任何模型。','imp.big':'這個檔案太大了。','imp.type':'不支援這種檔案格式。','imp.prev.h':'將要加入 {n} 筆紀錄','imp.prev.p':'請確認內容。按「加入」之後才會儲存。','imp.go':'加入這 {n} 筆','imp.chars':'{n} 字','imp.done':'已加入 {n} 筆紀錄','imp.other':'選別的檔案',
+ 'kind.lab':'檢驗報告','kind.report':'報告','kind.imaging_report':'影像報告','kind.pathology_report':'病理報告','kind.medication_list':'藥單','kind.visit':'看診紀錄','kind.note':'筆記','kind.document':'文件','kind.measurement':'量測紀錄',
+ 'rem.title':'提醒','rem.next.h':'接下來','rem.next.none':'目前沒有即將到來的回診或提醒。','rem.today.h':'每日用藥','rem.med.h':'藥物','rem.appt.h':'回診與檢查','rem.rem.h':'提醒事項','rem.q.h':'看診提問清單',
+ 'rem.med.note':'這裡只會記下你輸入的內容。助理不會檢查劑量是否正確，用藥請依醫師和藥師的指示。','rem.none':'還沒有項目。','rem.q.add':'新增問題','rem.q.ph':'你想問醫師的問題','rem.q.del':'移除這個問題','rem.q.none':'還沒有問題。你可以在助理對話裡把問題加進來。',
+ 'rem.add.medication':'新增藥物','rem.add.appointment':'新增回診','rem.add.reminder':'新增提醒','rem.edit.medication':'修改藥物','rem.edit.appointment':'修改回診','rem.edit.reminder':'修改提醒',
+ 'f.medication.name':'藥名','f.medication.dose':'怎麼吃（例如：每天早上 1 顆）','f.medication.schedule':'時間（例如：08:00）','f.medication.note':'備註（可不填）',
+ 'f.appointment.title':'要去哪裡／做什麼','f.appointment.date':'日期','f.appointment.time':'時間','f.appointment.place':'地點（可不填）','f.appointment.note':'備註（可不填）',
+ 'f.reminder.title':'提醒內容','f.reminder.date':'日期（可不填）','f.reminder.time':'時間（可不填）','f.reminder.note':'備註（可不填）',
+ 'rem.del.h':'刪除這一項？','rem.del.p':'「{t}」會被刪除。','rem.e.req':'這一欄一定要填。','rem.saved':'已儲存','rem.deleted':'已刪除',
+ 'day.today':'今天','day.tomorrow':'明天','day.in':'{n} 天後','day.past':'已過期',
+ 'trust.title':'我的授權與紀錄','trust.lead':'助理做任何事之前，都需要你的授權；做了什麼，也都會留下紀錄讓你查看。',
+ 'man.h':'助理被允許做的事','man.none':'目前助理沒有任何授權，所以它不能讀取你的紀錄或回答問題。','man.default':'恢復預設授權','man.default.done':'已恢復預設授權','man.revoke':'撤銷這項授權','man.rev.h':'撤銷這項授權？','man.rev.p':'撤銷後，助理就不能再做這些事。你隨時可以按「恢復預設授權」重新開啟。','man.revoked':'已撤銷',
+ 'man.allowed':'允許助理：','man.kinds.all':'適用於所有種類的紀錄','man.kinds':'只適用於：{k}','man.noexp':'沒有到期日，你可以隨時撤銷','man.exp':'到期日：{d}','man.st.active':'有效','man.st.revoked':'已撤銷','man.st.expired':'已到期','man.old':'已撤銷或到期的授權（{n}）',
+ 'scope.vault.read':'讀取你的紀錄來回答問題','scope.vault.write':'依你的指示新增或刪除紀錄','scope.items.write':'新增或修改用藥、回診與提醒','scope.llm.local.hospital':'把紀錄內容交給院內模型處理','scope.llm.local.company':'把紀錄內容交給你本機上的模型處理','scope.llm.private':'把紀錄內容交給已確認不留存、不訓練的合作服務','scope.llm.cloud':'把紀錄內容送到外部雲端服務','scope.draft.letter':'草擬（不會寄出）病歷申請信或看診提問清單','scope.exchange.view':'查看研究邀請','scope.exchange.grant':'授權研究單位使用你的資料',
+ 'feed.h':'活動紀錄','feed.lead':'這裡列出助理和你做過的每一件事，最新的在最上面。','feed.all':'全部','feed.left':'只看有送出內容的','feed.none':'還沒有活動紀錄。','feed.noleft':'沒有任何內容離開過本機。','feed.more':'載入更早的紀錄',
+ 'verify.go':'驗證紀錄完整性','verify.busy':'檢查中…','verify.ok':'已檢查 {n} 筆，沒有發現被改動。','verify.bad':'發現問題：第 {s} 筆之後的紀錄對不起來。紀錄可能被改動過，請通知試辦窗口。','verify.bad0':'發現問題：紀錄對不起來。紀錄可能被改動過，請通知試辦窗口。','verify.fail':'無法完成檢查。',
+ 'actor.user':'你','actor.bot':'助理','actor.system':'系統',
+ 'act.vault.read':'讀取了 {n} 筆紀錄來回答你的問題','act.llm.complete':'請模型整理答案','act.llm.refused':'沒有可用的模型，因此沒有讀取紀錄','act.mandate.grant':'你授權了助理一項權限','act.mandate.revoke':'你撤銷了助理的一項權限','act.items.write':'更新了用藥、回診或提醒','act.vault.write':'新增或刪除了紀錄','act.consent.accept':'你同意了使用說明','act.vault.export':'你匯出了加密備份','act.vault.passphrase':'你更改了密碼','act.safety.urgent':'偵測到可能的緊急狀況，已提醒你求助','act.safety.declined':'婉拒了醫療建議類的問題','act.draft.letter':'草擬了一份文件',
+ 'eg.none':'沒有任何內容離開這裡','eg.local.hospital':'只送到院內模型，沒有離開本院','eg.local.company':'只送到你本機上的模型','eg.private':'送到外部合作服務（已確認不留存、不訓練）','eg.cloud':'送到外部雲端服務','eg.unknown':'送出位置不明',
+ 'rc.model':'由 {m} 處理','rc.note':'備註：{d}','records.n':'{n} 筆紀錄',
+ 'set.title':'設定','set.lang.h':'語言','set.idle.h':'自動鎖定','set.idle.p':'一段時間沒有操作，就會自動鎖定保管庫。','set.idle.l':'幾分鐘後自動鎖定','set.idle.n':'{n} 分鐘','set.idle.saved':'已更新',
+ 'set.pw.h':'更改密碼','set.pw.old':'目前的密碼','set.pw.new':'新密碼','set.pw.new2':'再輸入一次新密碼','set.pw.go':'更改密碼','set.pw.done':'密碼已更改。請記住新密碼，舊密碼將無法再使用。','set.pw.warn':'新密碼也無法找回。',
+ 'set.exp.h':'匯出我的資料','set.exp.p':'下載一份仍然加密的備份檔。要換到另一個安裝版本時，把這個檔案匯入新的安裝，再用同一組密碼打開。任何人拿到檔案，沒有密碼也看不到內容。','set.exp.go':'下載加密備份','set.exp.done':'已下載備份檔',
+ 'set.lock.h':'鎖定','set.lock.p':'離開之前可以先鎖上，下次需要輸入密碼。',
+ 'set.del.h':'刪除全部資料','set.del.p':'永久刪除保管庫裡所有紀錄、用藥提醒與授權。無法復原。若想保留，請先匯出備份。','set.del.go':'刪除全部資料…','set.del.1.h':'確定要刪除全部資料嗎？','set.del.1.p':'所有紀錄、用藥、回診與提醒都會永久消失。這個動作無法復原。','set.del.1.go':'繼續','set.del.2.h':'最後確認','set.del.2.p':'請輸入你的密碼，並勾選確認，才會刪除。','set.del.2.chk':'我了解資料會永久消失','set.del.2.go':'永久刪除','set.del.fail':'沒有刪除。請確認密碼是否正確。',
+ 'about.h':'關於','about.tenant':'提供單位','about.issuer.hospital':'醫院','about.issuer.company':'公司','about.pilot':'試辦計畫編號','about.contact':'聯絡窗口','about.consent':'同意書版本','about.version':'程式版本','about.none':'（尚未填寫）','about.note':'這是試辦中的服務。助理不是醫師，內容不是醫療建議。',
+ 'err.network':'無法連線到本機服務。請確認應用程式仍在執行。','err.generic':'發生問題，請稍後再試。','err.internal':'發生問題，請稍後再試。','err.locked':'已鎖定，請重新解鎖。','err.unlock_failed':'無法解鎖。請確認密碼是否正確。','err.rate_limited':'嘗試次數太多，請在 {n} 秒後再試。','err.csrf':'操作未被接受，請重新整理頁面。','err.cross_site':'操作未被接受。','err.invalid':'有些資料不正確，請檢查後再試。','err.too_large':'內容太大了。','err.not_found':'找不到這個項目。','err.weak_passphrase':'密碼太短。','err.consent_required':'需要同意最新的使用說明。請重新整理頁面。','err.vault_exists':'保管庫已經存在。','err.import_failed':'這個檔案無法讀取，或裡面沒有可加入的內容。','err.unsupported_media_type':'不支援這種檔案格式。','err.not_allowed':'助理沒有這項授權。','err.not_supported':'這個版本還不支援這項功能。','err.forbidden_host':'這個網址不被允許。','err.timeout':'連線逾時，請再試一次。',
+ 'det.refused: no local model':'沒有可用的院內模型','unit.mb':'MB'
+},
+en: {
+ 'app.name':'Health Assistant','nav.chat':'Assistant','nav.records':'Records','nav.reminders':'Reminders','nav.trust':'Trust','nav.settings':'Settings','nav.label':'Main menu',
+ 'skip':'Skip to main content','lang.switch':'中文','lang.name':'Language','lock':'Lock','lock.now':'Lock now','close':'Close','cancel':'Cancel','ok':'OK','save':'Save','delete':'Delete','edit':'Edit','add':'Add','back':'Back','retry':'Retry','loading':'Loading…',
+ 'boot.fail':'Cannot reach the local service. Check that the app is still running, then retry.',
+ 'setup.title':'Welcome','setup.lead':'Take a minute to see what this assistant can and cannot do, then choose a passphrase for your data.',
+ 'setup.is.h':'It can help you','setup.is.1':'Keep your own health records together (reports, medicine lists, visit notes)','setup.is.2':'Explain what a report says in plain language','setup.is.3':'Keep track of medicines, appointments and reminders','setup.is.4':'Prepare the questions you want to ask your doctor',
+ 'setup.not.h':'It will not','setup.not.1':'Diagnose illness or replace your doctor','setup.not.2':'Tell you to change, stop or adjust a medicine','setup.not.3':'Help in an emergency. In an emergency call 119',
+ 'setup.consent.h':'How this works, and your consent','setup.consent.ver':'Consent version: {v}','setup.consent.chk':'I have read and understood the above and agree to use the assistant.',
+ 'setup.pw.h':'Choose your passphrase','setup.pw.warn.h':'Please remember this passphrase','setup.pw.warn':'If you forget it, it cannot be recovered. Nobody, including the hospital and us, can open your data for you. Write it on paper and keep it somewhere safe.',
+ 'pw.label':'Passphrase','pw.confirm':'Type the passphrase again','pw.show':'Show','pw.hide':'Hide','pw.hint':'At least {n} characters. A few unrelated words strung together is easy to remember and hard to guess.',
+ 'str.label':'Strength: ','str.0':'Too weak','str.1':'Fair','str.2':'Good','str.3':'Very good',
+ 'setup.go':'Create my vault','setup.busy':'Creating…',
+ 'setup.e.consent':'Please tick the box to agree first.','setup.e.short':'The passphrase needs at least {n} characters.','setup.e.match':'The two passphrases are not the same.',
+ 'unlock.title':'Welcome back','unlock.lead':'Enter your passphrase to open your vault.','unlock.go':'Unlock','unlock.busy':'Unlocking…','unlock.forgot':'A forgotten passphrase cannot be recovered. A backup file also needs the original passphrase.',
+ 'unlock.expired':'To protect your data it was locked automatically. Please enter your passphrase again.','unlock.locked':'Locked.','unlock.deleted':'All data has been deleted.',
+ 'idle.warn':'To protect your data, this will lock in {n} seconds.','idle.keep':'Keep using',
+ 'chat.title':'Assistant','chat.ph':'Type your question…','chat.send':'Send','chat.label':'Type your question','chat.thinking':'The assistant is working on it…',
+ 'chat.disclaimer':'The assistant is not a doctor. This is not medical advice.','chat.start.h':'You could ask','chat.start.lead':'The assistant only answers from the records in your vault. Tap a question to start.',
+ 'chat.s1':'Explain my latest blood test in plain language','chat.s2':'Which medicines am I taking now?','chat.s3':'What should I ask my doctor at the next visit?','chat.s4':'Summarise my recent records',
+ 'chat.you':'You','chat.bot':'Assistant','chat.cites':'Records used','chat.gone':'Deleted record','chat.acts':'Activity log ({n})','chat.clear':'Clear conversation',
+ 'chat.fail':'Sending failed. Your question is still in the box, so you can try again.','chat.retry':'Try again',
+ 'urgent.h':'This may be an emergency','urgent.fallback':'In an emergency call 119 or go to the emergency room.','urgent.call':'Call 119',
+ 'decl.h':'This is a question for your doctor','decl.p':'The assistant cannot advise whether to change, stop or adjust a medicine, because that depends on your whole situation. It can write the question down so you can take it to your doctor.','decl.add':'Add this question to my visit questions','decl.added':'Added to your visit questions',
+ 'nomodel.h':'No model was used this time','nomodel.p':'No hospital-run model is available right now, so your records were not read and nothing was sent anywhere.',
+ 'change.h':'The assistant would like to do this','change.note':'Nothing is saved until you confirm.','change.yes':'Confirm and save','change.no':'Cancel','change.saved':'Saved','change.cancelled':'Cancelled, nothing was saved','change.fail':'It could not be saved',
+ 'route.local.hospital':'Processed by the hospital’s own model','route.local.company':'Processed by a model on your own device','route.private':'Processed by a partner service confirmed not to keep or train on it','route.cloud':'Processed by an outside cloud service',
+ 'route.none':'Nothing left this device','route.unknown':'Processed at: {r}',
+ 'rec.title':'Records','rec.search':'Search record titles','rec.search.l':'Search record titles','rec.add':'Add a record','rec.none.h':'No records yet','rec.none.p':'Paste or import a lab report, medicine list or visit note so the assistant can help you with it.','rec.nomatch':'No record title matches. To search inside records, ask the assistant.',
+ 'rec.count':'{n} records','rec.month':'{m}/{y}','rec.nodate':'No date','rec.src':'Source','rec.date':'Date','rec.kind':'Type','rec.added':'Added {d}','rec.explain':'Ask the assistant to explain','rec.explain.q':'Please explain this record in plain language: “{t}”','rec.del':'Delete this record',
+ 'rec.del.h':'Delete this record?','rec.del.p':'“{t}” will be permanently deleted from your vault. This cannot be undone.','rec.deleted':'Deleted','rec.gone':'This record was not found.',
+ 'add.title':'Add a record','add.paste':'Paste text','add.file':'Import a file','add.k':'Type','add.t':'Title','add.t.ph':'e.g. October blood test','add.d':'Date (optional)','add.s':'Source (optional)','add.s.ph':'e.g. Demo Hospital Laboratory','add.x':'Content','add.x.ph':'Paste the report text here','add.go':'Save this record',
+ 'add.e.t':'Please enter a title.','add.e.x':'Please paste some content.','add.saved':'Saved',
+ 'imp.pick':'Choose a file','imp.types':'txt, md, pdf, json and csv are supported, up to {mb} MB per file.','imp.local':'Importing never sends the content to any model.','imp.big':'This file is too large.','imp.type':'This file type is not supported.','imp.prev.h':'{n} records will be added','imp.prev.p':'Please check. Nothing is saved until you press Add.','imp.go':'Add these {n}','imp.chars':'{n} characters','imp.done':'{n} records added','imp.other':'Choose another file',
+ 'kind.lab':'Lab report','kind.report':'Report','kind.imaging_report':'Imaging report','kind.pathology_report':'Pathology report','kind.medication_list':'Medicine list','kind.visit':'Visit note','kind.note':'Note','kind.document':'Document','kind.measurement':'Measurements',
+ 'rem.title':'Reminders','rem.next.h':'Coming up','rem.next.none':'No upcoming appointments or reminders.','rem.today.h':'Daily medicines','rem.med.h':'Medicines','rem.appt.h':'Appointments and tests','rem.rem.h':'Reminders','rem.q.h':'Questions for my next visit',
+ 'rem.med.note':'This only keeps what you type. The assistant does not check doses. Take medicines as your doctor and pharmacist tell you.','rem.none':'Nothing here yet.','rem.q.add':'Add a question','rem.q.ph':'A question for your doctor','rem.q.del':'Remove this question','rem.q.none':'No questions yet. You can add one from the assistant chat.',
+ 'rem.add.medication':'Add medicine','rem.add.appointment':'Add appointment','rem.add.reminder':'Add reminder','rem.edit.medication':'Edit medicine','rem.edit.appointment':'Edit appointment','rem.edit.reminder':'Edit reminder',
+ 'f.medication.name':'Medicine name','f.medication.dose':'How you take it (e.g. 1 tablet every morning)','f.medication.schedule':'Time (e.g. 08:00)','f.medication.note':'Note (optional)',
+ 'f.appointment.title':'Where or what for','f.appointment.date':'Date','f.appointment.time':'Time','f.appointment.place':'Place (optional)','f.appointment.note':'Note (optional)',
+ 'f.reminder.title':'Reminder','f.reminder.date':'Date (optional)','f.reminder.time':'Time (optional)','f.reminder.note':'Note (optional)',
+ 'rem.del.h':'Delete this?','rem.del.p':'“{t}” will be deleted.','rem.e.req':'This field is required.','rem.saved':'Saved','rem.deleted':'Deleted',
+ 'day.today':'Today','day.tomorrow':'Tomorrow','day.in':'In {n} days','day.past':'Past',
+ 'trust.title':'My permissions and activity','trust.lead':'The assistant needs your permission for everything it does, and everything it does is written down here for you to read.',
+ 'man.h':'What the assistant is allowed to do','man.none':'The assistant has no permissions right now, so it cannot read your records or answer questions.','man.default':'Restore default permissions','man.default.done':'Default permissions restored','man.revoke':'Revoke this permission','man.rev.h':'Revoke this permission?','man.rev.p':'After this the assistant can no longer do these things. You can turn them back on with “Restore default permissions”.','man.revoked':'Revoked',
+ 'man.allowed':'Allows the assistant to:','man.kinds.all':'Applies to every type of record','man.kinds':'Only applies to: {k}','man.noexp':'No expiry; you can revoke it any time','man.exp':'Expires: {d}','man.st.active':'Active','man.st.revoked':'Revoked','man.st.expired':'Expired','man.old':'Revoked or expired permissions ({n})',
+ 'scope.vault.read':'Read your records to answer questions','scope.vault.write':'Add or delete records when you ask','scope.items.write':'Add or change medicines, appointments and reminders','scope.llm.local.hospital':'Give record content to the hospital’s own model','scope.llm.local.company':'Give record content to a model on your own device','scope.llm.private':'Give record content to a partner service confirmed not to keep or train on it','scope.llm.cloud':'Send record content to an outside cloud service','scope.draft.letter':'Draft (never send) a records request or a list of questions','scope.exchange.view':'See research invitations','scope.exchange.grant':'Let a research body use your data',
+ 'feed.h':'Activity','feed.lead':'Everything you and the assistant did, newest first.','feed.all':'Everything','feed.left':'Only where content was sent out','feed.none':'No activity yet.','feed.noleft':'Nothing has ever left this device.','feed.more':'Load older entries',
+ 'verify.go':'Check the log is intact','verify.busy':'Checking…','verify.ok':'Checked {n} entries. Nothing has been changed.','verify.bad':'Problem found: entries after number {s} do not match. The log may have been altered. Please tell the pilot contact.','verify.bad0':'Problem found: the log does not match. It may have been altered. Please tell the pilot contact.','verify.fail':'The check could not finish.',
+ 'actor.user':'You','actor.bot':'Assistant','actor.system':'System',
+ 'act.vault.read':'Read {n} records to answer your question','act.llm.complete':'Asked the model to write the answer','act.llm.refused':'No model was available, so no records were read','act.mandate.grant':'You gave the assistant a permission','act.mandate.revoke':'You revoked a permission','act.items.write':'Updated medicines, appointments or reminders','act.vault.write':'Added or deleted records','act.consent.accept':'You accepted how this works','act.vault.export':'You exported an encrypted backup','act.vault.passphrase':'You changed your passphrase','act.safety.urgent':'Noticed a possible emergency and told you to get help','act.safety.declined':'Declined a question asking for medical advice','act.draft.letter':'Drafted a document',
+ 'eg.none':'Nothing left this device','eg.local.hospital':'Sent only to the hospital’s own model; nothing left the hospital','eg.local.company':'Sent only to a model on your own device','eg.private':'Sent to a partner service (confirmed not to keep or train on it)','eg.cloud':'Sent to an outside cloud service','eg.unknown':'Where it went is unknown',
+ 'rc.model':'Processed by {m}','rc.note':'Note: {d}','records.n':'{n} records',
+ 'set.title':'Settings','set.lang.h':'Language','set.idle.h':'Auto-lock','set.idle.p':'The vault locks itself after a while with no activity.','set.idle.l':'Lock after how many minutes','set.idle.n':'{n} minutes','set.idle.saved':'Updated',
+ 'set.pw.h':'Change passphrase','set.pw.old':'Current passphrase','set.pw.new':'New passphrase','set.pw.new2':'Type the new passphrase again','set.pw.go':'Change passphrase','set.pw.done':'Passphrase changed. Remember the new one; the old one no longer works.','set.pw.warn':'The new passphrase cannot be recovered either.',
+ 'set.exp.h':'Export my data','set.exp.p':'Download a backup that is still encrypted. To move to another installation, import this file there and open it with the same passphrase. Without the passphrase nobody can read it.','set.exp.go':'Download encrypted backup','set.exp.done':'Backup downloaded',
+ 'set.lock.h':'Lock','set.lock.p':'Lock before you walk away. Next time you will need your passphrase.',
+ 'set.del.h':'Delete everything','set.del.p':'Permanently deletes all records, medicines, reminders and permissions in the vault. This cannot be undone. Export a backup first if you want to keep anything.','set.del.go':'Delete everything…','set.del.1.h':'Delete everything?','set.del.1.p':'All records, medicines, appointments and reminders will be gone for good. This cannot be undone.','set.del.1.go':'Continue','set.del.2.h':'Last check','set.del.2.p':'Enter your passphrase and tick the box to delete.','set.del.2.chk':'I understand the data will be gone for good','set.del.2.go':'Delete permanently','set.del.fail':'Nothing was deleted. Check the passphrase.',
+ 'about.h':'About','about.tenant':'Provided by','about.issuer.hospital':'Hospital','about.issuer.company':'Company','about.pilot':'Pilot reference','about.contact':'Contact','about.consent':'Consent version','about.version':'App version','about.none':'(not filled in)','about.note':'This is a pilot service. The assistant is not a doctor and this is not medical advice.',
+ 'err.network':'Cannot reach the local service. Check that the app is still running.','err.generic':'Something went wrong. Please try again.','err.internal':'Something went wrong. Please try again.','err.locked':'Locked. Please unlock again.','err.unlock_failed':'Could not unlock. Check the passphrase.','err.rate_limited':'Too many attempts. Please wait {n} seconds.','err.csrf':'That was not accepted. Please reload the page.','err.cross_site':'That was not accepted.','err.invalid':'Some information is not valid. Please check and try again.','err.too_large':'That is too large.','err.not_found':'That could not be found.','err.weak_passphrase':'The passphrase is too short.','err.consent_required':'The latest consent text must be accepted. Please reload the page.','err.vault_exists':'A vault already exists.','err.import_failed':'This file could not be read, or has nothing to add.','err.unsupported_media_type':'This file type is not supported.','err.not_allowed':'The assistant does not have that permission.','err.not_supported':'This version does not support that yet.','err.forbidden_host':'This address is not allowed.','err.timeout':'The connection timed out. Please try again.',
+ 'det.refused: no local model':'No hospital-run model was available','unit.mb':'MB'
+}};
+
+/* ====================================================================== state */
+const S = { lang:'zh', st:null, csrf:null, unlocked:false, notice:'', chat:[], records:null, items:null, mandates:null, receipts:[], receiptsEnd:false, filterLeft:false, deadline:0, lastTouch:0, chatDraft:'', busy:false };
+try { const l = localStorage.getItem('muse.lang'); if (l === 'en' || l === 'zh') S.lang = l; } catch (e) {}
+
+function t(key, vars) {
+  let s = (T[S.lang] && T[S.lang][key]) || T.zh[key] || key;
+  if (vars) for (const k of Object.keys(vars)) s = s.split('{' + k + '}').join(String(vars[k]));
+  return s;
+}
+const loc = () => (S.lang === 'zh' ? 'zh-TW' : 'en');
+
+/* ====================================================================== dom helpers (text nodes only) */
+const NS = 'http://www.w3.org/2000/svg';
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  if (attrs) for (const k of Object.keys(attrs)) {
+    const v = attrs[k];
+    if (v === null || v === undefined || v === false) continue;
+    if (k === 'class') el.className = v;
+    else if (k === 'text') el.textContent = v;
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (k === 'value' || k === 'checked' || k === 'disabled' || k === 'hidden' || k === 'open') el[k] = v;
+    else el.setAttribute(k, v === true ? '' : String(v));
+  }
+  for (const kid of kids.flat(Infinity)) {
+    if (kid === null || kid === undefined || kid === false) continue;
+    el.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+  }
+  return el;
+}
+const ICONS = {
+  chat:['M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'],
+  records:['M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z','M14 2v6h6','M8 13h8','M8 17h8'],
+  bell:['M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9','M13.7 21a2 2 0 0 1-3.4 0'],
+  shield:['M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'],
+  shieldcheck:['M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z','M9 12l2 2 4-4'],
+  gear:['M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z','M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z'],
+  lab:['M9 3h6','M10 3v6L4.5 19a1.5 1.5 0 0 0 1.3 2.2h12.4a1.5 1.5 0 0 0 1.3-2.2L14 9V3','M7.5 15h9'],
+  imaging:['M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z','M8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z','M21 15l-5-5L5 21'],
+  pathology:['M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z','M12 3v3M12 18v3M3 12h3M18 12h3'],
+  pill:['M10.5 20.5l-7-7a5 5 0 0 1 7-7l7 7a5 5 0 0 1-7 7z','M8.5 8.5l7 7'],
+  visit:['M4 5h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z','M16 3v4M8 3v4M3 10h18','M9 16l2 2 4-4'],
+  note:['M12 20h9','M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z'],
+  doc:['M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z','M14 2v6h6'],
+  activity:['M22 12h-4l-3 9L9 3l-3 9H2'],
+  lock:['M5 11h14a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1z','M8 11V7a4 4 0 0 1 8 0v4'],
+  trash:['M3 6h18','M8 6V4h8v2','M19 6l-1 14H6L5 6','M10 11v6M14 11v6'],
+  plus:['M12 5v14M5 12h14'], search:['M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z','M21 21l-4.3-4.3'],
+  check:['M20 6L9 17l-5-5'], x:['M18 6L6 18M6 6l12 12'],
+  alert:['M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z','M12 9v4M12 17h.01'],
+  server:['M4 4h16a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z','M4 14h16a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1z','M7 7h.01M7 17h.01'],
+  cloud:['M18 10h-1.3A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z'],
+  globe:['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z','M3 12h18','M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z'],
+  eye:['M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z','M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z'],
+  eyeoff:['M17.9 17.9A10.9 10.9 0 0 1 12 20C5 20 1 12 1 12a18.5 18.5 0 0 1 5.1-5.9','M9.9 4.2A9 9 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.2 3.2','M1 1l22 22','M14.1 14.1a3 3 0 1 1-4.2-4.2'],
+  send:['M22 2L11 13','M22 2l-7 20-4-9-9-4z'],
+  download:['M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4','M7 10l5 5 5-5','M12 15V3'],
+  info:['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z','M12 16v-4M12 8h.01'],
+  clock:['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z','M12 7v5l3 2'],
+  back:['M19 12H5M12 19l-7-7 7-7'],
+  calendar:['M4 5h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z','M16 3v4M8 3v4M3 10h18'],
+  list:['M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01'],
+  phone:['M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z']
+};
+function icon(name) {
+  const s = document.createElementNS(NS, 'svg');
+  s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('class', 'i'); s.setAttribute('aria-hidden', 'true'); s.setAttribute('focusable', 'false');
+  for (const d of ICONS[name] || []) { const p = document.createElementNS(NS, 'path'); p.setAttribute('d', d); s.append(p); }
+  return s;
+}
+const KIND_ICON = { lab:'lab', report:'records', imaging_report:'imaging', pathology_report:'pathology', medication_list:'pill', visit:'visit', note:'note', document:'doc', measurement:'activity' };
+const kindIcon = k => icon(KIND_ICON[k] || 'doc');
+const kindLabel = k => (T[S.lang]['kind.' + k] ? t('kind.' + k) : k);
+const $main = () => document.getElementById('main');
+
+let toastTimer = 0;
+function toast(msg) {
+  const box = document.getElementById('toast'); box.replaceChildren(h('div', { text: msg }));
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => box.replaceChildren(), 3500);
+}
+
+/* ====================================================================== api */
+async function api(method, path, body) {
+  const headers = {};
+  if (method !== 'GET') headers['Content-Type'] = 'application/json';
+  if (S.csrf) headers['X-CSRF-Token'] = S.csrf;
+  let res;
+  try {
+    res = await fetch(path, { method, headers, credentials: 'same-origin', cache: 'no-store', body: method === 'GET' ? undefined : JSON.stringify(body || {}) });
+  } catch (e) { return { ok:false, status:0, error:'network', data:null }; }
+  let data = null;
+  try { data = await res.json(); } catch (e) { /* not json */ }
+  const r = { ok: res.ok, status: res.status, data, error: data && data.error, retry: data && data.retry_after, res };
+  if (res.status === 401 && r.error === 'locked' && S.unlocked) onLocked('unlock.expired');
+  return r;
+}
+function errText(r) {
+  const code = r && r.error ? r.error : 'generic';
+  const key = 'err.' + code;
+  return T[S.lang][key] ? t(key, { n: r.retry || 0 }) : t('err.generic');
+}
+function onLocked(noticeKey) {
+  S.unlocked = false; S.csrf = null; S.notice = noticeKey || ''; S.chat = []; S.records = null; S.items = null; S.mandates = null; S.receipts = []; S.chatDraft = '';
+  document.getElementById('idle').hidden = true;
+  if (document.querySelector('dialog')) document.querySelectorAll('dialog').forEach(d => { d.close(); d.remove(); });
+  render(true);
+}
+async function loadState() {
+  const r = await api('GET', '/api/state');
+  if (!r.ok || !r.data) return false;
+  S.st = r.data; S.unlocked = !!r.data.unlocked; S.csrf = r.data.csrf || null;
+  if (S.unlocked) S.deadline = Date.now() + r.data.idle_remaining * 1000;
+  return true;
+}
+
+/* ====================================================================== dialogs */
+function dialog(build, labelText) {
+  return new Promise(resolve => {
+    const prev = document.activeElement; let done = false;
+    const d = h('dialog', { class: 'dlg', 'aria-label': labelText || '' });
+    const close = v => { if (done) return; done = true; try { d.close(); } catch (e) {} d.remove(); if (prev && prev.focus) prev.focus(); resolve(v); };
+    d.addEventListener('cancel', e => { e.preventDefault(); close(null); });
+    d.append(build(close)); document.body.append(d); d.showModal();
+  });
+}
+function confirmDlg(title, body, okLabel, danger) {
+  return dialog(close => h('div', { class: 'inner' },
+    h('h2', { text: title }), h('p', { text: body }),
+    h('div', { class: 'acts' },
+      h('button', { class: 'btn', type: 'button', autofocus: true, onclick: () => close(false), text: t('cancel') }),
+      h('button', { class: 'btn ' + (danger ? 'danger solid' : 'primary'), type: 'button', onclick: () => close(true), text: okLabel }))), title);
+}
+
+/* ====================================================================== shell */
+const TABS = [['chat','chat'],['records','records'],['reminders','bell'],['trust','shieldcheck'],['settings','gear']];
+function renderChrome() {
+  document.documentElement.lang = S.lang === 'zh' ? 'zh-Hant-TW' : 'en';
+  const name = S.st ? S.st.tenant.display_name : t('app.name');
+  document.title = name;
+  document.getElementById('skip').textContent = t('skip');
+  const top = document.getElementById('top');
+  const logo = h('span', { class: 'logo' }, icon('plus'));
+  const langBtn = h('button', { class: 'lang-btn', type: 'button', lang: S.lang === 'zh' ? 'en' : 'zh-Hant', onclick: () => { S.lang = S.lang === 'zh' ? 'en' : 'zh'; try { localStorage.setItem('muse.lang', S.lang); } catch (e) {} render(true); }, text: t('lang.switch') });
+  const kids = [h('div', { class: 'brand' }, logo, h('span', { text: name })), langBtn];
+  if (S.unlocked) kids.push(h('button', { class: 'btn small', type: 'button', onclick: lockNow }, icon('lock'), t('lock')));
+  top.replaceChildren(...kids);
+  const nav = document.getElementById('tabs');
+  nav.hidden = !S.unlocked;
+  nav.setAttribute('aria-label', t('nav.label'));
+  nav.replaceChildren(...TABS.map(([k, ic]) => h('a', { href: '#/' + k, 'data-tab': k }, icon(ic), h('span', { text: t('nav.' + k) }))));
+  document.body.className = S.unlocked ? 'app' : 'auth';
+}
+function markTab(view) {
+  for (const a of document.querySelectorAll('#tabs a')) { if (a.dataset.tab === view) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); }
+}
+async function lockNow() {
+  await api('POST', '/api/lock', {});
+  onLocked('unlock.locked');
+}
+
+/* ====================================================================== router */
+function parseHash() {
+  const p = (location.hash || '').replace(/^#\/?/, '').split('/').filter(Boolean).map(x => { try { return decodeURIComponent(x); } catch (e) { return x; } });
+  return { view: p[0] || 'chat', arg: p[1] || null };
+}
+let renderSeq = 0;
+async function render(fresh) {
+  const seq = ++renderSeq;
+  renderChrome();
+  const main = $main(); main.replaceChildren(h('p', { class: 'loading', text: t('loading') }));
+  if (!S.st) { const ok = await loadState(); if (!ok) { main.replaceChildren(bootFail()); return; } renderChrome(); }
+  if (seq !== renderSeq) return;
+  let node;
+  if (!S.st.vault_exists) node = viewSetup();
+  else if (!S.unlocked) node = viewUnlock();
+  else {
+    const { view, arg } = parseHash();
+    markTab(view === 'records' ? 'records' : view);
+    try {
+      if (view === 'records' && arg === 'add') node = await viewAdd();
+      else if (view === 'records' && arg) node = await viewRecord(arg);
+      else if (view === 'records') node = await viewRecords();
+      else if (view === 'reminders') node = await viewReminders();
+      else if (view === 'trust') node = await viewTrust();
+      else if (view === 'settings') node = viewSettings();
+      else { markTab('chat'); node = viewChat(); }
+    } catch (e) { node = h('div', { class: 'err' }, icon('alert'), t('err.generic')); }
+  }
+  if (seq !== renderSeq) return;
+  main.replaceChildren(node);
+  if (fresh !== 'keep') { main.focus({ preventScroll: true }); window.scrollTo(0, 0); }
+  if (S.unlocked && parseHash().view === 'chat') scrollChatEnd();
+}
+function bootFail() {
+  return h('div', { class: 'stack' }, h('div', { class: 'err' }, icon('alert'), t('boot.fail')),
+    h('button', { class: 'btn primary', type: 'button', onclick: () => render(true), text: t('retry') }));
+}
+window.addEventListener('hashchange', () => { if (S.unlocked) render(true); });
+
+/* ====================================================================== passphrase widgets */
+function strength(p) {
+  if (p.length < 8) return 0;
+  let s = 0;
+  if (p.length >= 12) s++;
+  if (p.length >= 16) s++;
+  const cls = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9\s]/].filter(r => r.test(p)).length + (/[^\x00-\x7f]/.test(p) ? 1 : 0);
+  if (cls >= 3 || /\s\S+\s/.test(p)) s++;
+  return Math.min(3, s);
+}
+function pwField(id, label, { autocomplete, hint } = {}) {
+  const inp = h('input', { class: 'in', id, type: 'password', autocomplete: autocomplete || 'off', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', maxlength: '256' });
+  return { inp, wrap: h('div', { class: 'field' }, h('label', { for: id, text: label }), inp, hint ? h('div', { class: 'hint', id: id + '-h', text: hint }) : null) };
+}
+function showToggle(inputs) {
+  const b = h('button', { class: 'btn small', type: 'button', 'aria-pressed': 'false' });
+  const sync = on => { b.replaceChildren(icon(on ? 'eyeoff' : 'eye'), on ? t('pw.hide') : t('pw.show')); b.setAttribute('aria-pressed', on ? 'true' : 'false'); inputs.forEach(i => { i.type = on ? 'text' : 'password'; }); };
+  b.addEventListener('click', () => sync(b.getAttribute('aria-pressed') !== 'true')); sync(false);
+  return b;
+}
+function strengthMeter(inp) {
+  const label = h('span', { 'aria-live': 'polite' });
+  const bars = h('div', { class: 'bars', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'), h('i'));
+  const box = h('div', { class: 'strength', 'data-s': '0' }, bars, h('div', { class: 'small' }, t('str.label'), label));
+  const upd = () => {
+    const v = inp.value; const s = strength(v);
+    box.dataset.s = String(s);
+    [...bars.children].forEach((b, i) => b.classList.toggle('on', v.length > 0 && i <= s));
+    label.textContent = v.length ? t('str.' + s) : '';
+    box.lastChild.hidden = !v.length;
+  };
+  inp.addEventListener('input', upd); upd();
+  return box;
+}
+
+/* ====================================================================== setup */
+function viewSetup() {
+  const tn = S.st.tenant, min = S.st.limits.min_passphrase;
+  const chk = h('input', { type: 'checkbox', id: 'consent' });
+  const p1 = pwField('pw1', t('pw.label'), { autocomplete: 'new-password', hint: t('pw.hint', { n: min }) });
+  const p2 = pwField('pw2', t('pw.confirm'), { autocomplete: 'new-password' });
+  const msg = h('div', { 'aria-live': 'assertive' });
+  const go = h('button', { class: 'btn primary block', type: 'submit', text: t('setup.go') });
+  const form = h('form', { class: 'stack', novalidate: true, onsubmit: async ev => {
+    ev.preventDefault(); msg.replaceChildren();
+    const fail = key => { msg.replaceChildren(h('div', { class: 'err', role: 'alert' }, icon('alert'), key)); };
+    if (!chk.checked) return fail(t('setup.e.consent'));
+    if (p1.inp.value.length < min) return fail(t('setup.e.short', { n: min }));
+    if (p1.inp.value !== p2.inp.value) return fail(t('setup.e.match'));
+    go.disabled = true; go.textContent = t('setup.busy');
+    const r = await api('POST', '/api/setup', { passphrase: p1.inp.value, consent_version: tn.consent_version });
+    p1.inp.value = ''; p2.inp.value = '';
+    go.disabled = false; go.textContent = t('setup.go');
+    if (!r.ok) return fail(errText(r));
+    S.csrf = r.data.csrf; S.st.idle_seconds = r.data.idle_seconds; S.unlocked = true; S.st.vault_exists = true; S.deadline = Date.now() + r.data.idle_seconds * 1000; S.notice = '';
+    startSessionWatch(); location.hash = '#/chat'; render(true);
+  } },
+    h('section', { class: 'card stack tight' },
+      h('h2', { text: t('setup.is.h') }),
+      h('ul', { class: 'bullets' }, [1, 2, 3, 4].map(i => h('li', { text: t('setup.is.' + i) }))),
+      h('h2', { text: t('setup.not.h') }),
+      h('ul', { class: 'bullets no' }, [1, 2, 3].map(i => h('li', { text: t('setup.not.' + i) })))),
+    h('section', { class: 'stack tight', 'aria-labelledby': 'consent-h' },
+      h('h2', { id: 'consent-h', text: t('setup.consent.h') }),
+      h('div', { class: 'consent', tabindex: '0', role: 'region', 'aria-labelledby': 'consent-h', text: flowText(tn.consent_text) }),
+      h('div', { class: 'muted small', text: t('setup.consent.ver', { v: tn.consent_version }) }),
+      h('label', { class: 'check', for: 'consent' }, chk, h('span', { text: t('setup.consent.chk') }))),
+    h('section', { class: 'stack', 'aria-labelledby': 'pw-h' },
+      h('h2', { id: 'pw-h', text: t('setup.pw.h') }),
+      h('div', { class: 'note warn' }, icon('alert'), h('div', { class: 'body' }, h('strong', { text: t('setup.pw.warn.h') }), h('span', { text: t('setup.pw.warn') }))),
+      p1.wrap, strengthMeter(p1.inp), p2.wrap, h('div', null, showToggle([p1.inp, p2.inp]))),
+    msg, go);
+  return h('div', { class: 'stack' },
+    h('div', { class: 'hero' }, h('h1', { text: t('setup.title') }), h('p', { class: 'lead', text: t('setup.lead') })), form);
+}
+
+/* ====================================================================== unlock */
+function viewUnlock() {
+  const tn = S.st.tenant;
+  const p = pwField('pw', t('pw.label'), { autocomplete: 'current-password' });
+  const msg = h('div', { 'aria-live': 'assertive' });
+  const go = h('button', { class: 'btn primary block', type: 'submit', text: t('unlock.go') });
+  const form = h('form', { class: 'stack', novalidate: true, onsubmit: async ev => {
+    ev.preventDefault(); msg.replaceChildren();
+    if (!p.inp.value) return p.inp.focus();
+    go.disabled = true; go.textContent = t('unlock.busy');
+    const r = await api('POST', '/api/unlock', { passphrase: p.inp.value });
+    p.inp.value = ''; go.disabled = false; go.textContent = t('unlock.go');
+    if (!r.ok) { msg.replaceChildren(h('div', { class: 'err', role: 'alert' }, icon('alert'), errText(r))); p.inp.focus(); return; }
+    S.csrf = r.data.csrf; S.st.idle_seconds = r.data.idle_seconds; S.unlocked = true; S.notice = ''; S.deadline = Date.now() + r.data.idle_seconds * 1000;
+    startSessionWatch(); if (!location.hash) location.hash = '#/chat'; render(true);
+  } }, p.wrap, h('div', null, showToggle([p.inp])), msg, go);
+  const notice = S.notice ? h('div', { class: 'note info', role: 'status' }, icon('info'), h('span', { text: t(S.notice) })) : null;
+  return h('div', { class: 'stack' },
+    h('div', { class: 'hero' }, h('h1', { text: t('unlock.title') }), h('p', { class: 'lead', text: tn.display_name }), h('p', { class: 'muted', text: t('unlock.lead') })),
+    notice, form, h('p', { class: 'muted small', text: t('unlock.forgot') }));
+}
+
+/* ====================================================================== session watch (idle) */
+let watchTimer = 0, tickTimer = 0;
+function startSessionWatch() {
+  stopSessionWatch();
+  watchTimer = setInterval(async () => {
+    if (!S.unlocked) return;
+    const r = await api('GET', '/api/state');
+    if (r.ok && r.data) {
+      if (!r.data.unlocked) return onLocked('unlock.expired');
+      S.deadline = Date.now() + r.data.idle_remaining * 1000;
+    }
+  }, 15000);
+  tickTimer = setInterval(updateIdle, 1000);
+  for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, activity, true);
+}
+function stopSessionWatch() {
+  clearInterval(watchTimer); clearInterval(tickTimer);
+  for (const ev of ['pointerdown', 'keydown']) document.removeEventListener(ev, activity, true);
+}
+async function activity() {
+  const now = Date.now();
+  if (!S.unlocked || now - S.lastTouch < 20000) return;
+  S.lastTouch = now;
+  const r = await api('POST', '/api/session/touch', {});
+  if (r.ok) S.deadline = Date.now() + r.data.idle_remaining * 1000;
+}
+function updateIdle() {
+  const box = document.getElementById('idle');
+  if (!S.unlocked) { box.hidden = true; return; }
+  const left = Math.ceil((S.deadline - Date.now()) / 1000);
+  if (left <= 60 && left > 0) {
+    if (box.hidden || !box.firstChild) {
+      box.replaceChildren(h('span', { id: 'idle-msg' }), h('button', { class: 'btn small primary', type: 'button', onclick: async () => { S.lastTouch = 0; await activity(); box.hidden = true; }, text: t('idle.keep') }));
+      box.hidden = false;
+    }
+    document.getElementById('idle-msg').textContent = t('idle.warn', { n: left });
+  } else { box.hidden = true; box.replaceChildren(); if (left <= 0) api('GET', '/api/state').then(r => { if (r.ok && !r.data.unlocked) onLocked('unlock.expired'); }); }
+}
+
+/* ====================================================================== formatting */
+function flowText(x) {
+  const cjk = /[\u3000-\u9fff\uff00-\uffef]/;
+  return x.replace(/([^\n])\n(?!\n)([^\n])/g, (m, a, b) => (cjk.test(a) || cjk.test(b)) ? a + b : a + ' ' + b);
+}
+function pad(n) { return String(n).padStart(2, '0'); }
+function localDateStr(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+function parseYmd(s) { const m = /^(\d{4})-(\d\d)-(\d\d)$/.exec(s || ''); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; }
+function fmtDate(s, withYear) {
+  const d = parseYmd(s); if (!d) return s || '';
+  return d.toLocaleDateString(loc(), { year: withYear ? 'numeric' : undefined, month: 'long', day: 'numeric', weekday: 'short' });
+}
+function fmtShort(s) {
+  const d = parseYmd(s); if (!d) return s || '';
+  return d.toLocaleDateString(loc(), { year: 'numeric', month: S.lang === 'zh' ? 'numeric' : 'short', day: 'numeric' });
+}
+function daysUntil(s) {
+  const d = parseYmd(s); if (!d) return null;
+  const n = new Date(); const base = new Date(n.getFullYear(), n.getMonth(), n.getDate());
+  return Math.round((d - base) / 86400000);
+}
+function relDay(n) { return n < 0 ? t('day.past') : n === 0 ? t('day.today') : n === 1 ? t('day.tomorrow') : t('day.in', { n }); }
+function fmtTs(iso) {
+  const d = new Date(iso); if (isNaN(d)) return iso || '';
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleString(loc(), { year: sameYear ? undefined : 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+}
+function pageHead(title, ...extra) { return h('div', { class: 'page-head' }, h('h1', { text: title }), ...extra); }
+
+/* ====================================================================== chat */
+let chatEls = null;
+function viewChat() {
+  const msgs = h('div', { class: 'msgs', role: 'log', 'aria-live': 'polite', 'aria-label': t('chat.title') });
+  const ta = h('textarea', { class: 'in', id: 'chat-in', rows: '1', placeholder: t('chat.ph'), maxlength: '4000', 'aria-describedby': 'disc' });
+  ta.value = S.chatDraft;
+  const send = h('button', { class: 'btn primary', type: 'submit', 'aria-label': t('chat.send') }, icon('send'), h('span', { text: t('chat.send') }));
+  const form = h('form', { onsubmit: ev => { ev.preventDefault(); submitChat(); } }, h('label', { class: 'sr', for: 'chat-in', text: t('chat.label') }), ta, send);
+  ta.addEventListener('input', () => { S.chatDraft = ta.value; ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 144) + 'px'; });
+  ta.addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); submitChat(); } });
+  chatEls = { msgs, ta, send };
+  renderMsgs();
+  const composer = h('div', { class: 'composer' }, form, h('div', { class: 'disclaimer', id: 'disc' }, icon('info'), t('chat.disclaimer')));
+  return h('div', { class: 'chat' }, h('h1', { class: 'sr', text: t('chat.title') }), msgs, composer);
+}
+function setBusy(b) { S.busy = b; if (chatEls) { chatEls.ta.disabled = b; chatEls.send.disabled = b; chatEls.send.setAttribute('aria-busy', b ? 'true' : 'false'); } }
+function renderMsgs() {
+  if (!chatEls) return;
+  const box = chatEls.msgs;
+  if (!S.chat.length) {
+    box.replaceChildren(h('div', { class: 'hero' }, h('h2', { text: t('chat.start.h') }), h('p', { class: 'lead', text: t('chat.start.lead') })),
+      h('div', { class: 'starters' }, [1, 2, 3, 4].map(i => h('button', { class: 'chip', type: 'button', onclick: () => submitChat(t('chat.s' + i)) }, icon('chat'), h('span', { text: t('chat.s' + i) })))));
+    return;
+  }
+  const out = S.chat.map(m => m.role === 'user' ? h('div', { class: 'bubble user' }, h('span', { class: 'sr', text: t('chat.you') + ': ' }), m.text)
+    : m.role === 'err' ? errMsg(m) : botCard(m));
+  if (S.busy) out.push(h('div', { class: 'typing', role: 'status' }, h('span', { class: 'dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')), t('chat.thinking')));
+  box.replaceChildren(...out);
+}
+function scrollChatEnd() { requestAnimationFrame(() => { const l = chatEls && chatEls.msgs.lastElementChild; if (l && S.chat.length) l.scrollIntoView({ block: 'end' }); }); }
+function errMsg(m) {
+  return h('div', { class: 'err', role: 'alert' }, icon('alert'), h('div', null, h('div', { text: m.text }), h('p', { class: 'small', text: t('chat.fail') })));
+}
+async function submitChat(text) {
+  if (S.busy) return;
+  const q = (text !== undefined ? text : chatEls.ta.value).trim();
+  if (!q) return;
+  S.chat = S.chat.filter(m => m.role !== 'err');
+  const history = S.chat.filter(m => m.role === 'user' || m.role === 'bot').slice(-10).map(m => ({ role: m.role === 'bot' ? 'assistant' : 'user', text: m.role === 'bot' ? m.reply.text : m.text }));
+  S.chat.push({ role: 'user', text: q });
+  if (text === undefined) { chatEls.ta.value = ''; chatEls.ta.style.height = 'auto'; S.chatDraft = ''; }
+  setBusy(true); renderMsgs(); scrollChatEnd();
+  const r = await api('POST', '/api/chat', { text: q, history });
+  setBusy(false);
+  if (!S.unlocked) return;
+  if (r.ok) S.chat.push({ role: 'bot', reply: r.data, question: q, states: {}, added: false });
+  else { S.chat.pop(); S.chat.push({ role: 'err', text: errText(r) }); chatEls.ta.value = q; S.chatDraft = q; }
+  renderMsgs(); scrollChatEnd(); if (!r.ok && chatEls) chatEls.ta.focus();
+}
+function routeText(reply) {
+  if (!reply.route) return null;
+  const m = /\(([a-z]+)\)\s*$/.exec(reply.route);
+  const model = reply.route.replace(/\s*\([a-z]+\)\s*$/, '');
+  const issuer = S.st.tenant.issuer;
+  const p = m ? m[1] : '';
+  if (p === 'local') return [t('route.local.' + (issuer === 'hospital' ? 'hospital' : 'company')), model];
+  if (p === 'private') return [t('route.private'), model];
+  if (p === 'cloud') return [t('route.cloud'), model];
+  return [t('route.unknown', { r: reply.route }), null];
+}
+function botCard(m) {
+  const r = m.reply, tn = S.st.tenant;
+  const parts = [];
+  if (r.safety === 'urgent') {
+    parts.push(h('div', { class: 'urgent', role: 'alert' }, h('h3', null, icon('alert'), t('urgent.h')), h('p', { text: tn.emergency_text || t('urgent.fallback') }),
+      tn.locale === 'zh-TW' ? h('div', null, h('a', { class: 'btn danger solid', href: 'tel:119' }, icon('phone'), t('urgent.call'))) : null));
+  }
+  if (r.safety === 'declined_medical_advice') {
+    parts.push(h('div', { class: 'note info' }, icon('info'), h('div', { class: 'body' }, h('strong', { text: t('decl.h') }), h('span', { text: t('decl.p') }),
+      m.added ? h('span', { class: 'when' }, icon('check'), t('decl.added'))
+        : h('div', null, h('button', { class: 'btn small', type: 'button', onclick: async ev => { ev.currentTarget.disabled = true; const ok = await addQuestion(m.question); if (ok) { m.added = true; toast(t('decl.added')); } renderMsgs(); } }, icon('plus'), t('decl.add'))))));
+  }
+  if (r.safety === 'no_model') {
+    parts.push(h('div', { class: 'note info' }, icon('shieldcheck'), h('div', { class: 'body' }, h('strong', { text: t('nomodel.h') }), h('span', { text: t('nomodel.p') }))));
+  }
+  if (r.text) parts.push(h('div', { class: 'answer', text: r.text }));
+  if (r.cited && r.cited.length) {
+    parts.push(h('div', { class: 'stack tight' }, h('div', { class: 'cites-l', text: t('chat.cites') }),
+      h('div', { class: 'chips' }, r.cited.map(c => c.title
+        ? h('button', { class: 'chip', type: 'button', onclick: () => { location.hash = '#/records/' + encodeURIComponent(c.id); } }, kindIcon(c.kind), h('span', { text: c.title }))
+        : h('span', { class: 'chip', 'aria-disabled': 'true' }, icon('doc'), h('span', { text: t('chat.gone') }))))));
+  }
+  for (const pc of r.proposed || []) parts.push(changeCard(m, pc));
+  const rt = routeText(r);
+  const meta = [];
+  if (rt) meta.push(h('span', null, icon(r.route && /\(local\)/.test(r.route) ? 'server' : 'cloud'), rt[0], rt[1] ? ' · ' + rt[1] : ''));
+  else if (r.safety) meta.push(h('span', null, icon('shieldcheck'), t('route.none')));
+  if (r.receipts && r.receipts.length) meta.push(h('button', { class: 'btn quiet small', type: 'button', onclick: () => { location.hash = '#/trust'; } }, icon('shieldcheck'), t('chat.acts', { n: r.receipts.length })));
+  if (meta.length) parts.push(h('div', { class: 'meta' }, meta));
+  return h('article', { class: 'bot', 'aria-label': t('chat.bot') }, h('span', { class: 'sr', text: t('chat.bot') + ': ' }), parts);
+}
+function changeCard(m, pc) {
+  const st = m.states[pc.id] || 'pending';
+  const body = [h('strong', { text: t('change.h') }), h('div', { text: pc.summary })];
+  if (st === 'pending') body.push(h('div', { class: 'small muted', text: t('change.note') }),
+    h('div', { class: 'acts' },
+      h('button', { class: 'btn primary small', type: 'button', onclick: () => decide(m, pc, 'confirm') }, icon('check'), t('change.yes')),
+      h('button', { class: 'btn small', type: 'button', onclick: () => decide(m, pc, 'reject') }, icon('x'), t('change.no'))));
+  else if (st === 'busy') body.push(h('div', { class: 'st' }, t('loading')));
+  else if (st === 'done') body.push(h('div', { class: 'st' }, icon('check'), (m.notes && m.notes[pc.id]) || t('change.saved')));
+  else body.push(h('div', { class: 'st' }, icon(st === 'cancelled' ? 'x' : 'alert'), t(st === 'cancelled' ? 'change.cancelled' : 'change.fail')));
+  return h('div', { class: 'change' }, body);
+}
+async function decide(m, pc, act) {
+  m.states[pc.id] = 'busy'; renderMsgs();
+  const r = await api('POST', '/api/changes/' + encodeURIComponent(pc.id) + '/' + act, {});
+  m.states[pc.id] = r.ok ? (act === 'confirm' ? 'done' : 'cancelled') : 'error';
+  m.notes = m.notes || {}; if (r.ok && r.data.text) m.notes[pc.id] = r.data.text;
+  S.items = null; S.records = null; renderMsgs();
+}
+async function addQuestion(q) {
+  const r = await api('GET', '/api/items?kind=question_list');
+  if (!r.ok) return false;
+  const text = q.slice(0, 300);
+  const list = r.data.items[0];
+  const w = list ? await api('PATCH', '/api/items/' + encodeURIComponent(list.id), { data: { questions: [...(list.data.questions || []), text] } })
+    : await api('POST', '/api/items', { kind: 'question_list', data: { title: t('rem.q.h'), questions: [text] } });
+  S.items = null;
+  return w.ok;
+}
+
+/* ====================================================================== records */
+async function loadRecords() { if (S.records) return true; const r = await api('GET', '/api/records?limit=500'); if (!r.ok) return false; S.records = r.data.records; return true; }
+let recQuery = '';
+async function viewRecords() {
+  const ok = await loadRecords();
+  const addBtn = h('a', { class: 'btn primary', href: '#/records/add' }, icon('plus'), t('rec.add'));
+  const head = pageHead(t('rec.title'), addBtn);
+  if (!ok) return h('div', null, head, h('div', { class: 'err' }, icon('alert'), t('err.generic')));
+  if (!S.records.length) return h('div', null, head, h('div', { class: 'empty' }, icon('records'), h('h2', { text: t('rec.none.h') }), h('p', { text: t('rec.none.p') }), h('a', { class: 'btn primary', href: '#/records/add' }, icon('plus'), t('rec.add'))));
+  const listBox = h('div');
+  const inp = h('input', { class: 'in', id: 'rec-q', type: 'search', placeholder: t('rec.search'), autocomplete: 'off', value: recQuery });
+  const draw = () => {
+    recQuery = inp.value;
+    const q = inp.value.trim().toLowerCase();
+    const rows = S.records.filter(r => !q || r.title.toLowerCase().includes(q));
+    if (!rows.length) { listBox.replaceChildren(h('p', { class: 'empty', text: t('rec.nomatch') })); return; }
+    const groups = new Map();
+    for (const r of rows) {
+      const d = r.occurred_on || (r.added_at || '').slice(0, 10); const key = /^\d{4}-\d\d/.test(d) ? d.slice(0, 7) : 'none';
+      if (!groups.has(key)) groups.set(key, []); groups.get(key).push(r);
+    }
+    const keys = [...groups.keys()].sort().reverse().sort((a, b) => (a === 'none') - (b === 'none'));
+    listBox.replaceChildren(...keys.map(k => {
+      const title = k === 'none' ? t('rec.nodate') : t('rec.month', { y: k.slice(0, 4), m: S.lang === 'zh' ? +k.slice(5) : k.slice(5) });
+      const hid = 'g-' + k;
+      return h('section', { 'aria-labelledby': hid }, h('h2', { class: 'mhead', id: hid, text: title }),
+        h('div', { class: 'list' }, groups.get(k).sort((a, b) => ((b.occurred_on || b.added_at) > (a.occurred_on || a.added_at)) ? 1 : -1).map(recRow)));
+    }));
+  };
+  inp.addEventListener('input', draw); draw();
+  return h('div', null, head,
+    h('div', { class: 'field', style: 'margin-bottom:8px' }, h('label', { class: 'sr', for: 'rec-q', text: t('rec.search.l') }), inp), h('p', { class: 'muted small', style: 'margin-bottom:4px', text: t('rec.count', { n: S.records.length }) }), listBox);
+}
+function recRow(r) {
+  const meta = [r.occurred_on ? fmtShort(r.occurred_on) : null, kindLabel(r.kind), r.source || null].filter(Boolean).join(' · ');
+  return h('button', { class: 'row', type: 'button', onclick: () => { location.hash = '#/records/' + encodeURIComponent(r.id); } },
+    h('span', { class: 'ic' }, kindIcon(r.kind)), h('span', { class: 'tx' }, h('span', { class: 'tt', text: r.title }), h('span', { class: 'mt', text: meta })));
+}
+async function viewRecord(id) {
+  const back = h('a', { class: 'btn small', href: '#/records' }, icon('back'), t('back'));
+  const r = await api('GET', '/api/records/' + encodeURIComponent(id));
+  if (!r.ok) return h('div', { class: 'stack' }, back, h('div', { class: 'err' }, icon('alert'), r.status === 404 ? t('rec.gone') : errText(r)));
+  const rec = r.data.record;
+  const rows = [[t('rec.kind'), kindLabel(rec.kind)], [t('rec.date'), rec.occurred_on ? fmtDate(rec.occurred_on, true) : '-'], [t('rec.src'), rec.source || '-']];
+  return h('div', { class: 'stack' }, back,
+    h('div', { class: 'row-between' }, h('h1', { text: rec.title })),
+    h('dl', { class: 'kv' }, rows.flatMap(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })])),
+    h('div', { class: 'recbody', role: 'region', 'aria-label': rec.title, tabindex: '0', text: r.data.text }),
+    h('div', { class: 'row-between' },
+      h('button', { class: 'btn primary', type: 'button', onclick: () => { S.chatDraft = t('rec.explain.q', { t: rec.title }); location.hash = '#/chat'; } }, icon('chat'), t('rec.explain')),
+      h('button', { class: 'btn danger', type: 'button', onclick: async () => {
+        if (!(await confirmDlg(t('rec.del.h'), t('rec.del.p', { t: rec.title }), t('delete'), true))) return;
+        const d = await api('DELETE', '/api/records/' + encodeURIComponent(rec.id));
+        if (d.ok) { S.records = null; toast(t('rec.deleted')); location.hash = '#/records'; } else toast(errText(d));
+      } }, icon('trash'), t('rec.del'))));
+}
+const KINDS = ['lab', 'report', 'imaging_report', 'pathology_report', 'medication_list', 'visit', 'note', 'document', 'measurement'];
+function b64(buf) { const u = new Uint8Array(buf); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); }
+async function viewAdd() {
+  let mode = 'paste';
+  const body = h('div');
+  const tabs = h('div', { class: 'seg', role: 'group', 'aria-label': t('add.title') });
+  const setMode = m => { mode = m; tabs.replaceChildren(...['paste', 'file'].map(k => h('button', { type: 'button', 'aria-pressed': String(mode === k), onclick: () => setMode(k), text: t('add.' + k) }))); body.replaceChildren(mode === 'paste' ? pasteForm() : fileForm()); };
+  setMode('paste');
+  return h('div', { class: 'stack' }, h('a', { class: 'btn small', href: '#/records', style: 'justify-self:start' }, icon('back'), t('back')), h('h1', { text: t('add.title') }), h('div', null, tabs), body);
+}
+function kindSelect(id) { return h('select', { class: 'in', id }, KINDS.map(k => h('option', { value: k, text: kindLabel(k) }))); }
+function pasteForm() {
+  const kind = kindSelect('a-k'), title = h('input', { class: 'in', id: 'a-t', maxlength: '200', placeholder: t('add.t.ph') });
+  const date = h('input', { class: 'in', id: 'a-d', type: 'date' }), src = h('input', { class: 'in', id: 'a-s', maxlength: '200', placeholder: t('add.s.ph') });
+  const text = h('textarea', { class: 'in', id: 'a-x', rows: '9', placeholder: t('add.x.ph') });
+  const msg = h('div', { 'aria-live': 'assertive' });
+  const go = h('button', { class: 'btn primary block', type: 'submit', text: t('add.go') });
+  return h('form', { class: 'stack', novalidate: true, onsubmit: async ev => {
+    ev.preventDefault(); msg.replaceChildren();
+    const fail = s => { msg.replaceChildren(h('div', { class: 'err', role: 'alert' }, icon('alert'), s)); };
+    if (!title.value.trim()) { title.focus(); return fail(t('add.e.t')); }
+    if (!text.value.trim()) { text.focus(); return fail(t('add.e.x')); }
+    go.disabled = true;
+    const r = await api('POST', '/api/records', { kind: kind.value, title: title.value, text: text.value, occurred_on: date.value || null, source: src.value });
+    go.disabled = false;
+    if (!r.ok) return fail(errText(r));
+    S.records = null; toast(t('add.saved')); location.hash = '#/records/' + encodeURIComponent(r.data.record.id);
+  } },
+    fld('a-k', t('add.k'), kind), fld('a-t', t('add.t'), title), fld('a-d', t('add.d'), date), fld('a-s', t('add.s'), src), fld('a-x', t('add.x'), text), msg, go);
+}
+function fld(id, label, control, hint) { return h('div', { class: 'field' }, h('label', { for: id, text: label }), control, hint ? h('div', { class: 'hint', text: hint }) : null); }
+function fileForm() {
+  const maxBytes = S.st.limits.max_import_bytes, mb = (maxBytes / 1048576).toFixed(1);
+  const box = h('div', { class: 'stack' });
+  const msg = h('div', { 'aria-live': 'assertive' });
+  const pick = h('input', { class: 'in', id: 'f-in', type: 'file', accept: '.txt,.md,.pdf,.json,.csv' });
+  const reset = () => { box.replaceChildren(fld('f-in', t('imp.pick'), pick, t('imp.types', { mb }) + ' ' + t('imp.local'))); };
+  reset();
+  pick.addEventListener('change', async () => {
+    msg.replaceChildren(); const f = pick.files[0]; if (!f) return;
+    const fail = s => msg.replaceChildren(h('div', { class: 'err', role: 'alert' }, icon('alert'), s));
+    if (f.size > maxBytes) return fail(t('imp.big'));
+    if (!/\.(txt|md|pdf|json|csv)$/i.test(f.name)) return fail(t('imp.type'));
+    const content = b64(await f.arrayBuffer());
+    const r = await api('POST', '/api/import', { filename: f.name, content_base64: content, preview: true });
+    pick.value = '';
+    if (!r.ok) return fail(errText(r));
+    const list = r.data.preview;
+    const go = h('button', { class: 'btn primary block', type: 'button', onclick: async () => {
+      go.disabled = true;
+      const c = await api('POST', '/api/import', { filename: f.name, content_base64: content, preview: false });
+      if (!c.ok) { go.disabled = false; return fail(errText(c)); }
+      S.records = null; toast(t('imp.done', { n: c.data.added.length })); location.hash = '#/records';
+    } }, icon('check'), t('imp.go', { n: list.length }));
+    box.replaceChildren(h('h2', { text: t('imp.prev.h', { n: list.length }) }), h('p', { class: 'muted', text: t('imp.prev.p') }),
+      h('div', { class: 'list' }, list.map(p => h('div', { class: 'item' }, h('div', { class: 'name', text: p.title }),
+        h('div', { class: 'muted small', text: [kindLabel(p.kind), p.occurred_on, t('imp.chars', { n: p.size })].filter(Boolean).join(' · ') }), h('div', { class: 'small', text: p.excerpt })))),
+      go, h('button', { class: 'btn block', type: 'button', onclick: reset, text: t('imp.other') }));
+  });
+  return h('div', { class: 'stack' }, box, msg);
+}
+
+/* ====================================================================== reminders */
+async function loadItems() { if (S.items) return true; const r = await api('GET', '/api/items'); if (!r.ok) return false; S.items = r.data.items; return true; }
+const ITEM_FIELDS = {
+  medication: [['name', 'text', true], ['dose', 'text'], ['schedule', 'text'], ['note', 'text']],
+  appointment: [['title', 'text', true], ['date', 'date', true], ['time', 'time'], ['place', 'text'], ['note', 'text']],
+  reminder: [['title', 'text', true], ['date', 'date'], ['time', 'time'], ['note', 'text']]
+};
+function itemTitle(it) { return it.data.name || it.data.title || ''; }
+function itemSort(a, b) {
+  const ka = (a.data.date || '9999') + (a.data.time || ''), kb = (b.data.date || '9999') + (b.data.time || '');
+  return ka < kb ? -1 : ka > kb ? 1 : 0;
+}
+async function viewReminders() {
+  const ok = await loadItems();
+  if (!ok) return h('div', null, pageHead(t('rem.title')), h('div', { class: 'err' }, icon('alert'), t('err.generic')));
+  const items = S.items;
+  const by = k => items.filter(i => i.kind === k);
+  const today = localDateStr(new Date());
+  const upcoming = [...by('appointment'), ...by('reminder')].filter(i => i.data.date && i.data.date >= today).sort(itemSort).slice(0, 3);
+  const meds = by('medication');
+  const nextCard = h('section', { class: 'card next', 'aria-labelledby': 'next-h' }, h('h2', { id: 'next-h' }, icon('clock'), ' ' + t('rem.next.h')),
+    upcoming.length ? h('ul', { class: 'stack tight' }, upcoming.map(i => { const n = daysUntil(i.data.date); return h('li', null, h('span', { class: 'd' }, fmtShort(i.data.date), i.data.time ? ' ' + i.data.time : ''), h('span', { text: itemTitle(i) }), h('span', { class: 'nw ' + (n <= 1 ? 'soon' : 'muted') }, '（' + relDay(n) + '）')); })) : h('p', { class: 'muted', text: t('rem.next.none') }),
+    meds.some(m => m.data.schedule) ? h('div', null, h('h3', { text: t('rem.today.h') }), h('ul', null, meds.filter(m => m.data.schedule).map(m => h('li', null, h('span', { class: 'd' }, m.data.schedule), h('span', { text: m.data.name }))))) : null);
+  const section = (kind, titleKey, extra) => {
+    const rows = by(kind).sort(kind === 'medication' ? () => 0 : itemSort);
+    return h('section', { class: 'sec', 'aria-labelledby': 'h-' + kind }, h('div', { class: 'row-between', style: 'margin-bottom:10px' }, h('h2', { id: 'h-' + kind, text: t(titleKey) }),
+      h('button', { class: 'btn small', type: 'button', onclick: () => itemForm(kind) }, icon('plus'), t('add'))), extra || null,
+      rows.length ? h('div', { class: 'list' }, rows.map(i => itemCard(i))) : h('p', { class: 'muted', text: t('rem.none') }));
+  };
+  const ql = by('question_list')[0];
+  return h('div', null, pageHead(t('rem.title')), nextCard,
+    section('medication', 'rem.med.h', h('div', { class: 'note info', style: 'margin-bottom:10px' }, icon('info'), h('span', { text: t('rem.med.note') }))),
+    section('appointment', 'rem.appt.h'), section('reminder', 'rem.rem.h'), questionSection(ql));
+}
+function itemCard(it) {
+  const d = it.data; const lines = [];
+  if (it.kind === 'medication') { if (d.dose) lines.push(d.dose); if (d.schedule) lines.push(d.schedule); }
+  else { if (d.date) { const n = daysUntil(d.date); lines.push(h('span', { class: 'when' }, icon('calendar'), fmtShort(d.date) + (d.time ? ' ' + d.time : ''), ' ', h('span', { class: 'nw ' + (n >= 0 && n <= 1 ? 'soon' : 'muted'), text: '（' + relDay(n) + '）' }))); } else if (d.time) lines.push(d.time); if (d.place) lines.push(d.place); }
+  if (d.note) lines.push(d.note);
+  return h('div', { class: 'item' }, h('div', { class: 'top' }, h('div', { class: 'name', text: itemTitle(it) }),
+    h('div', { class: 'acts' },
+      h('button', { class: 'btn small icon', type: 'button', 'aria-label': t('edit') + ' ' + itemTitle(it), onclick: () => itemForm(it.kind, it) }, icon('note')),
+      h('button', { class: 'btn small icon danger', type: 'button', 'aria-label': t('delete') + ' ' + itemTitle(it), onclick: async () => {
+        if (!(await confirmDlg(t('rem.del.h'), t('rem.del.p', { t: itemTitle(it) }), t('delete'), true))) return;
+        const r = await api('DELETE', '/api/items/' + encodeURIComponent(it.id)); if (r.ok) { S.items = null; toast(t('rem.deleted')); render('keep'); } else toast(errText(r));
+      } }, icon('trash')))),
+    lines.map(l => h('div', { class: 'muted' }, l)));
+}
+function itemForm(kind, it) {
+  return dialog(close => {
+    const fields = ITEM_FIELDS[kind]; const inputs = {};
+    const msg = h('div', { 'aria-live': 'assertive' });
+    const form = h('form', { novalidate: true, onsubmit: async ev => {
+      ev.preventDefault(); msg.replaceChildren();
+      const data = {};
+      for (const [k, , req] of fields) { const v = inputs[k].value.trim(); if (req && !v) { inputs[k].focus(); msg.replaceChildren(h('div', { class: 'err', role: 'alert' }, icon('alert'), t('rem.e.req'))); return; } data[k] = v; }
+      const r = it ? await api('PATCH', '/api/items/' + encodeURIComponent(it.id), { data }) : await api('POST', '/api/items', { kind, data });
+      if (!r.ok) { msg.replaceChildren(h('div', { class: 'err', role: 'alert' }, icon('alert'), errText(r))); return; }
+      S.items = null; close(true); toast(t('rem.saved')); render('keep');
+    } },
+      h('h2', { text: t((it ? 'rem.edit.' : 'rem.add.') + kind) }),
+      fields.map(([k, type, req]) => { inputs[k] = h('input', { class: 'in', id: 'if-' + k, type, maxlength: '300', value: it && it.data[k] ? it.data[k] : '', required: req ? true : null, 'aria-required': req ? 'true' : null }); return fld('if-' + k, t('f.' + kind + '.' + k), inputs[k]); }),
+      kind === 'medication' ? h('p', { class: 'muted small', text: t('rem.med.note') }) : null, msg,
+      h('div', { class: 'acts' }, h('button', { class: 'btn', type: 'button', onclick: () => close(false), text: t('cancel') }), h('button', { class: 'btn primary', type: 'submit', text: t('save') })));
+    return form;
+  }, t('rem.add.' + kind));
+}
+function questionSection(ql) {
+  const qs = ql ? (ql.data.questions || []) : [];
+  const save = async arr => {
+    const r = ql ? await api('PATCH', '/api/items/' + encodeURIComponent(ql.id), { data: { questions: arr } }) : await api('POST', '/api/items', { kind: 'question_list', data: { title: t('rem.q.h'), questions: arr } });
+    if (r.ok) { S.items = null; render('keep'); } else toast(errText(r));
+  };
+  return h('section', { class: 'sec', 'aria-labelledby': 'h-q' }, h('div', { class: 'row-between', style: 'margin-bottom:10px' }, h('h2', { id: 'h-q', text: t('rem.q.h') }),
+    h('button', { class: 'btn small', type: 'button', onclick: async () => {
+      const v = await dialog(close => { const i = h('input', { class: 'in', id: 'q-in', maxlength: '300' }); return h('form', { onsubmit: ev => { ev.preventDefault(); if (i.value.trim()) close(i.value.trim()); } }, h('h2', { text: t('rem.q.add') }), fld('q-in', t('rem.q.ph'), i), h('div', { class: 'acts' }, h('button', { class: 'btn', type: 'button', onclick: () => close(null), text: t('cancel') }), h('button', { class: 'btn primary', type: 'submit', text: t('save') }))); }, t('rem.q.add'));
+      if (v) save([...qs, v]);
+    } }, icon('plus'), t('add'))),
+    qs.length ? h('ol', { class: 'list' }, qs.map((q, n) => h('li', { class: 'item' }, h('div', { class: 'top' }, h('div', { text: (n + 1) + '. ' + q }),
+      h('button', { class: 'btn small icon danger', type: 'button', 'aria-label': t('rem.q.del') + ': ' + q, onclick: () => save(qs.filter((_, j) => j !== n)) }, icon('x')))))) : h('p', { class: 'muted', text: t('rem.q.none') }));
+}
+
+/* ====================================================================== trust */
+function egressInfo(e) {
+  const iss = S.st.tenant.issuer === 'hospital' ? 'hospital' : 'company';
+  if (e === 'none') return ['shieldcheck', t('eg.none')];
+  if (e === 'local') return ['server', t('eg.local.' + iss)];
+  if (e === 'private') return ['globe', t('eg.private')];
+  if (e === 'cloud') return ['cloud', t('eg.cloud')];
+  return ['alert', t('eg.unknown')];
+}
+function receiptSentence(r) {
+  const key = 'act.' + r.action;
+  if (T[S.lang][key]) return t(key, { n: r.record_count });
+  return r.action;
+}
+function receiptNode(r) {
+  const [ic, eg] = egressInfo(r.egress);
+  let det = r.detail || '';
+  if (/^\d+ records?( (read|added|deleted|imported))?$/.test(det) || /^(answer|default assistant mandate|mandate revoked|passphrase changed|encrypted archive exported|consent .+|1 \w+ (added|changed)|1 item deleted|\d+ records imported|urgent wording.*|medical advice declined)$/.test(det)) det = '';
+  if (T[S.lang]['det.' + det]) det = t('det.' + det);
+  const model = r.model ? t('rc.model', { m: r.model }) : '';
+  return h('li', { class: 'rc e-' + (['none', 'local', 'private', 'cloud'].includes(r.egress) ? r.egress : 'cloud') },
+    h('div', { class: 'ts', text: fmtTs(r.ts) + ' · ' + t('actor.' + r.actor) }),
+    h('div', { class: 'what', text: receiptSentence(r) + (model ? ' · ' + model : '') }),
+    h('div', { class: 'eg' }, icon(ic), eg),
+    det ? h('div', { class: 'dt', text: t('rc.note', { d: det }) }) : null);
+}
+async function loadReceipts(more) {
+  const before = more && S.receipts.length ? '&before=' + S.receipts[S.receipts.length - 1].seq : '';
+  const r = await api('GET', '/api/receipts?limit=100' + before);
+  if (!r.ok) return false;
+  S.receipts = more ? S.receipts.concat(r.data.receipts) : r.data.receipts;
+  S.receiptsEnd = r.data.receipts.length < 100;
+  return true;
+}
+function mandateCard(m) {
+  const iss = S.st.tenant.issuer === 'hospital' ? 'hospital' : 'company';
+  const expired = !m.active && !m.revoked_at;
+  const stKey = m.active ? 'active' : m.revoked_at ? 'revoked' : 'expired';
+  const scopeText = s => s === 'llm.local' ? t('scope.llm.local.' + iss) : (T[S.lang]['scope.' + s] ? t('scope.' + s) : s);
+  return h('article', { class: 'card mandate' },
+    h('div', { class: 'row-between' }, h('h3', { text: m.purpose }), h('span', { class: 'stt ' + (m.active ? 'active' : 'off') }, icon(m.active ? 'check' : expired ? 'clock' : 'x'), t('man.st.' + stKey))),
+    h('div', { class: 'muted', text: t('man.allowed') }),
+    h('ul', { class: 'scopes' }, m.scopes.map(s => h('li', null, icon('check'), h('span', { text: scopeText(s) })))),
+    h('div', { class: 'muted small', text: m.record_kinds.length ? t('man.kinds', { k: m.record_kinds.map(kindLabel).join('、') }) : t('man.kinds.all') }),
+    h('div', { class: 'muted small', text: m.expires_at ? t('man.exp', { d: fmtTs(m.expires_at) }) : t('man.noexp') }),
+    m.active ? h('div', null, h('button', { class: 'btn danger small', type: 'button', onclick: async () => {
+      if (!(await confirmDlg(t('man.rev.h'), t('man.rev.p'), t('man.revoke'), true))) return;
+      const r = await api('POST', '/api/mandates/' + encodeURIComponent(m.id) + '/revoke', {});
+      if (r.ok) { toast(t('man.revoked')); S.mandates = null; render('keep'); } else toast(errText(r));
+    } }, icon('x'), t('man.revoke'))) : null);
+}
+async function viewTrust() {
+  const [mr] = await Promise.all([api('GET', '/api/mandates'), loadReceipts(false)]);
+  if (!mr.ok) return h('div', { class: 'err' }, icon('alert'), errText(mr));
+  const ms = mr.data.mandates;
+  const act = ms.filter(m => m.active), old = ms.filter(m => !m.active);
+  const verifyOut = h('div', { 'aria-live': 'polite' });
+  const vbtn = h('button', { class: 'btn', type: 'button', onclick: async () => {
+    vbtn.disabled = true; vbtn.lastChild.textContent = t('verify.busy');
+    const r = await api('GET', '/api/receipts/verify');
+    vbtn.disabled = false; vbtn.lastChild.textContent = t('verify.go');
+    if (!r.ok) return verifyOut.replaceChildren(h('div', { class: 'err' }, icon('alert'), t('verify.fail')));
+    const v = r.data;
+    verifyOut.replaceChildren(v.ok ? h('div', { class: 'note ok' }, icon('shieldcheck'), h('span', { text: t('verify.ok', { n: v.count }) }))
+      : h('div', { class: 'note bad' }, icon('alert'), h('span', { text: v.bad_seq != null ? t('verify.bad', { s: v.bad_seq }) : t('verify.bad0' ) })));
+  } }, icon('shieldcheck'), h('span', { text: t('verify.go') }));
+  const feed = h('ul', { class: 'feed' });
+  const more = h('div');
+  const draw = () => {
+    const rows = S.filterLeft ? S.receipts.filter(r => r.egress !== 'none') : S.receipts;
+    feed.replaceChildren(...(rows.length ? rows.map(receiptNode) : [h('li', { class: 'muted', text: S.filterLeft && S.receipts.length ? t('feed.noleft') : t('feed.none') })]));
+    more.replaceChildren(S.receiptsEnd ? '' : h('button', { class: 'btn block', type: 'button', onclick: async () => { await loadReceipts(true); draw(); }, text: t('feed.more') }));
+  };
+  const seg = h('div', { class: 'seg', role: 'group', 'aria-label': t('feed.h') });
+  const drawSeg = () => seg.replaceChildren(...[[false, 'feed.all'], [true, 'feed.left']].map(([v, k]) => h('button', { type: 'button', 'aria-pressed': String(S.filterLeft === v), onclick: () => { S.filterLeft = v; drawSeg(); draw(); }, text: t(k) })));
+  drawSeg(); draw();
+  return h('div', null, pageHead(t('trust.title')), h('p', { class: 'lead', text: t('trust.lead') }),
+    h('section', { class: 'sec', 'aria-labelledby': 'h-man' }, h('h2', { id: 'h-man', text: t('man.h') }),
+      h('div', { class: 'stack' },
+        act.length ? act.map(mandateCard) : h('div', { class: 'note warn' }, icon('alert'), h('span', { text: t('man.none') })),
+        h('div', null, h('button', { class: 'btn primary', type: 'button', onclick: async () => { const r = await api('POST', '/api/mandates/grant-default', {}); if (r.ok) { toast(t('man.default.done')); render('keep'); } else toast(errText(r)); } }, icon('shield'), t('man.default'))),
+        old.length ? h('details', null, h('summary', { class: 'btn small', text: t('man.old', { n: old.length }) }), h('div', { class: 'stack', style: 'margin-top:12px' }, old.map(mandateCard))) : null)),
+    h('section', { class: 'sec', 'aria-labelledby': 'h-feed' }, h('h2', { id: 'h-feed', text: t('feed.h') }), h('p', { class: 'muted', style: 'margin-bottom:12px', text: t('feed.lead') }),
+      h('div', { class: 'stack' }, h('div', { class: 'row-between' }, seg, vbtn), verifyOut, feed, more)));
+}
+
+/* ====================================================================== settings */
+function viewSettings() {
+  const tn = S.st.tenant; const min = S.st.limits.min_passphrase;
+  const langSeg = h('div', { class: 'seg', role: 'group', 'aria-label': t('set.lang.h') });
+  const drawLang = () => langSeg.replaceChildren(...[['zh', '繁體中文'], ['en', 'English']].map(([k, label]) => h('button', { type: 'button', lang: k === 'zh' ? 'zh-Hant' : 'en', 'aria-pressed': String(S.lang === k), onclick: () => { S.lang = k; try { localStorage.setItem('muse.lang', k); } catch (e) {} render('keep'); }, text: label })));
+  drawLang();
+  const sel = h('select', { class: 'in', id: 'idle-sel', style: 'max-width:14rem' }, S.st.limits.idle_choices.map(n => h('option', { value: n, selected: (S.st.idle_seconds / 60) === n ? true : null, text: t('set.idle.n', { n }) })));
+  if (!S.st.limits.idle_choices.includes(S.st.idle_seconds / 60)) sel.prepend(h('option', { value: '', text: t('set.idle.n', { n: Math.round(S.st.idle_seconds / 60) }), selected: true, disabled: true }));
+  sel.addEventListener('change', async () => { const r = await api('POST', '/api/session/idle', { minutes: Number(sel.value) }); if (r.ok) { S.st.idle_seconds = r.data.idle_seconds; S.deadline = Date.now() + r.data.idle_seconds * 1000; toast(t('set.idle.saved')); } else toast(errText(r)); });
+  /* change passphrase */
+  const o = pwField('pw-old', t('set.pw.old'), { autocomplete: 'current-password' }), n1 = pwField('pw-new', t('set.pw.new'), { autocomplete: 'new-password', hint: t('pw.hint', { n: min }) }), n2 = pwField('pw-new2', t('set.pw.new2'), { autocomplete: 'new-password' });
+  const pmsg = h('div', { 'aria-live': 'assertive' });
+  const pform = h('form', { class: 'stack', novalidate: true, onsubmit: async ev => {
+    ev.preventDefault(); pmsg.replaceChildren();
+    const fail = s => pmsg.replaceChildren(h('div', { class: 'err', role: 'alert' }, icon('alert'), s));
+    if (n1.inp.value.length < min) return fail(t('setup.e.short', { n: min }));
+    if (n1.inp.value !== n2.inp.value) return fail(t('setup.e.match'));
+    const r = await api('POST', '/api/passphrase', { old: o.inp.value, new: n1.inp.value });
+    o.inp.value = n1.inp.value = n2.inp.value = '';
+    if (!r.ok) return fail(errText(r));
+    pmsg.replaceChildren(h('div', { class: 'note ok', role: 'status' }, icon('check'), h('span', { text: t('set.pw.done') })));
+  } }, h('div', { class: 'note warn' }, icon('alert'), h('span', { text: t('set.pw.warn') })), o.wrap, n1.wrap, strengthMeter(n1.inp), n2.wrap, h('div', null, showToggle([o.inp, n1.inp, n2.inp])), pmsg, h('button', { class: 'btn primary', type: 'submit', text: t('set.pw.go') }));
+  /* export */
+  const exp = h('button', { class: 'btn', type: 'button', onclick: async () => {
+    exp.disabled = true;
+    try {
+      const res = await fetch('/api/export', { credentials: 'same-origin', cache: 'no-store', headers: { 'X-CSRF-Token': S.csrf || '' } });
+      if (!res.ok) { toast(t('err.generic')); return; }
+      const blob = await res.blob(); const m = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '');
+      const url = URL.createObjectURL(blob); const a = h('a', { download: m ? m[1] : 'muse-health.musevault' }); a.href = url; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+      toast(t('set.exp.done'));
+    } catch (e) { toast(t('err.network')); } finally { exp.disabled = false; }
+  } }, icon('download'), t('set.exp.go'));
+  /* delete */
+  const del = h('button', { class: 'btn danger', type: 'button', onclick: async () => {
+    if (!(await confirmDlg(t('set.del.1.h'), t('set.del.1.p'), t('set.del.1.go'), true))) return;
+    const ok = await dialog(close => {
+      const pw = pwField('del-pw', t('pw.label'), { autocomplete: 'current-password' }); const chk = h('input', { type: 'checkbox', id: 'del-chk' }); const msg = h('div', { 'aria-live': 'assertive' });
+      return h('form', { novalidate: true, onsubmit: async ev => {
+        ev.preventDefault(); msg.replaceChildren();
+        if (!pw.inp.value || !chk.checked) { msg.replaceChildren(h('div', { class: 'err', role: 'alert' }, icon('alert'), t('set.del.2.p'))); return; }
+        const r = await api('POST', '/api/vault/delete', { passphrase: pw.inp.value, confirm: true }); pw.inp.value = '';
+        if (!r.ok) { msg.replaceChildren(h('div', { class: 'err', role: 'alert' }, icon('alert'), r.error === 'rate_limited' ? errText(r) : t('set.del.fail'))); return; }
+        close(true);
+      } }, h('h2', { text: t('set.del.2.h') }), h('p', { text: t('set.del.2.p') }), pw.wrap, h('label', { class: 'check', for: 'del-chk' }, chk, h('span', { text: t('set.del.2.chk') })), msg,
+        h('div', { class: 'acts' }, h('button', { class: 'btn', type: 'button', onclick: () => close(false), text: t('cancel') }), h('button', { class: 'btn danger solid', type: 'submit', text: t('set.del.2.go') })));
+    }, t('set.del.2.h'));
+    if (ok) { stopSessionWatch(); S.st.vault_exists = false; onLocked('unlock.deleted'); S.notice = ''; await loadState(); render(true); }
+  } }, icon('trash'), t('set.del.go'));
+  const sec = (id, title, ...kids) => h('section', { class: 'card stack', 'aria-labelledby': id }, h('h2', { id, text: title }), ...kids);
+  const about = [[t('about.tenant'), tn.display_name + '（' + t('about.issuer.' + tn.issuer) + '）'], [t('about.pilot'), tn.pilot_ref || t('about.none')], [t('about.contact'), tn.contact || t('about.none')], [t('about.consent'), tn.consent_version], [t('about.version'), S.st.version]];
+  return h('div', { class: 'stack' }, pageHead(t('set.title')),
+    sec('s-lang', t('set.lang.h'), h('div', null, langSeg)),
+    sec('s-idle', t('set.idle.h'), h('p', { class: 'muted', text: t('set.idle.p') }), fld('idle-sel', t('set.idle.l'), sel)),
+    sec('s-pw', t('set.pw.h'), pform),
+    sec('s-exp', t('set.exp.h'), h('p', { text: t('set.exp.p') }), h('div', null, exp)),
+    sec('s-lock', t('set.lock.h'), h('p', { class: 'muted', text: t('set.lock.p') }), h('div', null, h('button', { class: 'btn', type: 'button', onclick: lockNow }, icon('lock'), t('lock.now')))),
+    sec('s-del', t('set.del.h'), h('p', { text: t('set.del.p') }), h('div', null, del)),
+    sec('s-about', t('about.h'), h('dl', { class: 'kv' }, about.flatMap(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })])), h('p', { class: 'muted small', text: t('about.note') })));
+}
+
+/* ====================================================================== boot */
+(async function boot() {
+  renderChrome();
+  await render(true);
+  if (S.unlocked) startSessionWatch();
+})();
+</script>
+</body>
+</html>
