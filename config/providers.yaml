@@ -151,6 +151,14 @@ providers:
       Google AI Studio free tier. The pricing page marks the models below
       "Free of charge" and says free-tier content is used to improve Google's
       products. Numeric RPM/RPD are shown in AI Studio and were not copied here.
+      gemini-2.5-flash, gemini-2.5-flash-lite and gemini-2.5-pro are not
+      deployed: on 2026-11-12 a new AI Studio key got HTTP 404 "This model
+      models/<id> is no longer available to new users" for each of them.
+      gemini-3.1-flash-lite and gemini-3.5-flash-lite answered that day, and
+      gemini-embedding-2 stays. gemini-3.8-flash can return 503 while demand
+      is high; that is transient, so it stays. Aliases that also listed a 2.5
+      model already have a working Gemini member: cheap on the two Flash-Lite
+      models, smart and long-context on gemini-3.8-flash.
     deployments:
       - id: gemini-3.1-flash-lite
         model: gemini/gemini-3.1-flash-lite
@@ -161,17 +169,7 @@ providers:
         context_tokens: 1048576
         join: always
         verified: gemini-pricing-and-litellm-1.108.5
-        notes: Free of charge on the Gemini pricing page. 1,048,576-token window is from the LiteLLM 1.108.5 model map.
-      - id: gemini-2.5-flash-lite
-        model: gemini/gemini-2.5-flash-lite
-        mode: chat
-        aliases: [cheap]
-        order: 1
-        rpm: 15
-        context_tokens: 1048576
-        join: always
-        verified: gemini-pricing-and-litellm-1.108.5
-        notes: Free of charge. Older Flash-Lite, kept because free-tier quotas are often higher than newer Flash models.
+        notes: Free of charge on the Gemini pricing page. 1,048,576-token window is from the LiteLLM 1.108.5 model map. Answers on a new AI Studio key (checked 2026-11-12).
       - id: gemini-3.5-flash-lite
         model: gemini/gemini-3.5-flash-lite
         mode: chat
@@ -181,7 +179,7 @@ providers:
         context_tokens: 1048576
         join: always
         verified: gemini-pricing-and-litellm-1.108.5
-        notes: Free of charge on the standard tier of the pricing page.
+        notes: Free of charge on the standard tier of the pricing page. Answers on a new AI Studio key (checked 2026-11-12).
       - id: gemini-3.8-flash
         model: gemini/gemini-3.8-flash
         mode: chat
@@ -191,27 +189,7 @@ providers:
         context_tokens: 1048576
         join: always
         verified: gemini-pricing-and-litellm-1.108.5
-        notes: Free of charge. Pricing page calls it the most capable Flash model. The 1,048,576 window is from LiteLLM's map; the pricing page did not restate it.
-      - id: gemini-2.5-flash
-        model: gemini/gemini-2.5-flash
-        mode: chat
-        aliases: [long-context]
-        order: 1
-        rpm: 8
-        context_tokens: 1048576
-        join: always
-        verified: gemini-pricing-page
-        notes: Free of charge. Pricing page states a 1M token context window.
-      - id: gemini-2.5-pro
-        model: gemini/gemini-2.5-pro
-        mode: chat
-        aliases: [smart, long-context]
-        order: 2
-        rpm: 3
-        context_tokens: 1048576
-        join: always
-        verified: gemini-pricing-and-litellm-1.108.5
-        notes: Free of charge, but historically a much tighter daily cap than Flash. Order 2 so Flash and Groq are preferred.
+        notes: Free of charge. Pricing page calls it the most capable Flash model. The 1,048,576 window is from LiteLLM's map; the pricing page did not restate it. A new key can get HTTP 503 while demand is high; that is transient, so the deployment stays.
       - id: gemini-embedding-2
         model: gemini/gemini-embedding-2
         mode: embedding

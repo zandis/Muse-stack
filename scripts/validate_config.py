@@ -29,6 +29,10 @@ GITIGNORE = ROOT / ".gitignore"
 
 REQUIRED_ALIAS = ("fast", "cheap", "smart", "long-context", "embed", "rerank")
 CHAT_ALIASES = {"fast", "cheap", "smart", "long-context"}
+# A new AI Studio key gets HTTP 404 "no longer available to new users" for the
+# 2.5 ids (checked 2026-11-12). These still answer, including the embedding model.
+RETIRED_GEMINI = ("gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro")
+LIVE_GEMINI = ("gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-embedding-2")
 
 
 class Failure(Exception):
@@ -112,6 +116,22 @@ def scenario_partial() -> None:
     check("GROQ_API_KEY" not in text and "OPENROUTER_API_KEY" not in text, "partial render leaked other providers")
     # Direct names exist alongside aliases.
     check(ids_for(config, "gemini-3.8-flash") == ["gemini-3.8-flash"], "pinned name missing")
+    gemini = next(p for p in catalog["providers"] if p["id"] == "gemini")
+    gemini_ids = [d["id"] for d in gemini["deployments"]]
+    check(set(gemini_ids) == set(LIVE_GEMINI) and len(gemini_ids) == len(LIVE_GEMINI), f"gemini deployment list drifted: {gemini_ids}")
+    rendered_ids = {e["model_info"]["id"] for e in config["model_list"]}
+    for retired in RETIRED_GEMINI:
+        check(not any(i == retired or i.startswith(f"{retired}__") for i in rendered_ids), f"{retired} still rendered")
+        check(retired not in text, f"rendered config still names {retired}")
+    for live in LIVE_GEMINI:
+        check(ids_for(config, live) == [live], f"pinned {live} missing")
+    # Aliases that used to include a retired 2.5 deployment still have a working Gemini member.
+    check("gemini-3.1-flash-lite__fast" in ids_for(config, "fast"), "fast lost gemini-3.1-flash-lite")
+    check("gemini-3.1-flash-lite__cheap" in ids_for(config, "cheap"), "cheap lost gemini-3.1-flash-lite")
+    check("gemini-3.5-flash-lite__cheap" in ids_for(config, "cheap"), "cheap lost gemini-3.5-flash-lite")
+    check("gemini-3.8-flash__smart" in ids_for(config, "smart"), "smart lost gemini-3.8-flash")
+    check("gemini-3.8-flash__long-context" in ids_for(config, "long-context"), "long-context lost gemini-3.8-flash")
+    check("gemini-embedding-2__embed" in ids_for(config, "embed"), "embed lost gemini-embedding-2")
     check(
         "dangerously_permit_weak_or_unset_master_key" not in config["general_settings"],
         "a real master key should not enable the open-proxy override",

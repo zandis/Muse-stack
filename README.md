@@ -259,9 +259,9 @@ docker compose -f docker-compose.yml -f docker-compose.spend.yml up -d
 | Alias | Endpoint | What it prefers |
 | --- | --- | --- |
 | `fast` | `/v1/chat/completions` | Groq `gpt-oss-20b`, Gemini 3.1 Flash-Lite, then Cohere Command R7B, then SiliconFlow, then OpenRouter free |
-| `cheap` | `/v1/chat/completions` | Gemini Flash-Lite and Groq `gpt-oss-20b`, then the same later bands |
-| `smart` | `/v1/chat/completions` | Gemini 3.8 Flash and Groq `gpt-oss-120b`, then Gemini 2.5 Pro and Cohere Command A, then OpenRouter free |
-| `long-context` | `/v1/chat/completions` | Models at 200k tokens or more. Gemini 2.5 Flash and 3.8 Flash first (1,048,576). Groq's 131k models are not in this group |
+| `cheap` | `/v1/chat/completions` | Gemini 3.1 and 3.5 Flash-Lite and Groq `gpt-oss-20b`, then the same later bands |
+| `smart` | `/v1/chat/completions` | Gemini 3.8 Flash and Groq `gpt-oss-120b`, then Cohere Command A, then OpenRouter free |
+| `long-context` | `/v1/chat/completions` | Models at 200k tokens or more. Gemini 3.8 Flash first (1,048,576). Groq's 131k models are not in this group |
 | `embed` | `/v1/embeddings` | Gemini Embedding 2, then Jina, Cohere, SiliconFlow bge-m3 |
 | `rerank` | `/v1/rerank` | Cohere Rerank v4 fast, then Jina v2 and SiliconFlow bge-reranker-v2-m3 |
 
@@ -269,11 +269,11 @@ Paid deployments join those groups only when `MUSE_ALLOW_PAID_FALLBACK=true`.
 
 ## Providers, limits, and what was checked
 
-Checked on 11 November 2026. Quotas move. When a number is not in the table, the provider does not publish a stable one, or the page that has it needs a login.
+Checked on 11 November 2026. Quotas move. Gemini model ids were checked again on 12 November 2026. When a number is not in the table, the provider does not publish a stable one, or the page that has it needs a login.
 
 | Provider | Key | Role here | What is actually free or cheap |
 | --- | --- | --- | --- |
-| Gemini (AI Studio) | `GEMINI_API_KEY` | Default chat and embeddings | [Pricing](https://ai.google.dev/gemini-api/docs/pricing) lists `gemini-3.8-flash`, `gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`, `gemini-2.5-flash`, `gemini-2.5-flash-lite`, `gemini-2.5-pro`, and `gemini-embedding-2` as free of charge on the standard tier. RPM and RPD are per project in [AI Studio](https://aistudio.google.com/); they are not pinned in this repo. Free-tier prompts are used to improve Google's products. `gemini-2.0-flash` is shut down. `gemini-4-argon` and `gemini-3.1-pro-preview` are not on the free tier. |
+| Gemini (AI Studio) | `GEMINI_API_KEY` | Default chat and embeddings | [Pricing](https://ai.google.dev/gemini-api/docs/pricing) lists `gemini-3.8-flash`, `gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`, and `gemini-embedding-2` as free of charge on the standard tier, and a new AI Studio key can call the two Flash-Lite models. RPM and RPD are per project in [AI Studio](https://aistudio.google.com/); they are not pinned in this repo. Free-tier prompts are used to improve Google's products. `gemini-2.5-flash`, `gemini-2.5-flash-lite`, and `gemini-2.5-pro` return HTTP 404 ("no longer available to new users") on a new key, so they are not deployed. `gemini-3.8-flash` can return 503 while demand is high; that is transient and the deployment stays. `gemini-2.0-flash` is shut down. `gemini-4-argon` and `gemini-3.1-pro-preview` are not on the free tier. |
 | Groq | `GROQ_API_KEY` | Fast and smart chat | [Models](https://console.groq.com/docs/models): `openai/gpt-oss-20b` and `openai/gpt-oss-120b`, 131,072 context. The rate column on that page is the Developer plan (250K TPM, 1K RPM). Free-plan caps are on [the limits page](https://console.groq.com/settings/limits) and were not readable without a login. `llama-3.3-70b-versatile` is enterprise-only there, so it is not configured. |
 | OpenRouter | `OPENROUTER_API_KEY` | Last-resort free chat | Public [models API](https://openrouter.ai/api/v1/models) on this date, zero-priced ids only: `google/gemma-4-26b-a4b-it:free`, `google/gemma-4-31b-it:free`, `liquid/lfm-2.5-2.6b:free`, `nvidia/nemotron-3-ultra-550b-a55b:free`, `nvidia/nemotron-3.5-lightning:free`, and `openrouter/free`. Free ids disappear without notice. Account rate limits are not in the catalog response. Do not add a paid id to this provider's fallbacks: OpenRouter bills it. |
 | Cohere | `COHERE_API_KEY` | Trial chat, embed, rerank | [Models](https://docs.cohere.com/docs/models): `command-r7b-12-2024` (128k), `command-a-03-2025` (256k), `embed-v5.0-fast` (default 2048 dimensions), `rerank-v4.0-fast` (32k). [Trial keys](https://docs.cohere.com/docs/rate-limits) are 1,000 calls/month, and chat is about 20 RPM. Cohere's current rerank recommendation is `rerank-v5.0-fast`; it is not in LiteLLM 1.108.5's price map, so the proxy calls v4.0-fast. |
