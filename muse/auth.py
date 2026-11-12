@@ -75,8 +75,9 @@ class Identity:
 
 def _strip_bearer(token: str | None) -> str:
     text = (token or "").strip()
-    if text.lower().startswith("bearer "):
-        text = text[7:].strip()
+    head, _, rest = text.partition(" ")
+    if head.lower() == "bearer":
+        text = rest.strip()
     return text
 
 
