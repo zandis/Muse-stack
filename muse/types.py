@@ -100,6 +100,46 @@ class Totals(TypedDict):
     tokens_today: int
 
 
+class AppToday(TypedDict):
+    requests: int
+    failures: int
+    tokens: int
+    cost_usd: float
+
+
+class AppStatus(TypedDict):
+    name: str
+    builtin: bool  # owner and anonymous are built in and not stored
+    priority: str  # interactive | normal | background
+    daily_requests: int | None
+    daily_tokens: int | None
+    allow_paid: bool
+    default_privacy: str | None
+    note: str | None
+    created_at: str | None
+    last_used_at: str | None
+    today: AppToday
+    # Calls turned away today, keyed "defer:yield", "refuse:app-requests", ...
+    deferrals: dict[str, int]
+
+
+class Paid(TypedDict):
+    cap_usd: float
+    spent_usd: float
+    held_usd: float  # reserved by calls in flight
+    calls: int
+    unknown_cost_calls: int  # paid calls whose cost could not be computed; not in spent_usd
+    resets_at: str  # next local midnight
+
+
+class QueueStatus(TypedDict):
+    counts: dict[str, int]  # queued, running, deferred, done, failed, cancelled
+    waiting: int  # queued + deferred
+    next_due_at: str | None
+    oldest_queued_at: str | None
+    hold_until: str | None  # the queue app hit a cap; nothing runs before this
+
+
 class Snapshot(TypedDict):
     generated_at: str
     home: str
@@ -109,3 +149,8 @@ class Snapshot(TypedDict):
     aliases: list[AliasStatus]
     recent: list[RecentCall]  # newest first, at most 50
     totals: Totals
+    # Added with per-app keys and the queue. Older consumers may ignore them.
+    apps: list[AppStatus]
+    paid: Paid
+    queue: QueueStatus
+    paused: bool  # the queue is paused (`muse pause`); the proxy is not

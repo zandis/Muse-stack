@@ -17,11 +17,14 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from muse import paths, quota
+from muse import queue as queue_mod
 from muse.ledger import Ledger
 from muse.types import (
     AliasStatus,
+    AppStatus,
     DeploymentStatus,
     Limit,
+    Paid,
     Policy,
     ProviderStatus,
     RecentCall,
@@ -329,6 +332,75 @@ def build_snapshot(
         aliases=aliases,
         recent=recent,
         totals={"requests_today": int(today["requests"]), "tokens_today": int(today["tokens"])},
+        apps=build_apps(env, ts, db),
+        paid=build_paid(env, ts, db),
+        queue=_queue_stats(env, ts),
+        paused=queue_mod.is_paused(env),
+    )
+
+
+def _queue_stats(env: Mapping[str, str], ts: float) -> Any:
+    try:
+        return queue_mod.stats(env, ts)
+    except Exception:  # an unreadable queue file must not take status down
+        return {"counts": {s: 0 for s in queue_mod.STATUSES}, "waiting": 0, "next_due_at": None, "oldest_queued_at": None, "hold_until": None}
+
+
+def build_apps(env: Mapping[str, str], ts: float, db: Any) -> list[AppStatus]:
+    """Every app (built-ins first), with today's usage and what was turned away. Counts only."""
+    from muse import apps as apps_mod
+    from muse.ration import resolve_tz
+
+    tz = resolve_tz(str(env.get("MUSE_TZ", "") or "").strip())
+    usage = db.usage_by_app(now=ts, tz=tz) or {}
+    counts = db.ration_counts(now=ts, tz=tz) or {}
+    deferrals: dict[str | None, dict[str, int]] = {}
+    for (app, kind, code), n in counts.items():
+        deferrals.setdefault(app, {})[f"{kind}:{code}"] = n
+    registered = apps_mod.load_apps(env)
+    rows: list[AppStatus] = []
+    seen: set[str] = set()
+    for app in [apps_mod.OWNER, apps_mod.ANONYMOUS, *[registered[n] for n in sorted(registered)]]:
+        seen.add(app.name)
+        u = usage.get(app.name) or {}
+        rows.append(
+            AppStatus(
+                name=app.name, builtin=app.builtin, priority=app.priority, daily_requests=app.daily_requests,
+                daily_tokens=app.daily_tokens, allow_paid=bool(app.allow_paid), default_privacy=app.default_privacy,
+                note=app.note, created_at=app.created_at or None, last_used_at=quota.iso(u["last_ts"]) if u.get("last_ts") else None,
+                today={"requests": int(u.get("requests", 0)), "failures": int(u.get("failures", 0)),
+                       "tokens": int(u.get("tokens", 0)), "cost_usd": float(u.get("cost_usd", 0.0))},
+                deferrals=dict(sorted(deferrals.get(app.name, {}).items())),
+            )
+        )
+    # Apps that made calls today but are no longer registered (removed, or calls from before apps existed).
+    for name in sorted(n for n in set(usage) | set(deferrals) if n not in seen):
+        u = usage.get(name) or {}
+        label = name or "unattributed"
+        rows.append(
+            AppStatus(
+                name=label, builtin=False, priority="normal", daily_requests=None, daily_tokens=None, allow_paid=False,
+                default_privacy=None, note="not registered (removed, or called before apps existed)", created_at=None,
+                last_used_at=quota.iso(u["last_ts"]) if u.get("last_ts") else None,
+                today={"requests": int(u.get("requests", 0)), "failures": int(u.get("failures", 0)),
+                       "tokens": int(u.get("tokens", 0)), "cost_usd": float(u.get("cost_usd", 0.0))},
+                deferrals=dict(sorted(deferrals.get(name, {}).items())),
+            )
+        )
+    return rows
+
+
+def build_paid(env: Mapping[str, str], ts: float, db: Any) -> Paid:
+    """The paid cap meter: cap, spent today, held by in-flight calls, calls with unknown cost, next reset."""
+    from muse import ration
+
+    settings = ration.Settings.from_env(env)
+    spend = db.paid_spend(now=ts, tz=settings.tz) or {}
+    day_end = ration.local_day_bounds(ts, settings.tz)[1]
+    return Paid(
+        cap_usd=float(settings.paid_cap_usd), spent_usd=float(spend.get("usd", 0.0)), held_usd=float(spend.get("held_usd", 0.0)),
+        calls=int(spend.get("calls", 0)), unknown_cost_calls=int(spend.get("unknown_cost_calls", 0)),
+        resets_at=quota.iso(day_end) or "",
     )
 
 

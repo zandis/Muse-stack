@@ -32,3 +32,17 @@ def local_catalog_path(environ: Mapping[str, str] | None = None) -> Path:
     env = os.environ if environ is None else environ
     explicit = env.get("MUSE_LOCAL_CATALOG", "").strip()
     return Path(explicit).expanduser() if explicit else home(environ) / "local.yaml"
+
+
+def queue_path(environ: Mapping[str, str] | None = None) -> Path:
+    """The background queue database. Separate from the ledger: it holds prompt text."""
+    return home(environ) / "queue.sqlite"
+
+
+def queue_out_dir(environ: Mapping[str, str] | None = None) -> Path:
+    return home(environ) / "queue-out"
+
+
+def paused_path(environ: Mapping[str, str] | None = None) -> Path:
+    """Existence of this file pauses the queue runner (not the proxy)."""
+    return home(environ) / "paused"

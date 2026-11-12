@@ -189,6 +189,9 @@ def render_status(snap: Mapping[str, Any], *, color: bool = False, now: datetime
     out.append(f"{paint('muse', 'bold')}  proxy {_fit(str(proxy.get('url', '')), 28)} {paint(proxy_txt, proxy_style)}  default privacy: {snap.get('default_privacy', '?')}")
     totals = snap.get("totals", {})
     out.append(paint(f"today: {totals.get('requests_today', 0)} requests, {short_num(totals.get('tokens_today', 0))} tokens", "dim"))
+    if snap.get("paused"):
+        out.append(paint(_fit("*** PAUSED: queue stopped (`muse resume`). The proxy still answers. ***", WIDTH), "yellow+bold"))
+    out.extend(_paid_queue_lines(snap, now, paint))
     out.append("")
 
     if not active:
@@ -265,6 +268,8 @@ def render_status(snap: Mapping[str, Any], *, color: bool = False, now: datetime
             out.append(_fit(line, WIDTH))
     out.append("")
 
+    out.extend(_apps_block(snap, paint, unicode_ok))
+
     out.append(paint("RECENT CALLS", "bold"))
     recent = list(snap.get("recent", []))[:5]
     if not recent:
@@ -289,6 +294,70 @@ def render_status(snap: Mapping[str, Any], *, color: bool = False, now: datetime
         )
         out.append(line.rstrip())
     return "\n".join(out) + "\n"
+
+
+def _paid_queue_lines(snap: Mapping[str, Any], now: datetime, paint: Paint) -> list[str]:
+    """'Paid today' and 'Queue' lines. Missing keys (an older snapshot) print nothing."""
+    out: list[str] = []
+    paid = snap.get("paid")
+    if isinstance(paid, Mapping):
+        cap, spent = float(paid.get("cap_usd") or 0), float(paid.get("spent_usd") or 0)
+        text = f"Paid today: ${spent:.2f} of ${cap:.2f}" if cap > 0 else "Paid today: off (cap is $0.00)"
+        style = None
+        if cap > 0 and spent >= cap:
+            text += "  CAP REACHED"
+            style = "red"
+        elif cap > 0 and spent >= 0.8 * cap:
+            style = "yellow"
+        reset = countdown(paid.get("resets_at"), now)
+        if reset and cap > 0:
+            text += f"  (resets in {reset})"
+        if paid.get("unknown_cost_calls"):
+            text += f"  {paid['unknown_cost_calls']} call(s) of unknown cost"
+        out.append(paint(_fit(text, WIDTH), style))
+    queue = snap.get("queue")
+    if isinstance(queue, Mapping):
+        waiting = int(queue.get("waiting") or 0)
+        counts = queue.get("counts") or {}
+        if waiting == 0 and not counts.get("running"):
+            text = "Queue: empty" + (f" ({counts.get('done', 0)} done)" if counts.get("done") else "")
+        else:
+            text = f"Queue: {waiting} waiting" + (" (paused)" if snap.get("paused") else "")
+            if counts.get("running"):
+                text += f", {counts['running']} running"
+            due = countdown(queue.get("next_due_at"), now)
+            if due:
+                text += ", next " + ("due now" if due == "now" else f"in {due}")
+            hold = countdown(queue.get("hold_until"), now)
+            if hold and hold != "now":
+                text += f" (app cap: nothing before {hold})"
+        out.append(_fit(text, WIDTH))
+    return out
+
+
+def _apps_block(snap: Mapping[str, Any], paint: Paint, unicode_ok: bool) -> list[str]:
+    rows = [a for a in snap.get("apps", []) if isinstance(a, Mapping)]
+    if not rows:
+        return []
+    out = [paint("APPS", "bold")]
+    for a in rows:
+        today = a.get("today") or {}
+        if a.get("name") == "anonymous" and not today.get("requests") and not a.get("deferrals"):
+            continue
+        used = f"{today.get('requests', 0)} req {short_num(today.get('tokens', 0))} tok"
+        caps = []
+        for key, val, unit in (("daily_requests", today.get("requests", 0), "req"), ("daily_tokens", today.get("tokens", 0), "tok")):
+            cap = a.get(key)
+            if cap:
+                frac = min(1.0, val / cap)
+                caps.append(f"{bar(frac, 5, unicode_ok)} {short_num(val)}/{short_num(cap)} {unit}")
+        line = f"  {_fit(str(a.get('name')), 12):<12} {str(a.get('priority', '')):<11} {used:<14}" + ("  " + "  ".join(caps) if caps else "")
+        out.append(_fit(line.rstrip(), WIDTH))
+        if a.get("deferrals"):
+            parts = ", ".join(f"{n}x {ration_words(k)}" for k, n in a["deferrals"].items())
+            out.append(paint(_fit(f"    turned away today: {parts}", WIDTH), "yellow"))
+    out.append("")
+    return out
 
 
 def _limit_line(lim: Mapping[str, Any], now: datetime, paint: Paint, unicode_ok: bool) -> str:
@@ -750,7 +819,7 @@ def _pidfile(env: Mapping[str, str]) -> Path:
 
 def _docker_child_env(env: Mapping[str, str]) -> dict[str, str]:
     """Child env for compose: keys merged in; loopback local bases rewritten for the container."""
-    child = dict(env)
+    child = {k: v for k, v in env.items() if k != "MUSE_QUEUE_APP_TOKEN"}  # the proxy never needs it
     for var in local.BASE_ENV.values():
         val = child.get(var, "").strip()
         if val:
@@ -818,7 +887,7 @@ def _up_native(env: dict[str, str], detach: bool) -> int:
     # render_and_start.py hardcodes --host 0.0.0.0; natively we honour MUSE_BIND (default loopback).
     host = env.get("MUSE_BIND", "").strip() or "127.0.0.1"
     port = env.get("MUSE_PORT", "").strip() or "4000"
-    child = dict(env)
+    child = {k: v for k, v in env.items() if k != "MUSE_QUEUE_APP_TOKEN"}
     child["PYTHONPATH"] = os.pathsep.join(filter(None, [str(paths.REPO_ROOT), child.get("PYTHONPATH", "")]))
     child["MUSE_HOME"] = str(paths.home(env))
     cmd = [exe, "--config", str(cfg_path), "--host", host, "--port", port]
@@ -988,7 +1057,496 @@ def cmd_version(args: argparse.Namespace) -> int:
     return 0
 
 
+# ------------------------------------------------------------ apps, queue, pause
+
+RATION_WORDS = {
+    "defer:yield": "waited for an app in use",
+    "defer:reserve": "kept a reserve",
+    "defer:blocked": "providers blocked",
+    "defer:paid-cap": "paid cap reached",
+    "defer:paid-spend-unknown": "paid spend unknown",
+    "refuse:app-requests": "hit its request cap",
+    "refuse:app-tokens": "hit its token cap",
+    "refuse:paid-not-allowed": "paid not allowed",
+    "refuse:paid-cap": "paid cap reached",
+    "refuse:paid-unknown-cost": "price unknown",
+    "refuse:paid-spend-unknown": "paid spend unknown",
+}
+
+
+def ration_words(key: str) -> str:
+    """Plain words for a `kind:code` deferral key; an unknown code is shown as it is."""
+    return RATION_WORDS.get(key, key.replace(":", " "))
+
+
+def _opt_int(value: Any) -> str:
+    return "-" if value is None else short_num(value)
+
+
+def _app_rows(snap_apps: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    return [dict(a) for a in snap_apps]
+
+
+def _apps_snapshot() -> list[dict[str, Any]]:
+    from muse.ledger import Ledger
+    from muse.status import _SafeLedger, build_apps
+
+    env = _env()
+    now = time.time()
+    return _app_rows(build_apps(env, now, _SafeLedger(Ledger(paths.ledger_path(env), clock=lambda: now))))  # type: ignore[arg-type]
+
+
+def render_apps(rows: list[Mapping[str, Any]], paint: Paint) -> str:
+    out = [paint(f"{'APP':<13} {'PRIORITY':<12} {'TODAY':<22} {'CAPS req/tok':<14} PAID", "bold")]
+    for a in rows:
+        today = a.get("today") or {}
+        used = f"{today.get('requests', 0)} req {short_num(today.get('tokens', 0))} tok"
+        if today.get("cost_usd"):
+            used += f" ${today['cost_usd']:.2f}"
+        caps = f"{_opt_int(a.get('daily_requests'))}/{_opt_int(a.get('daily_tokens'))}"
+        paid = "yes" if a.get("allow_paid") else "no"
+        tag = "  (built in)" if a.get("builtin") else ""
+        out.append(f"{_cell(paint, str(a['name']), 13)} {_cell(paint, str(a['priority']), 12)} {_cell(paint, used, 22)} {_cell(paint, caps, 14)} {paid}{tag}".rstrip())
+        extra = []
+        if a.get("default_privacy"):
+            extra.append(f"privacy {a['default_privacy']}")
+        if a.get("created_at"):
+            extra.append(f"created {str(a['created_at'])[:10]}")
+        if a.get("note"):
+            extra.append(str(a["note"]))
+        if extra:
+            out.append(paint(_fit("    " + " · ".join(extra), WIDTH), "dim"))
+        if a.get("deferrals"):
+            parts = ", ".join(f"{n}x {ration_words(k)}" for k, n in a["deferrals"].items())
+            out.append(paint(_fit(f"    turned away today: {parts}", WIDTH), "yellow"))
+    return "\n".join(out) + "\n"
+
+
+def cmd_apps_list(args: argparse.Namespace) -> int:
+    rows = _apps_snapshot()
+    if args.json:
+        print(json.dumps(rows, indent=2))
+        return 0
+    sys.stdout.write(render_apps(rows, Paint(_color_enabled())))
+    return 0
+
+
+def _token_display_ok(args: argparse.Namespace) -> bool:
+    """Rule: a token is printed only when stdout is a terminal or --show-token is given.
+
+    Checked BEFORE the app is created or the token rotated, so a refusal never
+    leaves a token that nobody saw. Why: stdout of a non-terminal is usually a log
+    file, CI output or a pipe to something that stores it.
+    """
+    if getattr(args, "show_token", False) or sys.stdout.isatty():
+        return True
+    _err(
+        "Refusing to print a new key: stdout is not a terminal, so it could end up in a log. "
+        "Run this in a terminal, or add --show-token if you really want it on stdout. Nothing was created or changed."
+    )
+    return False
+
+
+def _base_v1() -> str:
+    return _proxy_url() + "/v1"
+
+
+def _print_token_block(name: str, token: str, extra_env: bool = True) -> None:
+    base = _base_v1()
+    print()
+    print("  COPY THE KEY NOW. It is shown once. Muse keeps only a hash, so it cannot be shown again.")
+    print(f"  If you lose it, `muse apps rotate {name}` issues a new one and the old one stops working.")
+    print()
+    print(f"  Base URL : {base}")
+    print(f"  API key  : {token}")
+    if extra_env:
+        print()
+        print("For a client that reads the OpenAI environment variables:")
+        print(f"  export OPENAI_BASE_URL={base}")
+        print(f"  export OPENAI_API_KEY={token}")
+    if base.startswith("http://127.0.0.1") or base.startswith("http://localhost"):
+        print()
+        print("  127.0.0.1 only works for programs on this machine. From Docker use host.docker.internal.")
+
+
+def _describe(app: Any) -> str:
+    caps = []
+    if app.daily_requests is not None:
+        caps.append(f"{app.daily_requests} requests/day")
+    if app.daily_tokens is not None:
+        caps.append(f"{short_num(app.daily_tokens)} tokens/day")
+    return f"{app.priority}, {', '.join(caps) if caps else 'no daily caps'}, paid: {'yes' if app.allow_paid else 'no'}"
+
+
+def _create_app(args: argparse.Namespace, name: str, priority: str, daily_requests: int | None, daily_tokens: int | None,
+                allow_paid: bool | None, privacy: str | None, note: str | None, preset: Any = None) -> int:
+    from muse import apps, presets
+
+    if not _token_display_ok(args):
+        return 2
+    try:
+        app, token = apps.add_app(name, priority, daily_requests=daily_requests, daily_tokens=daily_tokens,
+                                  allow_paid=allow_paid, default_privacy=privacy, note=note, environ=_env())
+    except apps.AppError as exc:
+        _err(f"Error: {exc}")
+        return 1
+    if args.json:
+        print(json.dumps({"name": app.name, "token": token, "base_url": _base_v1(), "priority": app.priority,
+                          "daily_requests": app.daily_requests, "daily_tokens": app.daily_tokens, "allow_paid": app.allow_paid,
+                          "model": preset.alias if preset else None}))
+        return 0
+    print(f"Created app '{app.name}' ({_describe(app)}).")
+    if preset:
+        print(f"  {preset.why}")
+    _print_token_block(app.name, token, extra_env=preset is None)
+    if preset:
+        print()
+        print(presets.hint(preset, _base_v1(), token))
+    print()
+    print("The proxy picks the new app up on its next request; no restart is needed.")
+    return 0
+
+
+def cmd_apps_add(args: argparse.Namespace) -> int:
+    return _create_app(args, args.name, args.priority, args.daily_requests, args.daily_tokens, args.allow_paid, args.privacy, args.note)
+
+
+def cmd_apps_preset(args: argparse.Namespace) -> int:
+    from muse import presets
+
+    preset = presets.get(args.kind)
+    name = args.name or args.kind
+    return _create_app(args, name, preset.priority, args.daily_requests if args.daily_requests is not None else preset.daily_requests,
+                       args.daily_tokens if args.daily_tokens is not None else preset.daily_tokens, args.allow_paid, args.privacy, args.note, preset)
+
+
+def cmd_apps_set(args: argparse.Namespace) -> int:
+    from muse import apps
+
+    changes: dict[str, Any] = {}
+    if args.priority:
+        changes["priority"] = args.priority
+    for flag, field_ in (("daily_requests", "daily_requests"), ("daily_tokens", "daily_tokens")):
+        value = getattr(args, flag)
+        if value is not None:
+            changes[field_] = None if value < 0 else value  # -1 removes the cap
+        elif getattr(args, "no_" + flag):
+            changes[field_] = None
+    if args.allow_paid is not None:
+        changes["allow_paid"] = args.allow_paid
+    if args.privacy:
+        changes["default_privacy"] = None if args.privacy == "none" else args.privacy
+    if args.note is not None:
+        changes["note"] = args.note or None
+    if not changes:
+        _err("Nothing to change. Options: --priority, --daily-requests, --daily-tokens, --allow-paid/--no-paid, --privacy, --note.")
+        return 2
+    try:
+        app = apps.update_app(args.name, _env(), **changes)
+    except apps.AppError as exc:
+        _err(f"Error: {exc}")
+        return 1
+    print(f"Updated '{app.name}': {_describe(app)}.")
+    return 0
+
+
+def cmd_apps_rm(args: argparse.Namespace) -> int:
+    from muse import apps
+
+    try:
+        removed = apps.remove_app(args.name, _env())
+    except apps.AppError as exc:
+        _err(f"Error: {exc}")
+        return 1
+    if not removed:
+        _err(f"No app named '{args.name}'.")
+        return 1
+    print(f"Removed '{args.name}'. Its key stops working at the next request.")
+    return 0
+
+
+def cmd_apps_rotate(args: argparse.Namespace) -> int:
+    from muse import apps
+
+    if not _token_display_ok(args):
+        return 2
+    try:
+        app, token = apps.rotate_token(args.name, _env())
+    except apps.AppError as exc:
+        _err(f"Error: {exc}")
+        return 1
+    if args.json:
+        print(json.dumps({"name": app.name, "token": token, "base_url": _base_v1()}))
+        return 0
+    print(f"New key for '{app.name}'. The old key no longer works.")
+    _print_token_block(app.name, token, extra_env=False)
+    return 0
+
+
+def cmd_apps(args: argparse.Namespace) -> int:
+    return {
+        "list": cmd_apps_list, "add": cmd_apps_add, "set": cmd_apps_set, "rm": cmd_apps_rm,
+        "rotate": cmd_apps_rotate, "preset": cmd_apps_preset,
+    }[args.apps_cmd](args)
+
+
+# ---- pause / resume
+
+
+def cmd_pause(args: argparse.Namespace) -> int:
+    from muse import queue
+
+    queue.set_paused(_env())
+    print("Paused. The queue sends nothing until you run `muse resume`. The proxy keeps answering your apps.")
+    return 0
+
+
+def cmd_resume(args: argparse.Namespace) -> int:
+    from muse import queue
+
+    if queue.clear_paused(_env()):
+        print("Resumed. A running `muse queue run` carries on within a few seconds.")
+    else:
+        print("It was not paused.")
+    return 0
+
+
+# ---- queue
+
+
+def _queue() -> Any:
+    from muse import queue
+
+    return queue.Queue(_env())
+
+
+def _read_prompt(text: str) -> str:
+    return sys.stdin.read() if text == "-" else text
+
+
+def _privacy_for(args: argparse.Namespace) -> str | None:
+    return args.privacy or (_env().get("MUSE_DEFAULT_PRIVACY", "").strip().lower() or None)
+
+
+def _deadline(args: argparse.Namespace) -> float | None:
+    from muse import queue
+    from muse.ration import resolve_tz
+
+    if not getattr(args, "by", None):
+        return None
+    return queue.parse_deadline(args.by, time.time(), resolve_tz(_env().get("MUSE_TZ", "").strip()))
+
+
+def _announce_added(job: Any) -> None:
+    due = f", must finish by {datetime.fromtimestamp(job.deadline).strftime('%Y-%m-%d %H:%M')}" if job.deadline else ""
+    print(f"Queued {job.id} ({job.kind}, alias {job.alias}{', paid allowed' if job.allow_paid else ''}{due}).")
+    print(f"  Result file: {job.out_path}")
+
+
+def cmd_queue_add(args: argparse.Namespace) -> int:
+    from muse import queue
+
+    q = _queue()
+    try:
+        prompt = _read_prompt(args.prompt)
+        if not prompt.strip():
+            raise queue.QueueError("the prompt is empty")
+        if len(prompt) > queue.MAX_PROMPT_CHARS:
+            raise queue.QueueError(f"the prompt is {len(prompt)} characters; the limit is {queue.MAX_PROMPT_CHARS}")
+        job = q.add(kind="prompt", payload=prompt, alias=args.alias, privacy=_privacy_for(args), out_path=args.out,
+                    deadline=_deadline(args), allow_paid=args.allow_paid, max_attempts=args.max_attempts,
+                    max_tokens=args.max_tokens, force=args.overwrite)
+    except queue.QueueError as exc:
+        _err(f"Error: {exc}")
+        return 1
+    _announce_added(job)
+    return 0
+
+
+def cmd_queue_add_file(args: argparse.Namespace) -> int:
+    from muse import queue
+
+    q = _queue()
+    target = Path(args.path).expanduser().resolve()
+    try:
+        deadline = _deadline(args)
+        if target.is_dir():
+            files, skipped = queue.expand_directory(target, args.recursive, args.max_files)
+            if not files:
+                raise queue.QueueError(f"{target} has no usable text files")
+            out_dir = Path(args.out).expanduser().resolve() if args.out else None
+            if out_dir is not None:
+                out_dir.mkdir(parents=True, exist_ok=True)
+            jobs = []
+            for f in files:
+                out = str(out_dir / (f.name + ".out.txt")) if out_dir else None
+                jobs.append(q.add(kind="file-summary", payload=str(f), instruction=args.do, alias=args.alias, privacy=_privacy_for(args),
+                                  out_path=out, deadline=deadline, allow_paid=args.allow_paid, max_attempts=args.max_attempts,
+                                  max_tokens=args.max_tokens, force=args.overwrite))
+            print(f"Queued {len(jobs)} jobs from {target}.")
+            for note in skipped:
+                print(f"  skipped: {note}")
+            print(f"  Results: {out_dir or paths.queue_out_dir(_env())}")
+            return 0
+        queue.read_text_file(target)  # fail now, not at run time, for an unreadable or oversized file
+        job = q.add(kind="file-summary", payload=str(target), instruction=args.do, alias=args.alias, privacy=_privacy_for(args),
+                    out_path=args.out, deadline=deadline, allow_paid=args.allow_paid, max_attempts=args.max_attempts,
+                    max_tokens=args.max_tokens, force=args.overwrite)
+    except queue.QueueError as exc:
+        _err(f"Error: {exc}")
+        return 1
+    _announce_added(job)
+    return 0
+
+
+def cmd_queue_add_batch(args: argparse.Namespace) -> int:
+    from muse import queue
+
+    q = _queue()
+    try:
+        text = sys.stdin.read() if args.path == "-" else queue.read_text_file(Path(args.path).expanduser(), limit=queue.MAX_PROMPT_CHARS)
+        items = queue.split_batch(text)
+        job = q.add(kind="batch", payload=json.dumps(items), alias=args.alias, privacy=_privacy_for(args), out_path=args.out,
+                    deadline=_deadline(args), allow_paid=args.allow_paid, max_attempts=args.max_attempts,
+                    max_tokens=args.max_tokens, force=args.overwrite)
+    except queue.QueueError as exc:
+        _err(f"Error: {exc}")
+        return 1
+    _announce_added(job)
+    print(f"  {len(items)} prompts, run in order, one result file.")
+    return 0
+
+
+def _job_when(job: Any, now: float) -> str:
+    if job.status in ("queued", "deferred"):
+        left = job.next_attempt_at - now
+        return "due now" if left <= 0 else "in " + (countdown(queue_iso(job.next_attempt_at), datetime.fromtimestamp(now, timezone.utc)) or "?")
+    return ""
+
+
+def queue_iso(ts: float) -> str:
+    return datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def cmd_queue_list(args: argparse.Namespace) -> int:
+    q = _queue()
+    jobs = q.list()
+    if args.json:
+        print(json.dumps([j.public() for j in jobs], indent=2))
+        return 0
+    paint = Paint(_color_enabled())
+    if not jobs:
+        print("The queue is empty. Add a job: muse queue add \"summarise ...\" --alias cheap")
+        return 0
+    now = time.time()
+    print(paint(f"{'ID':<13}{'STATUS':<10}{'KIND':<13}{'ALIAS':<9}{'NEXT':<12}REASON", "bold"))
+    style = {"done": "green", "failed": "red", "cancelled": "dim", "deferred": "yellow", "running": "cyan"}
+    for j in jobs:
+        print(f"{j.id:<13}{paint(f'{j.status:<10}', style.get(j.status))}{j.kind:<13}{_fit(j.alias, 8):<9}{_job_when(j, now):<12}{j.last_reason or ''}".rstrip())
+    return 0
+
+
+def cmd_queue_show(args: argparse.Namespace) -> int:
+    from muse import queue
+
+    q = _queue()
+    try:
+        job = q.find(args.id)
+    except queue.QueueError as exc:
+        _err(f"Error: {exc}")
+        return 1
+    if args.output:
+        try:
+            sys.stdout.write(Path(job.out_path).read_text(encoding="utf-8"))
+        except OSError:
+            _err(f"There is no result file yet ({job.status}).")
+            return 1
+        return 0
+    data = job.public()
+    if args.json:
+        print(json.dumps(data, indent=2))
+        return 0
+    for key, value in data.items():
+        if value not in (None, ""):
+            print(f"{key:<16} {value}")
+    print("(the prompt and the result are not shown here; `muse queue show ID --output` prints the result file)")
+    return 0
+
+
+def cmd_queue_cancel(args: argparse.Namespace) -> int:
+    from muse import queue
+
+    try:
+        job = _queue().cancel(args.id)
+    except queue.QueueError as exc:
+        _err(f"Error: {exc}")
+        return 1
+    print(f"Cancelled {job.id}.")
+    return 0
+
+
+def cmd_queue_clear(args: argparse.Namespace) -> int:
+    from muse import queue
+
+    statuses = ["done", "failed", "cancelled"] if args.finished else ["done"] if args.done else []
+    if not statuses:
+        _err("Say what to clear: --done (finished jobs) or --finished (done, failed and cancelled).")
+        return 2
+    try:
+        n = _queue().clear(statuses)
+    except queue.QueueError as exc:
+        _err(f"Error: {exc}")
+        return 1
+    print(f"Cleared {n} job(s). Result files were left where they are.")
+    return 0
+
+
+def cmd_queue_run(args: argparse.Namespace) -> int:
+    from muse import queue
+
+    env = dict(_env())
+
+    def log(line: str) -> None:
+        print(f"{datetime.now().strftime('%H:%M:%S')} {line}", file=sys.stderr, flush=True)
+
+    runner = queue.Runner(env, log=log)
+    if queue.is_paused(env):
+        log("paused (muse resume to continue)")
+    try:
+        summary = runner.run(once=args.once, max_jobs=args.max_jobs, until_idle=args.until_idle)
+    except keys.KeysError as exc:
+        _err(f"Error: {exc}")
+        return 1
+    except queue.apps.AppError as exc:
+        _err(f"Error: {exc}")
+        return 1
+    log(f"stopped ({summary.stopped}): {summary.done} done, {summary.failed} failed, {summary.deferred} deferred this run")
+    if summary.stopped == "locked":
+        _err("Another `muse queue run` is already running. Only one runner may run at a time.")
+        return 1
+    return 1 if summary.stopped == "auth" else 0
+
+
+def cmd_queue(args: argparse.Namespace) -> int:
+    return {
+        "add": cmd_queue_add, "add-file": cmd_queue_add_file, "add-batch": cmd_queue_add_batch, "list": cmd_queue_list,
+        "show": cmd_queue_show, "cancel": cmd_queue_cancel, "clear": cmd_queue_clear, "run": cmd_queue_run,
+    }[args.queue_cmd](args)
+
+
 # ------------------------------------------------------------------- parser
+
+
+def apps_priorities() -> tuple[str, ...]:
+    from muse import apps
+
+    return apps.PRIORITIES
+
+
+def preset_kinds() -> list[str]:
+    from muse import presets
+
+    return list(presets.PRESETS)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1057,6 +1615,96 @@ def build_parser() -> argparse.ArgumentParser:
     e = sub.add_parser("env", help="export lines for an OpenAI-compatible client")
     e.add_argument("--show-master-key", action="store_true", help="print the real key instead of the variable name")
     e.set_defaults(func=cmd_env)
+
+    ap = sub.add_parser("apps", help="applications that use the proxy: keys, priority, daily caps")
+    asub = ap.add_subparsers(dest="apps_cmd", required=True)
+    al = asub.add_parser("list", help="every app with today's use and what was turned away")
+    al.add_argument("--json", action="store_true")
+
+    def app_options(sp: argparse.ArgumentParser, with_priority: bool = True) -> None:
+        if with_priority:
+            sp.add_argument("--priority", choices=list(apps_priorities()), default=None if sp.prog.endswith(("set", "preset")) else "normal")
+        sp.add_argument("--daily-requests", type=int, metavar="N", default=None, help="most successful requests per local day")
+        sp.add_argument("--daily-tokens", type=int, metavar="N", default=None, help="most tokens per local day")
+        sp.add_argument("--allow-paid", dest="allow_paid", action=argparse.BooleanOptionalAction, default=None,
+                        help="may this app use paid providers (default: no for background, yes otherwise)")
+        sp.add_argument("--privacy", choices=list(_PRIVACY_WORDS), default=None, help="default privacy class for this app")
+        sp.add_argument("--note", default=None, help="one line to remember what this app is")
+
+    aa = asub.add_parser("add", help="create an app and show its key once")
+    aa.add_argument("name")
+    app_options(aa)
+    aa.add_argument("--show-token", action="store_true", help="print the key even when stdout is not a terminal")
+    aa.add_argument("--json", action="store_true", help="print the new key as JSON (same terminal rule)")
+    ase = asub.add_parser("set", help="change an app's priority, caps, paid permission or privacy")
+    ase.add_argument("name")
+    app_options(ase)
+    ase.add_argument("--no-daily-requests", action="store_true", help="remove the request cap")
+    ase.add_argument("--no-daily-tokens", action="store_true", help="remove the token cap")
+    for action in ase._actions:
+        if action.dest == "privacy":
+            action.choices = [*_PRIVACY_WORDS, "none"]
+            action.help = "default privacy class for this app (none removes it)"
+    ar = asub.add_parser("rm", help="delete an app; its key stops working")
+    ar.add_argument("name")
+    aro = asub.add_parser("rotate", help="issue a new key; the old one stops working at once")
+    aro.add_argument("name")
+    aro.add_argument("--show-token", action="store_true")
+    aro.add_argument("--json", action="store_true")
+    apr = asub.add_parser("preset", help="create an app with settings for a known tool and print how to configure it")
+    apr.add_argument("name", nargs="?", help="app name (default: the tool's name)")
+    apr.add_argument("--for", dest="kind", required=True, choices=list(preset_kinds()))
+    app_options(apr, with_priority=False)
+    apr.add_argument("--show-token", action="store_true")
+    apr.add_argument("--json", action="store_true")
+    ap.set_defaults(func=cmd_apps)
+
+    qp = sub.add_parser("queue", help="background jobs that run on free allowance when you are not busy")
+    qsub = qp.add_subparsers(dest="queue_cmd", required=True)
+
+    def job_options(sp: argparse.ArgumentParser) -> None:
+        sp.add_argument("--alias", default="cheap")
+        sp.add_argument("--privacy", choices=list(_PRIVACY_WORDS))
+        sp.add_argument("--out", metavar="PATH", help="where to write the result (default: ~/.muse/queue-out/ID.txt)")
+        sp.add_argument("--by", metavar="DEADLINE", help="give up after this: 2h, 90m, 08:30 or 2026-11-13T08:30")
+        sp.add_argument("--allow-paid", action="store_true", help="let this job use the paid allowance (still bound by the daily cap)")
+        sp.add_argument("--max-attempts", type=int, default=5)
+        sp.add_argument("--max-tokens", type=int, default=1024, help="most tokens the answer may use")
+        sp.add_argument("--overwrite", action="store_true", help="replace an existing result file")
+
+    qa = qsub.add_parser("add", help='queue a prompt ("-" reads it from stdin, so it stays out of shell history)')
+    qa.add_argument("prompt")
+    job_options(qa)
+    qf = qsub.add_parser("add-file", help="queue a text file, or one job per file in a folder")
+    qf.add_argument("path")
+    qf.add_argument("--do", required=True, metavar="TASK", help='what to do, e.g. "summarise", "translate to French", "extract the dates"')
+    qf.add_argument("--recursive", action="store_true")
+    qf.add_argument("--max-files", type=int, default=50, help="refuse a folder with more usable files than this (at most 200)")
+    job_options(qf)
+    qb = qsub.add_parser("add-batch", help="queue several prompts (separated by a line holding only ---) as one job")
+    qb.add_argument("path", help='a text file, or "-" for stdin')
+    job_options(qb)
+    ql = qsub.add_parser("list", help="every job")
+    ql.add_argument("--json", action="store_true")
+    qs = qsub.add_parser("show", help="one job's metadata")
+    qs.add_argument("id")
+    qs.add_argument("--output", action="store_true", help="print the result file")
+    qs.add_argument("--json", action="store_true")
+    qc = qsub.add_parser("cancel", help="cancel a waiting or running job")
+    qc.add_argument("id")
+    qcl = qsub.add_parser("clear", help="delete finished jobs from the queue (result files are kept)")
+    qcl.add_argument("--done", action="store_true")
+    qcl.add_argument("--finished", action="store_true", help="done, failed and cancelled")
+    qr = qsub.add_parser("run", help="run the queue (Ctrl-C to stop)")
+    qr.add_argument("--once", action="store_true", help="try every job that is due now, then exit")
+    qr.add_argument("--max-jobs", type=int, metavar="N", help="stop after N jobs finish")
+    qr.add_argument("--until-idle", action="store_true", help="exit when nothing is waiting")
+    qp.set_defaults(func=cmd_queue)
+
+    pa = sub.add_parser("pause", help="stop the queue sending anything (the proxy keeps working)")
+    pa.set_defaults(func=cmd_pause)
+    re_ = sub.add_parser("resume", help="let the queue run again")
+    re_.set_defaults(func=cmd_resume)
 
     v = sub.add_parser("version", help="print the version")
     v.set_defaults(func=cmd_version)
