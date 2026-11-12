@@ -1117,6 +1117,27 @@ def register_connect_commands(sub: Any) -> None:
     r.set_defaults(func=cmd_resources)
 
 
+def cmd_catalog_check(args: argparse.Namespace) -> int:
+    from muse import catalog_check
+
+    return catalog_check.run(
+        pages=args.pages, want_leads=args.leads, max_age_days=args.max_age_days, save=not args.no_save,
+        as_json=args.json, fetch=catalog_check.fetch_https, environ=_env(),
+    )
+
+
+def register_catalog_commands(sub: Any) -> None:
+    c = sub.add_parser("catalog", help="check the catalogue's dated facts (read-only; never edits it)")
+    csub = c.add_subparsers(dest="catalog_command", required=True)
+    k = csub.add_parser("check", help="list stale entries; with --pages, say which source pages changed")
+    k.add_argument("--max-age-days", type=int, default=30, metavar="N", help="an entry checked more than N days ago is stale (default 30)")
+    k.add_argument("--pages", action="store_true", help="fetch each source page once and compare it with the last check")
+    k.add_argument("--leads", action="store_true", help="also list names on a public lead list that the catalogue lacks")
+    k.add_argument("--no-save", action="store_true", help="with --pages: do not remember the page fingerprints")
+    k.add_argument("--json", action="store_true")
+    k.set_defaults(func=cmd_catalog_check)
+
+
 # ===== END catalogue v2 =====
 
 
@@ -1686,7 +1707,8 @@ def build_parser() -> argparse.ArgumentParser:
     da.add_argument("--no-open", action="store_true")
     da.set_defaults(func=cmd_dash)
 
-    register_connect_commands(sub)  # catalogue v2 block above
+    register_connect_commands(sub)
+    register_catalog_commands(sub)  # catalogue v2 block above
 
     e = sub.add_parser("env", help="export lines for an OpenAI-compatible client")
     e.add_argument("--show-master-key", action="store_true", help="print the real key instead of the variable name")

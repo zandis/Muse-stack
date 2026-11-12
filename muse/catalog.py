@@ -942,6 +942,79 @@ def validate_resource(item: Mapping[str, Any], kind: str, today: date) -> list[s
     return problems
 
 
+# Hosts of consumer chat subscriptions. They are hand-off only (subscriptions.yaml):
+# a provider entry must never route API traffic to them.
+CONSUMER_HOSTS = (
+    "chatgpt.com", "chat.openai.com", "claude.ai", "gemini.google.com", "copilot.microsoft.com",
+    "chat.deepseek.com", "chat.mistral.ai", "grok.com", "perplexity.ai", "www.perplexity.ai",
+)
+# LiteLLM route prefixes that name a wire format, not one service; several providers may share them.
+GENERIC_ROUTES = frozenset({"openai", "hosted_vllm", "custom_openai", "openai_like"})
+MANY_KEY_FIELDS = ("keys", "api_keys", "envs", "key_pool", "accounts", "rotate", "rotation")
+
+
+def _host(url: Any) -> str:
+    text = str(url or "").strip().lower()
+    if "://" not in text:
+        return ""
+    return text.split("://", 1)[1].split("/", 1)[0].split("@")[-1].split(":", 1)[0]
+
+
+def validate_account_rules(items: list[Any]) -> list[str]:
+    """One account per provider, official API hosts only (docs/reuse-plan.md, standing rules).
+
+    A second entry for a service the catalogue already has, or a list of keys on
+    one entry, is how a free tier gets multiplied; both are refused here. So is
+    any entry that points at a consumer chat subscription's website.
+    """
+    problems: list[str] = []
+    env_owner: dict[str, str] = {}
+    host_owner: dict[str, str] = {}
+    route_owner: dict[str, str] = {}
+    for item in items:
+        if not isinstance(item, Mapping):
+            continue
+        pid = str(item.get("id"))
+        where = f"provider {pid}"
+        for field_name in MANY_KEY_FIELDS:
+            if field_name in item:
+                problems.append(f"{where}: no {field_name} field; one account and one key per provider")
+        env = item.get("env")
+        if env is not None and not isinstance(env, str):
+            problems.append(f"{where}.env: one variable name, not a list; one key per provider")
+            env = None
+        if item.get("kind") == "local":
+            continue
+        if env:
+            if env in env_owner:
+                problems.append(f"{where}: shares {env} with {env_owner[env]}; one entry per account")
+            env_owner.setdefault(env, pid)
+        host = _host(item.get("api_base"))
+        urls = [item.get("api_base")]
+        routes: set[str] = set()
+        for dep in item.get("deployments") or []:
+            if isinstance(dep, Mapping):
+                urls.append(dep.get("api_base"))
+                model = str(dep.get("model") or "")
+                if "/" in model:
+                    routes.add(model.split("/", 1)[0])
+        for url in urls:
+            bad = _host(url)
+            if bad and any(bad == c or bad.endswith("." + c) for c in CONSUMER_HOSTS):
+                problems.append(f"{where}: {bad} is a consumer subscription site; those are hand-off only, never an API route")
+        if host:
+            if host in host_owner:
+                problems.append(f"{where}: same API host as {host_owner[host]} ({host}); one account per provider")
+            host_owner.setdefault(host, pid)
+        else:
+            for route in sorted(routes - GENERIC_ROUTES):
+                family = route.split("_", 1)[0]  # cohere and cohere_chat are one service
+                if family in route_owner and route_owner[family] != pid:
+                    problems.append(f"{where}: same service as {route_owner[family]} ({route}); one account per provider")
+                route_owner.setdefault(family, pid)
+    return problems
+
+
 def validate_subscription(item: Mapping[str, Any], today: date) -> list[str]:
     sid = str(item.get("id", "?"))
     where = f"subscription {sid}"
@@ -1014,6 +1087,7 @@ def validate_catalog(
         seen.add(pid)
         problems.extend(validate_provider(item, today))
     problems.extend(f"{ppath.name}: {p} looks like a key or token" for p in find_secretlike(data))
+    problems.extend(validate_account_rules(items))
 
     base = resources_dir or RESOURCES_DIR
     if base.is_dir() or resources_dir is not None:

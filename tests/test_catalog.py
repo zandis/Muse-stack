@@ -434,3 +434,75 @@ def test_handoff_links():
     assert len(catalog.handoff_link(subs["claude"], "a" * 20000)) < 14100
     assert catalog.handoff_link(subs["chatgpt"], "hi", "web") == "https://chatgpt.com/"  # no documented prefill: plain page
     assert catalog.handoff_link(subs["gemini"], "hi", "web") == "https://gemini.google.com/app"
+
+
+# ----------------------------------------------------------- one account per provider, official hosts only
+
+
+def _clone(data: dict, pid: str, new_id: str, **changes) -> dict:
+    import copy
+
+    twin = copy.deepcopy(provider(data, pid))
+    twin.update(id=new_id, **changes)
+    data["providers"].append(twin)
+    return twin
+
+
+def test_a_second_entry_for_the_same_service_is_refused(tmp_path):
+    # A second Gemini account under another variable: how a free tier gets multiplied.
+    d = real()
+    _clone(d, "gemini", "gemini2", env="GEMINI_API_KEY_2")
+    assert has(validate_with(tmp_path, d), "provider gemini2", "same service as gemini", "one account per provider")
+    # Same thing for a provider addressed by its API host.
+    d = real()
+    _clone(d, "deepseek", "deepseek_b", env="DEEPSEEK_API_KEY_B")
+    assert has(validate_with(tmp_path, d), "provider deepseek_b", "same API host as deepseek")
+    # And two entries may not share one key variable.
+    d = real()
+    _clone(d, "groq", "groq_again")
+    assert has(validate_with(tmp_path, d), "provider groq_again", "shares GROQ_API_KEY with groq")
+
+
+@pytest.mark.parametrize("field, value", [
+    ("keys", ["GEMINI_API_KEY", "GEMINI_API_KEY_2"]),
+    ("api_keys", ["A", "B"]),
+    ("key_pool", "family"),
+    ("accounts", 3),
+    ("rotate", True),
+])
+def test_a_list_or_pool_of_keys_is_refused(tmp_path, field, value):
+    d = real()
+    provider(d, "gemini")[field] = value
+    assert has(validate_with(tmp_path, d), "provider gemini", f"no {field} field", "one key per provider")
+
+
+def test_env_must_be_one_variable(tmp_path):
+    d = real()
+    provider(d, "gemini")["env"] = ["GEMINI_API_KEY", "GEMINI_API_KEY_2"]
+    assert has(validate_with(tmp_path, d), "provider gemini.env", "one variable name, not a list")
+
+
+@pytest.mark.parametrize("url", [
+    "https://chatgpt.com/backend-api/v1",
+    "https://claude.ai/api",
+    "https://gemini.google.com/app",
+    "https://api.chat.openai.com/v1",
+])
+def test_a_consumer_subscription_site_is_never_an_api_route(tmp_path, url):
+    d = real()
+    provider(d, "deepseek")["api_base"] = url
+    assert has(validate_with(tmp_path, d), "provider deepseek", "consumer subscription site", "hand-off only")
+    d = real()
+    provider(d, "gemini")["deployments"][0]["api_base"] = url
+    assert has(validate_with(tmp_path, d), "provider gemini", "consumer subscription site")
+
+
+def test_generic_wire_formats_and_local_runtimes_may_repeat(tmp_path):
+    # Two different services that both speak the OpenAI format are not "the same service".
+    d = real()
+    assert validate_with(tmp_path, d) == []
+    assert catalog.validate_account_rules([
+        {"id": "a", "env": "A_KEY", "api_base": "https://api.a.example/v1", "deployments": [{"model": "openai/x"}]},
+        {"id": "b", "env": "B_KEY", "api_base": "https://api.b.example/v1", "deployments": [{"model": "openai/y"}]},
+        {"id": "l1", "kind": "local", "base_env": "L1"}, {"id": "l2", "kind": "local", "base_env": "L2"},
+    ]) == []

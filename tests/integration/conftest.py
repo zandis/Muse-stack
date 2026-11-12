@@ -108,7 +108,7 @@ class Proxy:
     def _env(self) -> dict[str, str]:
         env = {k: v for k, v in os.environ.items() if not k.endswith("_API_KEY") and k != "LITELLM_MASTER_KEY"
                and not k.startswith(("MUSE_DAILY", "MUSE_ALLOW_PAID", "MUSE_RESERVE", "MUSE_ACTIVE", "MUSE_EXPIRING", "MUSE_TZ",
-                                     "MUSE_PACE", "MUSE_CACHE", "MUSE_ROUTING"))}
+                                     "MUSE_PACE", "MUSE_CACHE", "MUSE_ROUTING", "MUSE_COOLDOWN", "MUSE_DISABLE_HOOK"))}
         env.update(KEYS)
         env.update(RATION_KEYS)
         if self.master_key:
@@ -139,7 +139,10 @@ class Proxy:
         catalog = self.catalog_builder(self.upstream)
         self.catalog_path.write_text(yaml.safe_dump(catalog, sort_keys=False))
         config, _ = render_config.render(catalog, self.env)
-        assert config["litellm_settings"]["callbacks"] == ["muse.hook.handler"]
+        if self.env.get("MUSE_DISABLE_HOOK", "").strip().lower() in {"1", "true", "yes", "on"}:
+            assert "callbacks" not in config["litellm_settings"]  # the plain proxy, for LiteLLM-only behaviour
+        else:
+            assert config["litellm_settings"]["callbacks"] == ["muse.hook.handler"]
         if self.post_render is not None:
             self.post_render(config)
         path = self.workdir / "litellm.yaml"

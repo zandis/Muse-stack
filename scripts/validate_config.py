@@ -472,6 +472,32 @@ def scenario_catalogue_v2() -> None:
             check(provider.connection and provider.connection.minutes_estimate, f"{provider.id} is suggested, so it needs minutes_estimate")
 
 
+def scenario_native_retry_after() -> None:
+    """LiteLLM's own Retry-After cooldown must stay reachable in every render.
+
+    router.py picks: deployment cooldown_time > Retry-After header > router
+    cooldown_time. `allowed_fails` on the router switches to the legacy
+    count-N-failures rule, which re-sends after a single 429.
+    """
+    from render_config import DEFAULT_COOLDOWN_FALLBACK_S, cooldown_fallback
+
+    catalog = load_catalog(CATALOG_PATH)
+    keys = {str(p["env"]): "k" for p in catalog["providers"] if p.get("env")}
+    for env in ({}, env_with(**keys), env_with(MUSE_DISABLE_HOOK="true", **keys)):
+        config, _ = render(catalog, env)
+        router = config["router_settings"]
+        check("allowed_fails" not in router and "allowed_fails_policy" not in router,
+              "router_settings must not set allowed_fails: it disables the immediate 429 cooldown")
+        check(router.get("cooldown_time") == DEFAULT_COOLDOWN_FALLBACK_S, f"fallback cooldown: {router.get('cooldown_time')}")
+        for entry in config["model_list"]:
+            for part in ("litellm_params", "model_info"):
+                check("cooldown_time" not in entry[part] and "allowed_fails" not in entry[part],
+                      f"{entry['model_info']['id']}: a deployment cooldown_time would override Retry-After")
+    for raw, want in (("", 30.0), ("2", 2.0), ("3600", 3600.0), ("0", 30.0), ("-5", 30.0), ("99999", 30.0), ("nan", 30.0), ("soon", 30.0)):
+        got = cooldown_fallback({"MUSE_COOLDOWN_FALLBACK_S": raw})
+        check(got == want, f"MUSE_COOLDOWN_FALLBACK_S={raw!r}: {got}, expected {want}")
+
+
 def scenario_oneoff_and_also_env() -> None:
     """muse_oneoff is a real boolean on every deployment; a provider with also_env needs all its variables."""
     catalog = load_catalog(CATALOG_PATH)
@@ -514,6 +540,7 @@ def main() -> int:
         scenario_auth_and_no_secrets,
         scenario_catalogue_v2,
         scenario_oneoff_and_also_env,
+        scenario_native_retry_after,
     ]
     for step in steps:
         try:

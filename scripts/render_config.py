@@ -65,6 +65,24 @@ def _truthy(environ: Mapping[str, str], name: str) -> bool:
     return environ.get(name, "").strip().lower() in TRUTHY
 
 
+DEFAULT_COOLDOWN_FALLBACK_S = 30.0
+
+
+def cooldown_fallback(environ: Mapping[str, str]) -> float:
+    """Seconds LiteLLM cools a deployment when the failure has no Retry-After.
+
+    MUSE_COOLDOWN_FALLBACK_S, 1 to 3600; anything else means the default (30).
+    """
+    raw = environ.get("MUSE_COOLDOWN_FALLBACK_S", "").strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEFAULT_COOLDOWN_FALLBACK_S
+    if not 1 <= value <= 3600:  # also rejects nan
+        return DEFAULT_COOLDOWN_FALLBACK_S
+    return value
+
+
 def paid_cap_positive(environ: Mapping[str, str]) -> bool:
     """MUSE_DAILY_PAID_CAP_USD > 0. Unset means the default 1.00; unparsable means 0.
 
@@ -353,8 +371,16 @@ def render(catalog: Mapping[str, Any], environ: Mapping[str, str]) -> tuple[dict
         "routing_strategy": "simple-shuffle",
         "num_retries": 1,
         "timeout": 120,
-        "allowed_fails": 2,
-        "cooldown_time": 30,
+        # No `allowed_fails` here, on purpose. Setting it switches LiteLLM
+        # 1.108.5 to its legacy rule (cool a deployment only after N failures
+        # in a minute), so a single 429 was sent to the same upstream again.
+        # Without it, a 429 cools the deployment at once, for the provider's
+        # Retry-After (router.py deployment_callback_on_failure: deployment
+        # cooldown_time > Retry-After header > this router default).
+        # `cooldown_time` is only that last fallback, for a failure that
+        # carries no Retry-After. Never set cooldown_time on a deployment:
+        # that would override the header.
+        "cooldown_time": cooldown_fallback(environ),
     }
     if fallbacks:
         router["fallbacks"] = fallbacks

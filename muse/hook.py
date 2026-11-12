@@ -52,6 +52,7 @@ spend. Privacy enforcement fails closed.
 
 from __future__ import annotations
 
+import sys
 import asyncio
 import logging
 import os
@@ -593,6 +594,29 @@ class MuseHook(CustomLogger):
             await self._record_ration(app, model, outcome.decision, now)
         return outcome
 
+    def _cooling(self, model: str, healthy: list, privacy: str) -> list[dict]:
+        """Deployments of this group that the proxy is cooling down and that this privacy class may use.
+
+        Read-only look at the router's own list. Any problem means "none", which
+        is the behaviour from before this helper existed.
+        """
+        from muse import policy
+
+        try:
+            # Only inside a running proxy; never import it from here (slow, and it has side effects).
+            proxy_server = sys.modules.get("litellm.proxy.proxy_server")
+            router = getattr(proxy_server, "llm_router", None)
+            if router is None:
+                return []
+            present = {str((d.get("model_info") or {}).get("id", "")) for d in healthy if isinstance(d, Mapping)}
+            rows = router.get_model_list(model_name=model) or []
+            missing = [dict(d) for d in rows
+                       if isinstance(d, Mapping) and str((d.get("model_info") or {}).get("id", "")) not in present]
+            return policy.filter_deployments(missing, privacy) if missing else []
+        except Exception as exc:
+            self._fault("cooling", exc)
+            return []
+
     def _strong(self, model: str, data: Mapping[str, Any] | None) -> bool:
         """Whether a refusal for this group means the strong allowance is unavailable (offer the hand-off)."""
         group = _metadata(data).get("model_group") or (data.get("model") if isinstance(data, Mapping) else None) or model
@@ -718,7 +742,11 @@ class MuseHook(CustomLogger):
         except Exception as exc:
             self.errors["privacy_filter"] += 1
             raise MusePrivacyError(f"privacy check failed ({type(exc).__name__}); refusing to route") from None
-        if not allowed:
+        # LiteLLM hands over only the deployments it is not cooling down. One it
+        # cooled after a provider error is still part of the picture: it is why
+        # the list is short, and its quota block says when to come back.
+        cooling = self._cooling(model, healthy_deployments, privacy)
+        if not allowed and not cooling:
             raise MusePrivacyError(
                 f"no deployment of '{model}' may receive a '{privacy}' request "
                 f"({len(healthy_deployments)} not cooling right now, none allowed: "
@@ -745,26 +773,34 @@ class MuseHook(CustomLogger):
         except Exception as exc:
             self._fault("active_blocks", exc)
             blocks = {}
-        if blocks:
+        if blocks or not allowed:
             kept, hit = [], []
-            for deployment in allowed:
+            for deployment, usable in [(d, True) for d in allowed] + [(d, False) for d in cooling]:
                 info = deployment.get("model_info") or {}
                 pair = _upstream(info)
                 block = None
                 if pair is not None:
                     block = blocks.get(pair[1]) or blocks.get(f"provider:{pair[0]}")
                 if block is None:
-                    kept.append(deployment)
+                    if usable:
+                        kept.append(deployment)
                 else:
                     hit.append(block)
                     prior.append(ration.Removed(str(info.get("id", "")), pair[1] if pair else "", ration.BLOCKED, ration.DEFER,
                                                 float(block["until"]), f"blocked by a provider quota until {quota.iso(block['until'])}"))
-            if not kept:
-                soonest = min(hit, key=lambda b: b["until"])
+            if not kept and (hit or not allowed):
                 handoff = bool(_metadata(request_kwargs).get("muse_handoff")) or self._strong(model, request_kwargs)
                 note = self._note(_call_id(request_kwargs))
                 if note is not None and handoff:
                     note.handoff = True
+                if not hit:
+                    # Cooled by the proxy after a provider error that set no quota block (a server error, say).
+                    raise MuseBlockedError(
+                        f"every '{privacy}'-allowed deployment of '{model}' is resting after a provider error; "
+                        f"try again shortly | " + ration.options_trailer(None, handoff, None),
+                        model=model,
+                    )
+                soonest = min(hit, key=lambda b: b["until"])
                 raise MuseBlockedError(
                     f"every '{privacy}'-allowed deployment of '{model}' is blocked by a provider quota; "
                     f"soonest reset {quota.iso(soonest['until'])} ({soonest['kind']}: {soonest['reason']}) | "

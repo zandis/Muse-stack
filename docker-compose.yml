@@ -50,6 +50,7 @@ services:
       # Rationing between apps (muse/ration.py). Unset means the documented default.
       MUSE_DAILY_PAID_CAP_USD:
       MUSE_TZ:
+      MUSE_COOLDOWN_FALLBACK_S:
       MUSE_ACTIVE_WINDOW_S:
       MUSE_RESERVE_BACKGROUND:
       MUSE_RESERVE_NORMAL:

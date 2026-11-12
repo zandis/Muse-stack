@@ -56,11 +56,31 @@ What it adds:
 Response headers `x-muse-provider`, `x-muse-deployment` and `x-muse-privacy`
 say where a request went. Set `MUSE_DISABLE_HOOK=true` to run the plain proxy.
 
+A provider's `Retry-After` on a 429 is honoured twice over. LiteLLM cools that
+one deployment for the stated time (the rendered config sets no `allowed_fails`
+and no per-deployment `cooldown_time`, either of which would defeat this). The
+hook adds what LiteLLM does not do: the same block for every alias and worker
+that shares the upstream, kept across restarts, plus daily and monthly quotas.
+`MUSE_COOLDOWN_FALLBACK_S` (default 30) is only used for a failure that carries
+no `Retry-After`.
+
 Known limits: calling a deployment by its id skips the block list (privacy
 still applies); server errors are left to the proxy's own per-alias cooldown;
 the 429 formats for Gemini, OpenRouter and Cohere are parsed from community
 reports, not official documentation, and are marked `unconfirmed` in
 `muse/quota.py`.
+
+### Keeping the catalogue honest
+
+Every fact in `config/providers.yaml` and `config/resources/*.yaml` is dated (`checked_on`) and cites the provider's own page (`source_urls`). `muse catalog check` only reads:
+
+```bash
+muse catalog check            # which entries were checked more than 30 days ago (no network)
+muse catalog check --pages    # fetch each source page once; say which ones changed since the last check
+muse catalog check --leads    # names on a public lead list that the catalogue lacks (names to look up, not facts)
+```
+
+It never edits the catalogue, never adds a provider, never signs up for anything and never sends a key. A "changed" page means a person should re-read it and edit the entry by hand. Page fingerprints are kept in `~/.muse/catalog-pages.json`. The rules the catalogue check enforces: official API hosts only, one entry and one key per provider, and consumer subscriptions (ChatGPT, Claude, Gemini apps) are hand-off only and can never be an API route.
 
 ### Connecting helpers
 

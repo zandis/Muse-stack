@@ -352,8 +352,13 @@ def classify_failure(
     """Decide whether a failed call should block its upstream or provider.
 
     None means "leave it to LiteLLM": caller errors (400/404/413/422), 5xx,
-    and anything not understood. 5xx is LiteLLM's job because its
-    allowed_fails/cooldown already handle repeated server errors.
+    and anything not understood. 5xx is LiteLLM's job: its failure-rate
+    cooldown already handles repeated server errors.
+
+    A plain 429 with Retry-After is also cooled by LiteLLM itself, for the one
+    deployment that failed and in the one worker that saw it. The block made
+    here is what extends it to every alias and worker sharing the upstream and
+    keeps it across a restart (tests/integration/test_retry_after_e2e.py).
     """
     provider_id = str(provider_id or "").lower()
     if not isinstance(status, int) or isinstance(status, bool):

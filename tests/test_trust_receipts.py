@@ -286,17 +286,22 @@ def test_concurrent_appends_two_processes(vault: LocalVault, tmp_path: Path) -> 
         "for _ in range(40): lg.append('system', 'vault.read', detail='child')\n"
     )
     proc = subprocess.Popen([sys.executable, str(script), str(vault.path)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    assert proc.stdin is not None
-    proc.stdin.write((PW + "\n").encode())
-    proc.stdin.close()
+    # Hand the passphrase over with communicate(input=...), which writes it and
+    # closes stdin itself. It blocks until the child exits, so it runs in a
+    # thread and the parent keeps appending at the same time.
+    result: dict[str, bytes] = {}
+
+    def feed() -> None:
+        _, result["err"] = proc.communicate(input=(PW + "\n").encode(), timeout=60)
+
+    feeder = threading.Thread(target=feed)
+    feeder.start()
     lg = LocalReceiptLog(vault)
     for _ in range(40):
         lg.append("bot", "vault.read", detail="parent")
-    # stdin is already closed above, so do not call communicate(): on Python
-    # 3.12 it tries to flush the closed pipe and raises ValueError.
-    proc.wait(timeout=60)
-    assert proc.stderr is not None
-    err = proc.stderr.read()
+    feeder.join(timeout=90)
+    assert not feeder.is_alive()
+    err = result.get("err", b"")
     assert proc.returncode == 0, err.decode()[-2000:]
     v = lg.verify()
     assert v.ok and v.count == 80

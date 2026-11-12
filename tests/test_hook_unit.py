@@ -327,3 +327,62 @@ def test_response_headers(h):
     out = run(h.async_post_call_response_headers_hook(req("bogus"), None, None))
     assert out is None  # a bad class has no header; the 400 explains it
     assert run(h.async_post_call_response_headers_hook(req(), None, None)) == {"x-muse-privacy": "standard"}
+
+
+# ---------------------------------------------------------------- deployments the proxy itself is cooling
+
+
+@pytest.fixture()
+def router_with(monkeypatch):
+    """Make the hook see a running proxy whose router holds these deployments for any group."""
+    import sys
+
+    def install(*deployments: dict) -> None:
+        router = SimpleNamespace(get_model_list=lambda model_name=None: list(deployments))
+        monkeypatch.setitem(sys.modules, "litellm.proxy.proxy_server", SimpleNamespace(llm_router=router))
+
+    return install
+
+
+def test_cooled_deployment_with_a_quota_block_is_a_429_with_the_reset_not_a_privacy_refusal(h, db, router_with):
+    # LiteLLM cooled the only deployment after its 401/429, so the hook is handed an empty list.
+    router_with(Q_FAST)
+    db.set_block("provider:groq", NOW + 900, "exhausted", "bad key")
+    with pytest.raises(MuseBlockedError) as err:
+        filt(h, [], req())
+    assert "2026-11-12T07:15:00Z" in str(err.value) and "options=wait:2026-11-12T07:15:00Z" in str(err.value)
+    assert not is_guardrail_intervention(err.value)  # fallbacks stay possible
+
+
+def test_cooled_deployment_without_a_block_says_resting(h, router_with):
+    router_with(G_FAST)
+    with pytest.raises(MuseBlockedError) as err:
+        filt(h, [], req())
+    assert "resting after a provider error" in str(err.value) and "options=none" in str(err.value)
+
+
+def test_cooled_deployment_never_weakens_privacy(h, db, router_with):
+    # The cooled one may not receive a private request, so this is still a privacy refusal.
+    router_with(G_FAST, Q_FAST)
+    with pytest.raises(MusePrivacyError):
+        filt(h, [], req("private"))
+    # And a cooled deployment is never handed back to the router.
+    router_with(G_FAST, Q_FAST)
+    assert filt(h, [Q_FAST], req()) == [Q_FAST]
+
+
+def test_cooled_block_supplies_the_wait_when_others_are_blocked_too(h, db, router_with):
+    router_with(G_FAST, Q_FAST)
+    db.set_block("gemini:gemini/g", NOW + 60, "cooldown", "rpm")  # cooled by the proxy as well
+    db.set_block("provider:groq", NOW + 3600, "exhausted", "daily")
+    with pytest.raises(MuseBlockedError) as err:
+        filt(h, [Q_FAST], req())
+    assert "2026-11-12T07:01:00Z" in str(err.value)  # the cooled one comes back first
+
+
+def test_no_running_proxy_keeps_the_old_answer(h, monkeypatch):
+    import sys
+
+    monkeypatch.delitem(sys.modules, "litellm.proxy.proxy_server", raising=False)
+    with pytest.raises(MusePrivacyError):
+        filt(h, [], req())
