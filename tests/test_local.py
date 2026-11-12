@@ -23,9 +23,12 @@ class FakeRuntime:
 
         class H(BaseHTTPRequestHandler):
             def _serve(self, method: str) -> None:
+                request = None
                 if method == "POST":
-                    self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                    request = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"null")
                 payload = outer.routes.get((method, self.path))
+                if callable(payload):
+                    payload = payload(request)
                 if payload is None:
                     self.send_response(404)
                     self.end_headers()
@@ -104,7 +107,7 @@ OLLAMA_TAGS = {
 def ollama_routes():
     show = lambda caps, ctx: {"capabilities": caps, "model_info": {"general.architecture": "x", "x.context_length": ctx}}  # noqa: E731
     routes = {("GET", "/api/tags"): OLLAMA_TAGS}
-    routes[("POST", "/api/show")] = show(["completion"], 40960)
+    routes[("POST", "/api/show")] = lambda req: show(["embedding"] if "embed" in req["model"] else ["completion"], 40960)
     return routes
 
 
