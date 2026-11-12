@@ -512,21 +512,24 @@ def decide(app: AppPolicy, removed: Sequence[Removed], now: float, settings: Set
     removal is temporary, else refuse with the most relevant reason."""
     if not removed:
         return None
+    order = [PAID_CAP, PAID_SPEND_UNKNOWN, PAID_NOT_ALLOWED, PAID_UNKNOWN_COST]
+    refusals = sorted((r for r in removed if r.kind == REFUSE), key=lambda r: order.index(r.code) if r.code in order else len(order))
     defers = [r for r in removed if r.kind == DEFER and r.retry_at is not None]
     if defers:
         first = min(defers, key=lambda r: r.retry_at or math.inf)
         if first.code == YIELD:
             message = f"[muse] yielding to the active app; retry in {max(1, math.ceil((first.retry_at or now) - now))} s"
-        elif first.code == BLOCKED:
-            message = f"[muse] {first.detail}"
+        elif first.code == BLOCKED and refusals and refusals[0].code == PAID_CAP:
+            # Free quota is spent and the paid allowance too: name the cap, it is what the user set.
+            cap = refusals[0]
+            retry = min(first.retry_at or math.inf, cap.retry_at or math.inf)
+            return Decision(DEFER, PAID_CAP, f"[muse] {cap.detail}; free quota is used up until {_when(first.retry_at)}",
+                            None if retry == math.inf else retry, 429)
         else:
             message = f"[muse] {first.detail}"
         return Decision(DEFER, first.code, message, first.retry_at, 429)
-    order = [PAID_CAP, PAID_SPEND_UNKNOWN, PAID_NOT_ALLOWED, PAID_UNKNOWN_COST]
-    refusals = sorted(removed, key=lambda r: order.index(r.code) if r.code in order else len(order))
-    first = refusals[0]
-    status = 429 if first.code in (PAID_CAP, PAID_SPEND_UNKNOWN, APP_REQUESTS, APP_TOKENS) else 403
-    return Decision(REFUSE, first.code, f"[muse] {first.detail}", first.retry_at, status)
+    first = refusals[0] if refusals else removed[0]
+    return Decision(REFUSE, first.code, f"[muse] {first.detail}", first.retry_at, 429)
 
 
 def fail_closed(deployments: Sequence[dict]) -> list[dict]:

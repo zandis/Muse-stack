@@ -20,7 +20,9 @@ services:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
       LITELLM_PORT: "4000"
       LITELLM_NUM_WORKERS: ${LITELLM_NUM_WORKERS:-1}
-      MUSE_ALLOW_PAID_FALLBACK: ${MUSE_ALLOW_PAID_FALLBACK:-false}
+      # Paid use: empty override = follow the daily cap (paid joins the aliases
+      # last when the cap is > 0); true/false forces it on/off. See .env.example.
+      MUSE_ALLOW_PAID_FALLBACK:
       MUSE_DISABLE_PROVIDERS: ${MUSE_DISABLE_PROVIDERS:-}
       # Bare names pass a value through from the shell that runs compose, so
       # `muse up` can hand over keychain-stored keys without writing them to disk.
@@ -42,6 +44,15 @@ services:
       MUSE_DEFAULT_PRIVACY: ${MUSE_DEFAULT_PRIVACY:-standard}
       # 1/true/on: muse/hook.py raises a request to private when it spots sensitive content.
       MUSE_AUTO_PRIVACY: ${MUSE_AUTO_PRIVACY:-}
+      # Rationing between apps (muse/ration.py). Unset means the documented default.
+      MUSE_DAILY_PAID_CAP_USD:
+      MUSE_TZ:
+      MUSE_ACTIVE_WINDOW_S:
+      MUSE_RESERVE_BACKGROUND:
+      MUSE_RESERVE_NORMAL:
+      MUSE_EXPIRING_DAY_S:
+      MUSE_EXPIRING_MONTH_S:
+      MUSE_LOCAL_YIELD:
       # State shared with the muse CLI and dashboard on the host.
       MUSE_HOME: /opt/muse/home
       PYTHONPATH: /opt/muse

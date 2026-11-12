@@ -7,7 +7,25 @@
 #
 # join:
 #   always          — part of the public alias (fast, smart, ...) whenever the key is set
-#   paid_fallback   — direct model name only, unless MUSE_ALLOW_PAID_FALLBACK=true
+#   paid_fallback   — joins the public aliases when paid use is on: MUSE_DAILY_PAID_CAP_USD
+#                     > 0 (default 1.00) and MUSE_ALLOW_PAID_FALLBACK not false, or
+#                     MUSE_ALLOW_PAID_FALLBACK=true. Otherwise direct model name only.
+#   With the cap > 0, every tier paid/metered alias entry is rendered at order
+#   20 + its own order (or later than the highest free/local order), so free,
+#   trial and local deployments are always tried first.
+#
+# price: optional, per deployment, USD per million tokens:
+#     price: {input_per_mtok: 0.02, output_per_mtok: 0.05}
+#   The hook (muse/ration.py) uses a paid or metered deployment automatically
+#   only when it has a price, and charges calls against the daily paid cap
+#   with it. Without a price the deployment stays callable by its direct name
+#   (by an app allowed to pay), and those calls are recorded as unknown cost.
+#   Prices are not filled in for the providers below: copy them from the
+#   provider's own pricing page after checking, never from notes or memory.
+#   tier free, trial and local cost 0 by definition.
+#
+# quota: optional, per provider, e.g. {requests_per_month: 1000}. Used by
+#   `muse status` and by the reserve rule when the provider reports nothing.
 #
 # order: lower is tried first inside an alias. Equal orders are load-balanced
 # with simple-shuffle, weighted by rpm. rpm values are routing weights, not a

@@ -60,7 +60,8 @@ def test_schema_is_idempotent_and_versioned(tmp_path: Path):
     assert conn.execute("PRAGMA journal_mode").fetchone()[0].lower() == "delete"
     columns = {row[1] for row in conn.execute("PRAGMA table_info(calls)")}
     assert columns == {"id", "ts", "provider", "deployment_id", "upstream", "alias", "ok", "status",
-                       "tokens_in", "tokens_out", "latency_ms", "privacy"}  # no column for text
+                       "tokens_in", "tokens_out", "latency_ms", "privacy",
+                       "app", "priority", "cost_usd", "paid"}  # no column for text
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 

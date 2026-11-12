@@ -51,6 +51,7 @@ class FakeUpstream:
     """Behaviours: ok, slow_ok, 429_minute, 429_daily, 401, 400, 500."""
 
     behaviours: dict[str, str] = field(default_factory=dict)
+    limit_headers: dict[str, dict[str, str]] = field(default_factory=dict)  # per model, replaces the default x-ratelimit-*
     default: str = "ok"
     slow_seconds: float = 3.0
     log: list[Logged] = field(default_factory=list)
@@ -69,6 +70,11 @@ class FakeUpstream:
     def set(self, model: str, behaviour: str) -> None:
         with self._lock:
             self.behaviours[model] = behaviour
+
+    def set_headers(self, model: str, headers: dict[str, str]) -> None:
+        """Rate-limit headers this model returns on success ({} = none at all)."""
+        with self._lock:
+            self.limit_headers[model] = dict(headers)
 
     def calls(self, model: str | None = None) -> list[Logged]:
         with self._lock:
@@ -138,6 +144,9 @@ class FakeUpstream:
                 "x-ratelimit-remaining-tokens": "5900",
                 "x-ratelimit-reset-tokens": "7.66s",
             }
+            with self._lock:
+                if model in self.limit_headers:
+                    limits = dict(self.limit_headers[model])
             if path.endswith("/embeddings"):
                 return 200, {
                     "object": "list",

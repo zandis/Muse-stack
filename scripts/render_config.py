@@ -2,9 +2,12 @@
 """Render a LiteLLM proxy config from config/providers.yaml and the environment.
 
 Providers whose key variable is missing or blank are left out. Paid providers
-are registered under their own model names, and join the public aliases only
-when MUSE_ALLOW_PAID_FALLBACK is true. Nothing in the rendered file is a secret:
-every api_key is an os.environ/NAME reference that LiteLLM resolves at startup.
+are always registered under their own model names. They also join the public
+aliases when paid use is on (see paid_fallback_enabled), at an order strictly
+after every free, trial and local deployment, so LiteLLM tries them last; the
+hook's paid gate (muse/ration.py) then decides per request. Nothing in the
+rendered file is a secret: every api_key is an os.environ/NAME reference that
+LiteLLM resolves at startup, and app tokens never pass through here.
 """
 
 from __future__ import annotations
@@ -25,6 +28,10 @@ TRUTHY = {"1", "true", "yes", "on"}
 LOCAL_PLACEHOLDER_KEY = "local-no-key"
 ALIASES_ORDER = ("fast", "cheap", "smart", "long-context", "embed", "rerank")
 HOOK_CALLBACK = "muse.hook.handler"
+CUSTOM_AUTH = "muse.auth.user_api_key_auth"
+PAID_TIERS = {"paid", "metered"}
+PAID_ORDER_OFFSET = 20
+FALSY = {"0", "false", "no", "off"}
 
 
 def load_dotenv(path: Path, environ: dict[str, str]) -> None:
@@ -56,6 +63,39 @@ def load_catalog(path: Path) -> dict[str, Any]:
 
 def _truthy(environ: Mapping[str, str], name: str) -> bool:
     return environ.get(name, "").strip().lower() in TRUTHY
+
+
+def paid_cap_positive(environ: Mapping[str, str]) -> bool:
+    """MUSE_DAILY_PAID_CAP_USD > 0. Unset means the default 1.00; unparsable means 0.
+
+    Mirrors muse.ration.parse_paid_cap without importing the package, so the
+    validator runs with PyYAML only.
+    """
+    from decimal import Decimal, InvalidOperation
+
+    raw = environ.get("MUSE_DAILY_PAID_CAP_USD", "")
+    if not str(raw).strip():
+        return True
+    try:
+        value = Decimal(str(raw).strip().lstrip("$").strip())
+    except InvalidOperation:
+        return False
+    return value.is_finite() and value > 0
+
+
+def paid_fallback_enabled(environ: Mapping[str, str]) -> bool:
+    """Whether paid deployments join the public aliases.
+
+    Precedence: MUSE_ALLOW_PAID_FALLBACK set to a false value -> off; set to a
+    true value -> on (the paid gate still refuses at request time if the cap
+    is 0); unset or empty -> on exactly when the daily paid cap is > 0.
+    """
+    explicit = environ.get("MUSE_ALLOW_PAID_FALLBACK", "").strip().lower()
+    if explicit in FALSY:
+        return False
+    if explicit in TRUTHY:
+        return True
+    return paid_cap_positive(environ)
 
 
 def _disabled(environ: Mapping[str, str]) -> set[str]:
@@ -123,6 +163,43 @@ def _deployment_joins(
     raise SystemExit(f"Unknown join value {join!r} on {deployment.get('id')}")
 
 
+def is_paid_tier(provider: Mapping[str, Any]) -> bool:
+    return not is_local(provider) and str(provider.get("tier", "")).strip().lower() in PAID_TIERS
+
+
+def _price(deployment: Mapping[str, Any]) -> tuple[float, float] | None:
+    """(input, output) USD per million tokens from an optional `price:` block."""
+    raw = deployment.get("price")
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        raise SystemExit(f"{deployment.get('id')}: price must be a mapping with input_per_mtok and output_per_mtok")
+    out = []
+    for key in ("input_per_mtok", "output_per_mtok"):
+        value = raw.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0 or value != value or value == float("inf"):
+            raise SystemExit(f"{deployment.get('id')}: price.{key} must be a non-negative number of USD per 1M tokens")
+        out.append(float(value))
+    return out[0], out[1]
+
+
+def _quota_list(provider: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The provider's declared `quota:` as [{window, metric, limit}] for the hook's reserve rule."""
+    raw = provider.get("quota")
+    items: list[tuple[str, str, Any]] = []
+    if isinstance(raw, list):
+        items = [(str(i.get("window")), str(i.get("metric")), i.get("limit")) for i in raw if isinstance(i, Mapping)]
+    elif isinstance(raw, Mapping):
+        for key, value in raw.items():
+            metric, _, window = str(key).partition("_per_")
+            items.append((window, metric, value))
+    return [
+        {"window": w, "metric": m, "limit": int(v)}
+        for w, m, v in items
+        if w in ("minute", "day", "month") and m in ("requests", "tokens") and isinstance(v, int) and not isinstance(v, bool) and v > 0
+    ]
+
+
 def _litellm_params(provider: Mapping[str, Any], deployment: Mapping[str, Any], *, for_alias: bool) -> dict[str, Any]:
     params: dict[str, Any] = {"model": deployment["model"]}
     if is_local(provider):
@@ -175,6 +252,13 @@ def _model_info(provider: Mapping[str, Any], deployment: Mapping[str, Any], depl
         "muse_human_review": _tri(policy.get("human_review")),
         "muse_region": str(policy.get("region", "unknown")),
     }
+    price = _price(deployment)
+    if price is not None:
+        # USD per million tokens; muse/cost.py and the paid gate read these.
+        info["muse_price_in"], info["muse_price_out"] = price
+    declared = _quota_list(provider)
+    if declared:
+        info["muse_quota"] = declared
     if deployment.get("notes"):
         info["description"] = str(deployment["notes"]).strip()
     return info
@@ -182,7 +266,17 @@ def _model_info(provider: Mapping[str, Any], deployment: Mapping[str, Any], depl
 
 def render(catalog: Mapping[str, Any], environ: Mapping[str, str]) -> tuple[dict[str, Any], list[str]]:
     disabled = _disabled(environ)
-    paid_fallback = _truthy(environ, "MUSE_ALLOW_PAID_FALLBACK")
+    paid_fallback = paid_fallback_enabled(environ)
+    # With a cap > 0, paid deployments sit strictly after every free, trial and
+    # local deployment. With cap 0 the orders are left exactly as they were.
+    shift_paid = paid_cap_positive(environ)
+    free_orders = [
+        int(d.get("order", 0))
+        for p in catalog["providers"]
+        if not is_paid_tier(p)
+        for d in (p.get("deployments") or [])
+    ]
+    paid_offset = max([PAID_ORDER_OFFSET, *free_orders, _local_order(environ)])
     alias_meta: dict[str, Any] = catalog["aliases"]
     enabled: list[str] = []
     model_list: list[dict[str, Any]] = []
@@ -225,10 +319,13 @@ def render(catalog: Mapping[str, Any], environ: Mapping[str, str]) -> tuple[dict
                         f"{pin_id} mode {deployment['mode']} does not match alias {alias}"
                     )
                 entry_id = f"{pin_id}__{alias}"
+                params = _litellm_params(provider, deployment, for_alias=True)
+                if shift_paid and is_paid_tier(provider):
+                    params["order"] = paid_offset + int(deployment["order"])
                 model_list.append(
                     {
                         "model_name": alias,
-                        "litellm_params": _litellm_params(provider, deployment, for_alias=True),
+                        "litellm_params": params,
                         "model_info": _model_info(provider, deployment, entry_id),
                     }
                 )
@@ -271,6 +368,13 @@ def render(catalog: Mapping[str, Any], environ: Mapping[str, str]) -> tuple[dict
         general["dangerously_permit_weak_or_unset_master_key"] = True
     if not environ.get("DATABASE_URL", "").strip():
         general["disable_spend_logs"] = True
+    if not _truthy(environ, "MUSE_DISABLE_HOOK"):
+        # muse/auth.py: master key -> owner, app tokens -> their app (MUSE_HOME/apps.yaml).
+        general["custom_auth"] = CUSTOM_AUTH
+        if environ.get("DATABASE_URL", "").strip():
+            # Admin-UI virtual keys live in the database and carry budgets; keep
+            # LiteLLM's own checks for them (custom auth skips them by default).
+            general["custom_auth_run_common_checks"] = True
 
     litellm_settings: dict[str, Any] = {
         "drop_params": True,

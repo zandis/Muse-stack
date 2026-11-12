@@ -89,7 +89,15 @@ CREATE TABLE IF NOT EXISTS rations (
     code TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS rations_ts ON rations (ts);
+CREATE TABLE IF NOT EXISTS paid_holds (
+    call_id TEXT PRIMARY KEY,
+    ts REAL NOT NULL,
+    deployment_id TEXT NOT NULL,
+    est_usd REAL NOT NULL
+);
 """
+
+HOLD_SECONDS = 900  # a hold left by a crashed worker stops counting after this
 
 # Columns added after schema 1, in order: (name, SQL type). Old files get them by ALTER.
 _ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -225,10 +233,16 @@ class Ledger:
         priority: str | None = None,
         cost_usd: float | None = None,
         paid: bool | None = None,
+        release_hold: str | None = None,
     ) -> None:
-        """One upstream attempt. Counts only; never content. cost_usd None = unknown."""
+        """One upstream attempt. Counts only; never content. cost_usd None = unknown.
+
+        `release_hold` drops that call's paid hold in the same transaction, so
+        the cap never counts a call twice or not at all."""
         ts = self._now(now)
         with self._write() as conn:
+            if release_hold:
+                conn.execute("DELETE FROM paid_holds WHERE call_id=?", (str(release_hold),))
             conn.execute(
                 "INSERT INTO calls (ts, provider, deployment_id, upstream, alias, ok, status,"
                 " tokens_in, tokens_out, latency_ms, privacy, app, priority, cost_usd, paid)"
@@ -363,15 +377,76 @@ class Ledger:
         `usd` sums known costs only; `unknown_cost_calls` are paid calls whose
         cost could not be computed (shown separately, never guessed).
         """
-        start, end = self.local_day(now, tz)
+        ts = self._now(now)
+        start, end = self.local_day(ts, tz)
         with self._read() as conn:
-            row = conn.execute(
-                "SELECT COUNT(*) AS n, COALESCE(SUM(cost_usd),0) AS c,"
-                " COALESCE(SUM(CASE WHEN cost_usd IS NULL THEN 1 ELSE 0 END),0) AS u"
-                " FROM calls WHERE paid=1 AND ts>=? AND ts<?",
-                (start, end),
-            ).fetchone()
-        return {"usd": float(row["c"]), "calls": int(row["n"]), "unknown_cost_calls": int(row["u"])}
+            row = self._spend_row(conn, start, end)
+            held = self._held(conn, ts)
+        return {"usd": float(row["c"]), "calls": int(row["n"]), "unknown_cost_calls": int(row["u"]), "held_usd": held}
+
+    @staticmethod
+    def _spend_row(conn: sqlite3.Connection, start: float, end: float) -> sqlite3.Row:
+        # Failed attempts are not billed by providers, so only ok=1 counts.
+        return conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(cost_usd),0) AS c,"
+            " COALESCE(SUM(CASE WHEN cost_usd IS NULL THEN 1 ELSE 0 END),0) AS u"
+            " FROM calls WHERE paid=1 AND ok=1 AND ts>=? AND ts<?",
+            (start, end),
+        ).fetchone()
+
+    @staticmethod
+    def _held(conn: sqlite3.Connection, now: float, exclude: str | None = None) -> float:
+        row = conn.execute(
+            "SELECT COALESCE(SUM(est_usd),0) AS h FROM paid_holds WHERE ts>? AND call_id IS NOT ?",
+            (now - HOLD_SECONDS, exclude),
+        ).fetchone()
+        return float(row["h"])
+
+    def try_hold_paid(
+        self,
+        call_id: str,
+        deployment_id: str,
+        est_usd: float,
+        cap_usd: float,
+        *,
+        now: float | None = None,
+        tz: tzinfo | None = None,
+    ) -> tuple[bool, float]:
+        """Atomically admit one paid call under the daily cap. Returns (admitted, spend+held before it).
+
+        Admitted when today's known spend plus other calls' holds is below the
+        cap; the call's estimate is then held until record_call(release_hold=)
+        or HOLD_SECONDS pass. One IMMEDIATE transaction, so two workers cannot
+        both see room for the last cent: the most the cap is exceeded by is the
+        one call that crosses it (plus how far its estimate was wrong)."""
+        ts = self._now(now)
+        start, end = self.local_day(ts, tz)
+        with self._write() as conn:
+            spend = float(self._spend_row(conn, start, end)["c"]) + self._held(conn, ts, exclude=call_id)
+            if spend >= cap_usd:
+                return False, spend
+            conn.execute(
+                "INSERT INTO paid_holds (call_id, ts, deployment_id, est_usd) VALUES (?,?,?,?)"
+                " ON CONFLICT(call_id) DO UPDATE SET ts=excluded.ts, deployment_id=excluded.deployment_id, est_usd=excluded.est_usd",
+                (str(call_id), ts, str(deployment_id), max(0.0, float(est_usd))),
+            )
+        return True, spend
+
+    def release_hold(self, call_id: str) -> None:
+        with self._write() as conn:
+            conn.execute("DELETE FROM paid_holds WHERE call_id=?", (str(call_id),))
+
+    def limits_many(self, scopes: list[str]) -> dict[str, list[dict[str, Any]]]:
+        """limits() for several scopes in one query."""
+        if not scopes:
+            return {}
+        marks = ",".join("?" for _ in scopes)
+        with self._read() as conn:
+            rows = conn.execute(f"SELECT * FROM limits WHERE scope IN ({marks})", list(scopes)).fetchall()
+        out: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            out.setdefault(row["scope"], []).append({**dict(row), "limit": row["lim"]})
+        return out
 
     def last_interactive_success(self, since: float) -> dict[str, float]:
         """upstream -> time of the latest successful call by an interactive app since `since`."""
@@ -470,6 +545,7 @@ class Ledger:
         with self._write() as conn:
             removed = conn.execute("DELETE FROM calls WHERE ts<?", (older_than,)).rowcount
             conn.execute("DELETE FROM rations WHERE ts<?", (older_than,))
+            conn.execute("DELETE FROM paid_holds WHERE ts<?", (older_than,))
             conn.execute("DELETE FROM limits WHERE seen_at<?", (older_than,))
             conn.execute("DELETE FROM blocks WHERE until<?", (older_than,))
             conn.execute(

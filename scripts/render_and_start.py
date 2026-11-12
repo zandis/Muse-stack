@@ -11,7 +11,15 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 
-from render_config import DEFAULT_CATALOG, dumps, load_catalog, render, write_config  # noqa: E402
+from render_config import (  # noqa: E402
+    DEFAULT_CATALOG,
+    dumps,
+    load_catalog,
+    paid_cap_positive,
+    paid_fallback_enabled,
+    render,
+    write_config,
+)
 
 OUT = Path(os.environ.get("MUSE_CONFIG_PATH", "/tmp/muse-config.yaml"))
 
@@ -35,10 +43,12 @@ def main() -> None:
             file=sys.stderr,
         )
     else:
-        paid = os.environ.get("MUSE_ALLOW_PAID_FALLBACK", "").strip().lower() in {"1", "true", "yes", "on"}
+        paid = paid_fallback_enabled(os.environ)
+        cap = os.environ.get("MUSE_DAILY_PAID_CAP_USD", "").strip() or "1.00"
+        cap_text = f"daily paid cap ${cap}" if paid_cap_positive(os.environ) else "daily paid cap 0 (paid never used)"
         print(
             f"muse-stack: enabled providers: {', '.join(enabled)}. "
-            f"paid fallback {'on' if paid else 'off'}.",
+            f"paid fallback {'on' if paid else 'off'}; {cap_text}.",
             file=sys.stderr,
         )
 

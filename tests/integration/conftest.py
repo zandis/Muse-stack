@@ -28,6 +28,8 @@ import render_config  # noqa: E402
 LITELLM = shutil.which("litellm") or str(Path(sys.executable).with_name("litellm"))
 
 KEYS = {"GEMINI_API_KEY": "fake-g", "GROQ_API_KEY": "fake-q", "PRIVCLOUD_API_KEY": "fake-p"}
+MASTER_KEY = "sk-test-master-0123456789abcdef"
+_MASTER = object()  # chat(): "send the master key"
 
 
 def build_catalog(upstream: FakeUpstream) -> dict[str, Any]:
@@ -58,7 +60,9 @@ def build_catalog(upstream: FakeUpstream) -> dict[str, Any]:
                 "policy": no_no,
                 "quota": {"requests_per_day": 100},
                 "deployments": [
-                    {"id": "p-model", "model": "openai/p-model", "mode": "chat", "aliases": ["cheap"], "order": 3, "rpm": 10},
+                    # Priced, so the paid gate lets the owner use it automatically under the default cap.
+                    {"id": "p-model", "model": "openai/p-model", "mode": "chat", "aliases": ["cheap"], "order": 3, "rpm": 10,
+                     "price": {"input_per_mtok": 1.0, "output_per_mtok": 2.0}},
                 ],
             },
             {
@@ -70,23 +74,78 @@ def build_catalog(upstream: FakeUpstream) -> dict[str, Any]:
     }
 
 
+RATION_KEYS = {"FREEA_API_KEY": "fake-a", "FREEB_API_KEY": "fake-b", "PAIDP_API_KEY": "fake-pp", "PAIDU_API_KEY": "fake-pu"}
+# 11 prompt + 7 completion tokens per fake reply: (11*20 + 7*40) / 1e6 = $0.0005 a call.
+PRICE_IN, PRICE_OUT = 20.0, 40.0
+
+
+def build_ration_catalog(upstream: FakeUpstream) -> dict[str, Any]:
+    """Rationing scenarios: free A (rate-limit headers), free B (none), priced paid, unpriced paid, local.
+
+    `solo` holds only A and falls back to `other`, which holds only A again, so a
+    deferral must survive LiteLLM's cross-alias fallback.
+    """
+    unknown = {"trains_on_inputs": "unknown", "human_review": "unknown", "region": "us", "commercial_use": "allowed"}
+    return {
+        "aliases": {
+            "chat": {"mode": "chat"},
+            "solo": {"mode": "chat", "fallbacks": ["other"]},
+            "other": {"mode": "chat"},
+        },
+        "providers": [
+            {"id": "freea", "env": "FREEA_API_KEY", "tier": "free", "api_base": upstream.base("/a"), "policy": unknown,
+             "deployments": [{"id": "a-model", "model": "openai/a-model", "mode": "chat", "aliases": ["chat", "solo", "other"], "order": 1, "rpm": 10}]},
+            {"id": "freeb", "env": "FREEB_API_KEY", "tier": "free", "api_base": upstream.base("/b"), "policy": unknown,
+             "deployments": [{"id": "b-model", "model": "openai/b-model", "mode": "chat", "aliases": ["chat"], "order": 2, "rpm": 10}]},
+            {"id": "paidp", "env": "PAIDP_API_KEY", "tier": "paid", "api_base": upstream.base("/pp"), "policy": unknown,
+             "deployments": [{"id": "pp-model", "model": "openai/pp-model", "mode": "chat", "aliases": ["chat"], "order": 1, "rpm": 10,
+                              "join": "paid_fallback", "price": {"input_per_mtok": PRICE_IN, "output_per_mtok": PRICE_OUT}}]},
+            {"id": "paidu", "env": "PAIDU_API_KEY", "tier": "paid", "api_base": upstream.base("/pu"), "policy": unknown,
+             "deployments": [{"id": "pu-model", "model": "openai/pu-model", "mode": "chat", "aliases": ["chat"], "order": 2, "rpm": 10,
+                              "join": "paid_fallback"}]},
+            {"id": "local_openai", "kind": "local", "base_env": "MUSE_LOCAL_OPENAI_BASE", "tier": "local",
+             "policy": {"trains_on_inputs": False, "human_review": False, "region": "local", "commercial_use": "allowed"},
+             "deployments": []},
+        ],
+    }
+
+
 class Proxy:
     """One `litellm` subprocess with the muse hook, against the fake upstream."""
 
-    def __init__(self, workdir: Path, upstream: FakeUpstream, home: Path, workers: int = 1, local: bool = True) -> None:
+    def __init__(
+        self,
+        workdir: Path,
+        upstream: FakeUpstream,
+        home: Path,
+        workers: int = 1,
+        local: bool = True,
+        master_key: str | None = MASTER_KEY,
+        catalog: Any = None,
+        env: dict[str, str] | None = None,
+        local_aliases: tuple[str, ...] = ("fast",),
+    ) -> None:
         self.workdir = workdir
         self.upstream = upstream
         self.home = home
         self.workers = workers
         self.local = local
+        self.master_key = master_key
+        self.catalog_builder = catalog or build_catalog
+        self.extra_env = env or {}
+        self.local_aliases = local_aliases
         self.proc: subprocess.Popen[bytes] | None = None
         self.port = 0
         self.catalog_path = workdir / "providers.yaml"
         self.env = self._env()
 
     def _env(self) -> dict[str, str]:
-        env = {k: v for k, v in os.environ.items() if not k.endswith("_API_KEY") and k != "LITELLM_MASTER_KEY"}
+        env = {k: v for k, v in os.environ.items() if not k.endswith("_API_KEY") and k != "LITELLM_MASTER_KEY"
+               and not k.startswith(("MUSE_DAILY", "MUSE_ALLOW_PAID", "MUSE_RESERVE", "MUSE_ACTIVE", "MUSE_EXPIRING", "MUSE_TZ"))}
         env.update(KEYS)
+        env.update(RATION_KEYS)
+        if self.master_key:
+            env["LITELLM_MASTER_KEY"] = self.master_key
         env.update(
             MUSE_HOME=str(self.home),
             PYTHONPATH=os.pathsep.join([str(ROOT), env.get("PYTHONPATH", "")]).rstrip(os.pathsep),
@@ -100,16 +159,17 @@ class Proxy:
             env["MUSE_LOCAL_OPENAI_BASE"] = self.upstream.base("/local")
             local_catalog = self.workdir / "local.yaml"
             local_catalog.write_text(
-                yaml.safe_dump({"local_openai": [{"id": "local-model", "model": "openai/local-model", "mode": "chat", "aliases": ["fast"]}]})
+                yaml.safe_dump({"local_openai": [{"id": "local-model", "model": "openai/local-model", "mode": "chat", "aliases": list(self.local_aliases)}]})
             )
             env["MUSE_LOCAL_CATALOG"] = str(local_catalog)
             # No OPENAI_API_KEY here on purpose: the renderer's placeholder key
             # must be enough for a local OpenAI-compatible server.
             env.pop("OPENAI_API_KEY", None)
+        env.update(self.extra_env)
         return env
 
     def render(self) -> Path:
-        catalog = build_catalog(self.upstream)
+        catalog = self.catalog_builder(self.upstream)
         self.catalog_path.write_text(yaml.safe_dump(catalog, sort_keys=False))
         config, _ = render_config.render(catalog, self.env)
         assert config["litellm_settings"]["callbacks"] == ["muse.hook.handler"]
@@ -134,7 +194,7 @@ class Proxy:
             try:
                 with urllib.request.urlopen(f"{self.url}/health/liveliness", timeout=2):
                     # Readiness also needs the router; a model call path check is cheap.
-                    with urllib.request.urlopen(f"{self.url}/v1/models", timeout=5):
+                    with urllib.request.urlopen(self._request("/v1/models"), timeout=5):
                         return self
             except (urllib.error.URLError, OSError):
                 time.sleep(0.3)
@@ -165,12 +225,36 @@ class Proxy:
         self.stop()
         return self.start()
 
-    def chat(self, model: str, text: str = "hello", headers: dict[str, str] | None = None, timeout: float = 60) -> tuple[int, dict[str, str], Any]:
-        body = json.dumps({"model": model, "messages": [{"role": "user", "content": text}]}).encode()
-        request = urllib.request.Request(
-            f"{self.url}/v1/chat/completions", data=body,
-            headers={"content-type": "application/json", **(headers or {})},
-        )
+    def _request(self, path: str, data: bytes | None = None, headers: dict[str, str] | None = None, key: Any = _MASTER) -> urllib.request.Request:
+        token = self.master_key if key is _MASTER else key
+        auth = {"authorization": f"Bearer {token}"} if token else {}
+        return urllib.request.Request(f"{self.url}{path}", data=data, headers={**auth, **(headers or {})})
+
+    def get(self, path: str, key: Any = _MASTER) -> tuple[int, Any]:
+        try:
+            with urllib.request.urlopen(self._request(path, key=key), timeout=20) as response:
+                return response.status, json.loads(response.read() or b"null")
+        except urllib.error.HTTPError as err:
+            raw = err.read()
+            try:
+                return err.code, json.loads(raw)
+            except ValueError:
+                return err.code, raw.decode(errors="replace")
+
+    def chat(
+        self,
+        model: str,
+        text: str = "hello",
+        headers: dict[str, str] | None = None,
+        timeout: float = 60,
+        key: Any = _MASTER,
+        max_tokens: int | None = None,
+    ) -> tuple[int, dict[str, str], Any]:
+        """POST a chat completion. `key`: default the master key; an app token; None for no auth."""
+        payload: dict[str, Any] = {"model": model, "messages": [{"role": "user", "content": text}]}
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        request = self._request("/v1/chat/completions", json.dumps(payload).encode(), {"content-type": "application/json", **(headers or {})}, key)
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 return response.status, {k.lower(): v for k, v in response.headers.items()}, json.loads(response.read())
@@ -194,8 +278,8 @@ def upstream() -> Iterator[FakeUpstream]:
 def make_proxy(tmp_path: Path, upstream: FakeUpstream, _isolated_muse_home: Path) -> Iterator[Any]:
     started: list[Proxy] = []
 
-    def factory(workers: int = 1, local: bool = True) -> Proxy:
-        proxy = Proxy(tmp_path, upstream, _isolated_muse_home, workers=workers, local=local).start()
+    def factory(workers: int = 1, local: bool = True, **options: Any) -> Proxy:
+        proxy = Proxy(tmp_path, upstream, _isolated_muse_home, workers=workers, local=local, **options).start()
         started.append(proxy)
         return proxy
 

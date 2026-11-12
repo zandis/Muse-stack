@@ -27,12 +27,14 @@ def run(coro):
     return asyncio.run(coro)
 
 
-def dep(dep_id: str, provider: str, model: str, kind: str = "cloud", trains: str = "yes", review: str = "yes", order: int = 1) -> dict:
+def dep(dep_id: str, provider: str, model: str, kind: str = "cloud", trains: str = "yes", review: str = "yes", order: int = 1,
+        tier: str = "free") -> dict:
+    # muse_tier is always rendered; a deployment without one counts as paid (muse/ration.py).
     return {
         "model_name": dep_id.split("__")[-1],
         "litellm_params": {"model": model, "order": order},
         "model_info": {"id": dep_id, "provider": provider, "muse_upstream": f"{provider}:{model}",
-                       "muse_kind": kind, "muse_trains": trains, "muse_human_review": review},
+                       "muse_kind": kind, "muse_trains": trains, "muse_human_review": review, "muse_tier": tier},
     }
 
 
@@ -320,7 +322,8 @@ def db_rows(h):
 def test_response_headers(h):
     data = {**req("private"), "metadata": {**req("private")["metadata"], "muse_privacy": "private"}}
     out = run(h.async_post_call_response_headers_hook(data, None, object(), litellm_call_info={"model_info": P_CHEAP["model_info"]}))
-    assert out == {"x-muse-privacy": "private", "x-muse-provider": "privcloud", "x-muse-deployment": "p__cheap"}
+    assert out == {"x-muse-privacy": "private", "x-muse-provider": "privcloud", "x-muse-deployment": "p__cheap",
+                   "x-muse-cost-usd": "0.000000"}  # free tier: known to cost nothing
     out = run(h.async_post_call_response_headers_hook(req("bogus"), None, None))
     assert out is None  # a bad class has no header; the 400 explains it
     assert run(h.async_post_call_response_headers_hook(req(), None, None)) == {"x-muse-privacy": "standard"}
