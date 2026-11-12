@@ -199,7 +199,8 @@ def test_a_local_question_is_answered_locally_and_cloud_sees_nothing(start_proxy
     assert reply.route and reply.route.startswith("local_openai/") and reply.route.endswith("(local)")
     assert body_upstream.bodies_for(CLOUD_MODELS) == []
     local_bodies = body_upstream.bodies_for({"local-model"})
-    assert len(local_bodies) == 1 and marker.encode() in local_bodies[0]  # the content really went to the local model
+    assert len(local_bodies) == 2  # the content-free probe, then the question
+    assert marker.encode() not in local_bodies[0] and marker.encode() in local_bodies[1]  # the content really went to the local model
     model_receipt = next(r for r in receipts.list(limit=10) if r.action == "llm.complete")
     assert model_receipt.egress == "local" and model_receipt.privacy == "local" and model_receipt.model.startswith("local_openai/")
     assert_marker_absent(proxy, marker)  # (d)
@@ -220,21 +221,32 @@ def test_b_no_local_model_means_no_model_and_nothing_sent(start_proxy, body_upst
         assert marker.encode() not in body
     model_receipt = next(r for r in receipts.list(limit=10) if r.action == "llm.complete")
     assert model_receipt.detail.startswith(("refused", "unavailable"))
+    assert model_receipt.egress == "none"  # the probe failed; no record text was sent
     assert_marker_absent(proxy, marker)  # (d)
 
 
-def test_c_without_the_hook_the_client_refuses_to_trust_the_answer(start_proxy, body_upstream, tmp_path):
+def test_c_without_the_hook_the_client_refuses_to_trust_the_route(start_proxy, body_upstream, tmp_path):
     vault, mandates, receipts, rid, marker = stack(tmp_path)
     leaked = f"CLOUDANSWER{uuid.uuid4().hex[:8]}"
     body_upstream.answers["g-flash"] = lambda: f"{leaked} [R:{rid}]"
     body_upstream.answers["local-model"] = lambda: f"{leaked} [R:{rid}]"
     proxy = start_proxy("c", extra_env={"MUSE_DISABLE_HOOK": "true"})
+
+    # Strict (default): the content-free probe comes back unproven, so no record text is sent at all.
     reply = bot_for(proxy, vault, mandates, receipts).chat("what did my HbA1c report say?")
     assert reply.safety == "no_model" and leaked not in reply.text, reply.text
+    for _, body in body_upstream.bodies:
+        assert marker.encode() not in body
     model_receipt = next(r for r in receipts.list(limit=10) if r.action == "llm.complete")
-    assert model_receipt.egress == "cloud" and "not verified" in model_receipt.detail  # worst case recorded
-    # Non-strict mode would have shown it: the strictness is what protects the user.
+    assert model_receipt.egress == "none" and "probe" in model_receipt.detail
+
+    # Non-strict: the plain proxy routes the record to the training cloud provider. The bot's
+    # own check still withholds the answer and records the worst case, but the content is gone.
+    # This is why strictness (and its probe) is on by default.
+    body_upstream.bodies.clear()
     relaxed = bot_for(proxy, vault, mandates, receipts, strict=False).chat("what did my HbA1c report say?")
-    assert leaked not in relaxed.text  # the bot's own route check still withholds it (privacy not reported)
+    assert relaxed.safety == "no_model" and leaked not in relaxed.text
+    assert any(marker.encode() in body for body in body_upstream.bodies_for(CLOUD_MODELS))
+    model_receipt = next(r for r in receipts.list(limit=10) if r.action == "llm.complete")
+    assert model_receipt.egress == "cloud" and "not verified" in model_receipt.detail
     assert marker not in proxy.log_text()
-    print("C-ROUTES", [m for m, _ in body_upstream.bodies])

@@ -62,6 +62,7 @@ from muse.health.contracts import (
     VaultError,
     VaultLocked,
 )
+from muse.health.llm import RequestTooLarge, UnverifiedRoute
 from muse.health.safety import (
     SafetyVerdict,
     detect_locale,
@@ -1165,17 +1166,24 @@ class HealthBot:
         return PRIVACY_ORDER.index(result.privacy) >= PRIVACY_ORDER.index(plan.privacy)
 
     def _receipt_failure(self, exc: Exception, plan: _Plan, refs: Sequence[str], what: str) -> None:
-        if getattr(exc, "content_sent", False):
-            # The gateway answered without proving the class: content may have
-            # reached any provider. Record the worst case.
+        """Record a failed model call with an honest egress.
+
+        `content_sent` (set by GatewayLLM) says whether record text left the
+        process: False when a content-free probe failed, True when an answer
+        came back over an unproven route (worst case: it reached any provider).
+        """
+        sent = getattr(exc, "content_sent", None)
+        if isinstance(exc, UnverifiedRoute) and sent is not False:
             egress, detail = "cloud", f"refused: route not verified, answer discarded ({what})"
+        elif isinstance(exc, UnverifiedRoute):
+            egress, detail = "none", f"refused: route not verified by probe, nothing sent ({what})"
         elif isinstance(exc, LLMRefused):
             egress, detail = "none", f"refused: no model allowed for class {plan.privacy} ({what})"
         else:
-            name = type(exc).__name__
-            egress = "none" if name == "RequestTooLarge" else plan.egress
-            detail = f"unavailable: {name} ({what})"
-        self._receipt("llm.complete", mandate_id=plan.mandate_id, record_refs=refs, egress=egress, privacy=plan.privacy, detail=detail)
+            egress = "none" if sent is False or isinstance(exc, RequestTooLarge) else plan.egress
+            detail = f"unavailable: {type(exc).__name__} ({what})"
+        self._receipt("llm.complete", mandate_id=plan.mandate_id, record_refs=refs if egress != "none" else (),
+                      egress=egress, privacy=plan.privacy, detail=detail)
 
     def _listing(self, included: Sequence[tuple[Record, str]], loc: str, header: bool = True) -> str:
         if not included:

@@ -238,7 +238,7 @@ def import_file(data: bytes, filename: str = "", *, source: str = "", locale: st
     name = (filename or "").lower()
     if name.endswith(".pdf") or raw.startswith(b"%PDF-"):
         return import_pdf(raw, filename, source=source)
-    if name.endswith(".csv") or name.endswith(".tsv"):
+    if name.endswith((".csv", ".tsv")):
         return import_lab_table(raw, filename, source=source, locale=locale)
     if name.endswith(".json") or raw.lstrip()[:1] in (b"{", b"["):
         obj = _load_json(raw)

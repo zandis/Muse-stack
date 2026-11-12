@@ -13,6 +13,14 @@ Other choices:
 - No environment HTTP proxy and no redirects: the request goes to the
   configured gateway URL or nowhere.
 - Request and response sizes are capped.
+- Probe first: checking headers on the answer only DETECTS an unenforced
+  route after the content has already gone wherever the proxy sent it (the
+  e2e test shows a plain proxy sending it to a training cloud provider). So in
+  strict mode a content-free "ping" with the same class and alias goes first,
+  and record content is sent only if the ping comes back with proof of
+  enforcement. Cached per (class, alias) for `probe_ttl` seconds; a hook
+  switched off inside that window is still caught by the response check, but
+  only after the fact.
 """
 
 from __future__ import annotations
@@ -21,9 +29,10 @@ import json
 import os
 import re
 import socket
+import time
 import urllib.error
 import urllib.request
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from muse import policy
@@ -69,6 +78,8 @@ class GatewayLLM:
         max_request_bytes: int = 200_000,
         max_response_bytes: int = 1_000_000,
         environ: Mapping[str, str] | None = None,
+        probe_ttl: float = 300.0,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._environ = environ
         env = self._env
@@ -78,6 +89,9 @@ class GatewayLLM:
         self.timeout = timeout
         self.max_request_bytes = max_request_bytes
         self.max_response_bytes = max_response_bytes
+        self.probe_ttl = probe_ttl
+        self._clock = clock
+        self._verified: dict[tuple[str, str], float] = {}
         self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
 
     def __repr__(self) -> str:  # names the variable, never its value
@@ -108,6 +122,29 @@ class GatewayLLM:
         ).encode("utf-8")
         if len(body) > self.max_request_bytes:
             raise RequestTooLarge(f"prompt is {len(body)} bytes, over the {self.max_request_bytes}-byte cap; nothing was sent")
+        if self.strict_route and self.probe_ttl > 0:
+            self._probe(requested, alias)
+        return self._parse(*self._post(body, requested), requested)
+
+    def _probe(self, requested: str, alias: str) -> None:
+        """Content-free request; raises before any record text is sent if the route is unproven."""
+        key = (requested, alias)
+        now = self._clock()
+        if now - self._verified.get(key, float("-inf")) < self.probe_ttl:
+            return
+        body = json.dumps({"model": alias, "messages": [{"role": "user", "content": "ping"}], "max_tokens": 1, "stream": False}).encode()
+        try:
+            self._parse(*self._post(body, requested), requested)
+        except UnverifiedRoute as exc:
+            err = UnverifiedRoute(f"{exc} (probe; no content was sent)")
+            err.content_sent = False
+            raise err from None
+        except (LLMRefused, LLMUnavailable) as exc:
+            exc.content_sent = False  # type: ignore[attr-defined]
+            raise
+        self._verified[key] = now
+
+    def _post(self, body: bytes, requested: str) -> tuple[int, dict[str, str], bytes]:
         headers = {"Content-Type": "application/json", "Accept": "application/json", "x-muse-privacy": requested}
         key = self._key()
         if key:
@@ -131,7 +168,7 @@ class GatewayLLM:
             raise LLMUnavailable(f"the model gateway at {self.base_url} {kind} ({type(reason).__name__})") from None
         if len(raw) > self.max_response_bytes:
             raise LLMUnavailable(f"the gateway's answer exceeded the {self.max_response_bytes}-byte cap; discarded")
-        return self._parse(status, resp_headers, raw, requested)
+        return status, resp_headers, raw
 
     def _parse(self, status: int, headers: dict[str, str], raw: bytes, requested: str) -> LLMResult:
         provider = headers.get("x-muse-provider") or None
@@ -139,6 +176,7 @@ class GatewayLLM:
         got = headers.get("x-muse-privacy") or None
         if self.strict_route:
             if not got or not provider:
+                self._verified.clear()
                 raise UnverifiedRoute(
                     "the gateway did not confirm which model answered or which privacy class it enforced "
                     "(is the muse hook loaded?); the answer was discarded"
@@ -148,6 +186,7 @@ class GatewayLLM:
             except policy.PolicyError:
                 weaker = True
             if weaker:
+                self._verified.clear()
                 raise UnverifiedRoute(f"the gateway enforced '{self._scrub(got)}', weaker than the requested '{requested}'; the answer was discarded")
         try:
             payload = json.loads(raw.decode("utf-8"))
