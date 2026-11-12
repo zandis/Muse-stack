@@ -175,6 +175,9 @@ providers:
   - id: cohere
     env: COHERE_API_KEY
     tier: trial
+    # Cohere's rate-limit docs: trial keys get 1,000 API calls a month in total.
+    quota:
+      requests_per_month: 1000
     policy:
       trains_on_inputs: unknown
       human_review: unknown

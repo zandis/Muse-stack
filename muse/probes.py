@@ -95,4 +95,40 @@ def probe_openrouter(
         return []
 
 
-PROBES: dict[str, Callable[..., list[dict[str, Any]]]] = {"openrouter": probe_openrouter}
+PROBES: dict[str, tuple[str, Callable[..., list[dict[str, Any]]]]] = {
+    # provider id -> (key env var, probe)
+    "openrouter": ("OPENROUTER_API_KEY", probe_openrouter),
+}
+
+
+def run_probes(secrets: Any, ledger: Any, now: datetime | None = None, fetch: Fetch = _http_get) -> list[str]:
+    """Probe every provider that has a key and a probe; record what they say.
+
+    `secrets` is the merged environment from `muse.keys.export_env()`. Results
+    go to the ledger under `provider:<id>`, where `muse.status` reads them, so
+    the dashboard shows them too. Returns the provider ids that answered.
+    """
+    from muse.quota import ObservedLimit  # local import: keeps this module importable alone
+
+    moment = now or datetime.now(timezone.utc)
+    answered: list[str] = []
+    for provider_id, (env_name, probe) in PROBES.items():
+        key = str(secrets.get(env_name, "") or "").strip()
+        if not key:
+            continue
+        found = probe(key, moment, fetch=fetch)
+        if not found:
+            continue
+        observed = [
+            ObservedLimit(
+                window=item["window"],
+                metric=item["metric"],
+                limit=item["limit"],
+                remaining=item["remaining"],
+                reset_at=datetime.strptime(item["reset_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp(),
+            )
+            for item in found
+        ]
+        ledger.record_limits(f"provider:{provider_id}", observed, now=moment.timestamp())
+        answered.append(provider_id)
+    return answered

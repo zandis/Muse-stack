@@ -11,7 +11,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from render_config import _tri, dumps, load_catalog, render  # noqa: E402
+from render_config import LOCAL_PLACEHOLDER_KEY, _tri, dumps, load_catalog, render  # noqa: E402
 
 CATALOG_PATH = ROOT / "config" / "providers.yaml"
 ENV_EXAMPLE = ROOT / ".env.example"
@@ -56,7 +56,10 @@ def assert_refs(config: dict) -> None:
         check(deployment_id not in seen, f"duplicate deployment id {deployment_id}")
         seen.add(deployment_id)
         if entry["model_info"].get("muse_kind") == "local":
-            check("api_key" not in entry["litellm_params"], f"{deployment_id} is local and must not carry a key")
+            check(
+                entry["litellm_params"].get("api_key") == LOCAL_PLACEHOLDER_KEY,
+                f"{deployment_id} is local and must carry only the placeholder key",
+            )
             base = entry["litellm_params"].get("api_base", "")
             check(base.startswith("os.environ/"), f"{deployment_id} api_base is not an env reference")
             continue

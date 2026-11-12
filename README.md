@@ -4,6 +4,64 @@ Self-hosted OpenAI-compatible gateway for [Muse AIMedics](https://github.com/zan
 
 The first host is a small Linux box with Docker. The later host is an Oracle Cloud Always Free ARM VM in US West (San Jose). See [deploy/oracle-cloud.md](deploy/oracle-cloud.md).
 
+## Resource manager
+
+`muse` is a command-line tool and a local dashboard for one person's own AI
+resources: your API keys, your free-tier quotas, and models running on your
+machine. It sits on top of the proxy and adds what the proxy lacks.
+
+It is a quota-aware router for your own accounts. It does not pool accounts,
+share keys, rotate identities, or use consumer-subscription logins, and it
+stops calling a provider that says stop.
+
+```bash
+pip install -e .            # add ".[keyring]" to store keys in the OS keychain
+muse keys set GEMINI_API_KEY   # prompts; a key is never taken from the command line
+muse local discover --write    # find Ollama / LM Studio / llama.cpp models, if any
+muse up                        # start the proxy (Docker). `muse up --native` if litellm is installed
+muse status                    # providers, quotas, reset countdowns, recent calls
+muse dash                      # the same as a page on http://127.0.0.1:4180
+muse ask "hello" --alias fast --privacy local --show-route
+muse doctor                    # what is misconfigured and how to fix it
+```
+
+What it adds:
+
+- **A shared block list.** When a provider says a quota is spent until
+  tomorrow, every alias that uses that model skips it until the reset, across
+  proxy workers and restarts. (The proxy on its own cools each alias
+  separately and re-hits the same spent quota.) A rejected key pauses that
+  provider for 15 minutes instead of being retried.
+- **Privacy classes.** Send `x-muse-privacy: public | standard | private |
+  local`, or set `MUSE_DEFAULT_PRIVACY`. `local` only reaches models on this
+  machine. `private` also allows a provider whose `policy` in
+  `config/providers.yaml` says, after someone has read its terms, that it does
+  not train on or review prompts. If nothing qualifies the request is refused
+  with HTTP 403. It never falls back to a less private provider. With
+  `MUSE_AUTO_PRIVACY=on`, a prompt that contains an API key, a national ID
+  number or clinical-document markers is raised to `private`; this detector is
+  a safety net with real gaps, not a guarantee.
+- **A usage ledger** in `~/.muse/ledger.sqlite`: which deployment answered,
+  status, tokens, latency and privacy class. No prompt or response text and no
+  key is ever stored.
+- **Quota and reset tracking** from provider rate-limit headers and 429
+  responses. `muse status --probe` also asks OpenRouter, the one provider with
+  a quota endpoint. Where a provider reports nothing (Gemini), limits show as
+  unknown until a 429 says otherwise.
+- **Local models as first-class deployments.** Set `OLLAMA_API_BASE`,
+  `LM_STUDIO_API_BASE` or `MUSE_LOCAL_OPENAI_BASE`. They join the aliases at
+  `MUSE_LOCAL_ORDER` (default 5: after the free cloud tiers; 0 tries local
+  first).
+
+Response headers `x-muse-provider`, `x-muse-deployment` and `x-muse-privacy`
+say where a request went. Set `MUSE_DISABLE_HOOK=true` to run the plain proxy.
+
+Known limits: calling a deployment by its id skips the block list (privacy
+still applies); server errors are left to the proxy's own per-alias cooldown;
+the 429 formats for Gemini, OpenRouter and Cohere are parsed from community
+reports, not official documentation, and are marked `unconfirmed` in
+`muse/quota.py`.
+
 ## Do not send patient data through this
 
 Free and trial tiers are not a place for clinical records.

@@ -47,3 +47,23 @@ def test_probe_never_raises_and_sends_bearer():
     assert probes.probe_openrouter("k", NOW, fetch=lambda *a: (401, b"")) == []
     assert probes.probe_openrouter("k", NOW, fetch=lambda *a: (200, b"not json")) == []
     assert probes.probe_openrouter("", NOW, fetch=boom) == []
+
+
+def test_run_probes_records_to_ledger_and_snapshot(tmp_path):
+    from muse.ledger import Ledger
+    from muse.status import build_snapshot
+
+    env = {"MUSE_HOME": str(tmp_path), "OPENROUTER_API_KEY": "k"}
+    ledger = Ledger(environ=env)
+
+    def ok(url, headers, timeout):
+        return 200, b'{"data":{"free_model_daily_requests":{"limit":50,"remaining":38}}}'
+
+    assert probes.run_probes(env, ledger, NOW, fetch=ok) == ["openrouter"]
+    assert probes.run_probes({"OPENROUTER_API_KEY": ""}, ledger, NOW, fetch=ok) == []
+    snap = build_snapshot(now=NOW.timestamp(), environ=env)
+    openrouter = next(p for p in snap["providers"] if p["id"] == "openrouter")
+    assert openrouter["limits"] == [
+        {"window": "day", "metric": "requests", "limit": 50, "remaining": 38,
+         "reset_at": "2026-11-13T00:00:00Z", "source": "header"}
+    ]

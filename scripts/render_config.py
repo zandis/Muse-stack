@@ -22,6 +22,7 @@ DEFAULT_CATALOG = ROOT / "config" / "providers.yaml"
 DEFAULT_OUT = ROOT / "config" / "generated" / "litellm.yaml"
 
 TRUTHY = {"1", "true", "yes", "on"}
+LOCAL_PLACEHOLDER_KEY = "local-no-key"
 ALIASES_ORDER = ("fast", "cheap", "smart", "long-context", "embed", "rerank")
 HOOK_CALLBACK = "muse.hook.handler"
 
@@ -128,6 +129,9 @@ def _litellm_params(provider: Mapping[str, Any], deployment: Mapping[str, Any], 
         # No key. The base URL is not a secret but differs per machine, so it
         # stays an environment reference like the keys do.
         params["api_base"] = f"os.environ/{provider['base_env']}"
+        # Local servers ignore the key, but the OpenAI client will not send a
+        # request without one. This placeholder is not a secret.
+        params["api_key"] = LOCAL_PLACEHOLDER_KEY
     else:
         params["api_key"] = f"os.environ/{provider['env']}"
         api_base = deployment.get("api_base") or provider.get("api_base")

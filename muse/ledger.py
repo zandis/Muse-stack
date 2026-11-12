@@ -183,9 +183,10 @@ class Ledger:
                 ),
             )
             last = conn.execute("SELECT value FROM meta WHERE key='last_prune'").fetchone()
-            due = last is None or ts - float(last["value"]) >= PRUNE_EVERY_SECONDS
+            clock_now = self._now(None)  # retention follows the clock, not a back-dated record
+            due = last is None or clock_now - float(last["value"]) >= PRUNE_EVERY_SECONDS
         if due:
-            self.prune(ts - RETENTION_SECONDS, now=ts)
+            self.prune(clock_now - RETENTION_SECONDS, now=clock_now)
 
     def recent(self, n: int = 50) -> list[dict[str, Any]]:
         with self._read() as conn:

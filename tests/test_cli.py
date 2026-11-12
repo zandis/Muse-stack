@@ -620,3 +620,23 @@ def test_local_discover_and_list_cli(tmp_path, monkeypatch, capsys):
 def test_version(capsys):
     assert cli.main(["version"]) == 0
     assert capsys.readouterr().out.startswith("muse 0.")
+
+
+def test_ask_distinguishes_provider_401_from_master_key_401(monkeypatch, capsys):
+    """A 401 that passed the proxy's auth (hook header present) is a provider key problem."""
+    from muse import cli
+
+    def provider_401(method, url, headers, body=None, timeout=0):
+        return 401, {"X-Muse-Privacy": "standard"}, b'{"error":{"message":"AuthenticationError: bad key"}}'
+
+    monkeypatch.setattr(cli, "_http", provider_401)
+    assert cli.main(["ask", "hi"]) == 1
+    err = capsys.readouterr().err
+    assert "provider rejected its API key" in err and "master key" not in err
+
+    def proxy_401(method, url, headers, body=None, timeout=0):
+        return 401, {}, b'{"error":{"message":"Authentication Error","type":"auth_error"}}'
+
+    monkeypatch.setattr(cli, "_http", proxy_401)
+    assert cli.main(["ask", "hi"]) == 1
+    assert "master key" in capsys.readouterr().err

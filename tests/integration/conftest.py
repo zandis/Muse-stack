@@ -103,6 +103,9 @@ class Proxy:
                 yaml.safe_dump({"local_openai": [{"id": "local-model", "model": "openai/local-model", "mode": "chat", "aliases": ["fast"]}]})
             )
             env["MUSE_LOCAL_CATALOG"] = str(local_catalog)
+            # No OPENAI_API_KEY here on purpose: the renderer's placeholder key
+            # must be enough for a local OpenAI-compatible server.
+            env.pop("OPENAI_API_KEY", None)
         return env
 
     def render(self) -> Path:

@@ -285,7 +285,7 @@ class MuseHook(CustomLogger):
         if not allowed:
             raise MusePrivacyError(
                 f"no deployment of '{model}' may receive a '{privacy}' request "
-                f"({len(healthy_deployments)} available, none allowed: "
+                f"({len(healthy_deployments)} not cooling right now, none allowed: "
                 + ("only local models qualify" if privacy == "local" else
                    "it needs a local model or a provider that does not train on inputs or allow human review")
                 + "). Not falling back to other providers."

@@ -320,8 +320,21 @@ def _build_snapshot(check_proxy: bool = False) -> dict[str, Any]:
     return build_snapshot(environ=_env(), check_proxy=check_proxy)  # type: ignore[no-any-return]
 
 
+def _run_probes() -> None:
+    """Ask providers that have a quota endpoint (OpenRouter) what is left. Best effort."""
+    try:
+        from muse import probes
+        from muse.ledger import Ledger
+
+        probes.run_probes(keys.export_env(_env()), Ledger(environ=_env()))
+    except Exception as exc:  # a probe must never break the status screen
+        _err(f"Quota probe skipped: {type(exc).__name__}")
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     def once() -> int:
+        if getattr(args, "probe", False):
+            _run_probes()
         try:
             snap = _build_snapshot(check_proxy=True)
         except ImportError:
@@ -838,8 +851,11 @@ def cmd_up(args: argparse.Namespace) -> int:
 def cmd_down(args: argparse.Namespace) -> int:
     env = _env()
     stopped = _native_stop(env)
-    code = _run(_compose_cmd("down"), _docker_child_env(env))
-    return 0 if stopped and code else code
+    if stopped:
+        # A native proxy was running, so there is no container to stop. Do not
+        # make a machine without Docker print a daemon error.
+        return 0
+    return _run(_compose_cmd("down"), _docker_child_env(env))
 
 
 def cmd_restart(args: argparse.Namespace) -> int:
@@ -878,7 +894,16 @@ def cmd_ask(args: argparse.Namespace) -> int:
         payload = json.loads(text)
     except ValueError:
         payload = {}
-    if status == 401 or status == 403 and "auth" in text.lower():
+    # The hook stamps x-muse-privacy on every request that got past the proxy's
+    # own auth. So a 401 carrying it came from a provider, not from the proxy.
+    passed_proxy_auth = any(str(name).lower() == "x-muse-privacy" for name in dict(resp_headers))
+    if status == 401 and passed_proxy_auth:
+        _err(
+            "A provider rejected its API key (HTTP 401), not the proxy. That provider is now paused; "
+            "see which one with `muse status`, fix it with `muse keys set <NAME>`, then `muse restart`."
+        )
+        return 1
+    if status == 401 or status == 403 and "auth" in text.lower() and not passed_proxy_auth:
         _err("The proxy rejected the master key (HTTP 401). Check it with `muse doctor`; set it with `muse keys set LITELLM_MASTER_KEY`, then `muse restart`.")
         return 1
     if status == 429:
@@ -973,6 +998,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("status", help="providers, quotas, aliases, recent calls")
     s.add_argument("--json", action="store_true")
     s.add_argument("--watch", type=int, metavar="N", default=0, help="refresh every N seconds")
+    s.add_argument("--probe", action="store_true", help="ask providers that offer a quota endpoint (OpenRouter) what is left")
     s.set_defaults(func=cmd_status)
 
     k = sub.add_parser("keys", help="manage provider API keys (values are never taken from argv)")
