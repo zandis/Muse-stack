@@ -243,9 +243,12 @@ def _call_id(data: Mapping[str, Any] | None) -> str | None:
 
 
 def _estimate_tokens(data: Mapping[str, Any]) -> tuple[int, int]:
-    """Rough (input, output) token estimate for a paid hold: 1 token per 3 characters
-    (generous for English, about right for CJK), output = max_tokens or 1024."""
-    chars = len(_request_text(data))
+    """Rough, deliberately high (input, output) token estimate for a paid hold: one
+    token per 3 ASCII characters (English averages about 4) plus one per other
+    character (CJK is about 1-1.5 characters a token); output = max_tokens or 1024."""
+    text = _request_text(data)
+    ascii_chars = sum(1 for ch in text if ord(ch) < 128)
+    chars = ascii_chars + 3 * (len(text) - ascii_chars)
     out = 0
     for key in ("max_tokens", "max_completion_tokens", "max_output_tokens"):
         value = data.get(key)
@@ -304,6 +307,7 @@ class MuseHook(CustomLogger):
         self.errors: Counter[str] = Counter()
         self._notes: OrderedDict[str, _Note] = OrderedDict()
         self._notes_lock = threading.Lock()
+        self._warned: set[str] = set()
 
     # ------------------------------------------------------------ helpers
 
@@ -359,7 +363,12 @@ class MuseHook(CustomLogger):
         return await asyncio.to_thread(fn, *args, **kwargs)
 
     def settings(self) -> ration.Settings:
-        return ration.Settings.from_env(self.env)
+        settings = ration.Settings.from_env(self.env)
+        for warning in settings.warnings:
+            if warning not in self._warned:
+                self._warned.add(warning)
+                log.warning("muse hook: %s", warning)
+        return settings
 
     def _note(self, call_id: str | None, create: bool = True) -> _Note | None:
         if not call_id:

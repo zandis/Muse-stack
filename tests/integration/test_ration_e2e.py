@@ -132,6 +132,15 @@ def test_background_yields_to_the_active_app(make_proxy, upstream):
     assert status == 200 and models(upstream) == ["a-model"]
     status, _, _ = proxy.chat("a-model__solo")
     assert status == 200
+    # Same in a group with several deployments, where LiteLLM would cool a deployment
+    # down on a 429 it saw: A is order 1 in chat, so a cooldown would show as B answering.
+    for _ in range(3):
+        assert proxy.chat("a-model__chat", key=batch)[0] == 429
+    upstream.clear_log()
+    for _ in range(3):
+        status, headers, _ = proxy.chat("chat")
+        assert status == 200 and headers["x-muse-provider"] == "freea", headers
+    assert set(models(upstream)) == {"a-model"}
     counts = db.ration_counts()
     assert counts[("batch", "defer", "yield")] >= 2
 
