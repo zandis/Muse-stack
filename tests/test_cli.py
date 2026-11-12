@@ -550,7 +550,7 @@ def test_up_generates_master_key_without_printing_and_forwards_keychain_keys(tmp
     assert ran["env"]["OLLAMA_API_BASE"] == "http://host.docker.internal:11434"
     assert not (tmp_path / ".env").exists()  # nothing written to disk
     # docker-compose.yml passes every catalogue key through, so there is nothing to warn about
-    assert cli.compose_gaps() == [] and "GROQ_API_KEY:" not in cap.err
+    assert cli.compose_gaps(ran["env"]) == [] and "GROQ_API_KEY:" not in cap.err
 
 
 def test_up_show_master_key_prints_once_and_second_run_does_not_regenerate(tmp_path, monkeypatch, capsys):
