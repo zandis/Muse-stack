@@ -104,6 +104,9 @@ class MuseRationError(RateLimitError):
     def __init__(self, decision: ration.Decision, model: str) -> None:
         self.decision = decision
         super().__init__(message=decision.message, llm_provider="muse", model=model)
+        # Retrying the same group cannot change the answer, and the router would back off
+        # for seconds first (router.py async_function_with_retries reads e.num_retries).
+        self.num_retries = 0
 
 
 class MuseAppCapError(GuardrailRaisedException):
