@@ -33,6 +33,8 @@ PRIVACY_CLASSES: tuple[str, ...] = ("public", "standard", "private", "local")
 
 MAX_SCAN_CHARS = 200_000
 TAIL_SCAN_CHARS = 50_000
+MAX_FINDINGS = 200  # per scanned segment; keeps overlap resolution and END-marker search cheap
+_PEM_MAX_BODY = 16_384
 
 _ALIASES = {
     "c0": "public",
@@ -298,6 +300,8 @@ def _scan(text: str, base: int, out: list[Finding]) -> None:
     """Run every detector over one segment; offsets are shifted by `base`."""
 
     def add(kind: str, m_start: int, m_end: int) -> None:
+        if len(out) >= MAX_FINDINGS:
+            return
         out.append(Finding(kind, base + m_start, base + m_end))
 
     for kind in ("anthropic_key", "openai_key", "google_key", "groq_key", "github_token",
@@ -310,7 +314,7 @@ def _scan(text: str, base: int, out: list[Finding]) -> None:
                 continue  # "sk-learn-style-words": real keys always carry digits
             add(kind, m.start(), m.end())
     for m in _RX["private_key"].finditer(text):
-        end = text.find("-----END", m.end())
+        end = text.find("-----END", m.end(), m.end() + _PEM_MAX_BODY)
         close = text.find("-----", end + 8) if end != -1 else -1
         add("private_key", m.start(), close + 5 if close != -1 else m.end())
     for m in _RX["jwt"].finditer(text):

@@ -1,0 +1,1195 @@
+{
+ "generated_at": "2026-11-12T14:00:00Z",
+ "home": "/home/you/.muse",
+ "proxy": {
+  "url": "http://127.0.0.1:4000",
+  "reachable": true
+ },
+ "default_privacy": "standard",
+ "providers": [
+  {
+   "id": "gemini",
+   "kind": "cloud",
+   "tier": "free",
+   "key_env": "GEMINI_API_KEY",
+   "configured": true,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "yes",
+    "human_review": "yes",
+    "region": "us",
+    "commercial_use": "allowed",
+    "terms_url": "https://aistudio.google.com/docs/terms",
+    "note": "Free tier: Google uses prompts and responses to improve products and human reviewers may read them. Free tier may not serve EEA/UK/CH end users."
+   },
+   "state": "ok",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 112,
+     "tokens": 96400
+    },
+    "month": {
+     "requests": 1604,
+     "tokens": 1210000
+    }
+   },
+   "limits": [
+    {
+     "window": "minute",
+     "metric": "requests",
+     "limit": 10,
+     "remaining": 9,
+     "reset_at": "2026-11-12T14:00:34Z",
+     "source": "estimate"
+    },
+    {
+     "window": "day",
+     "metric": "requests",
+     "limit": 1500,
+     "remaining": 1388,
+     "reset_at": "2026-11-12T16:10:00Z",
+     "source": "estimate"
+    },
+    {
+     "window": "day",
+     "metric": "tokens",
+     "limit": 1000000,
+     "remaining": 903600,
+     "reset_at": "2026-11-12T16:10:00Z",
+     "source": "estimate"
+    }
+   ],
+   "deployments": [
+    {
+     "id": "gemini-3.1-flash-lite",
+     "model": "gemini/gemini-3.1-flash-lite",
+     "mode": "chat",
+     "aliases": [
+      "fast",
+      "cheap"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T13:59:20Z",
+     "success_rate_24h": 0.99
+    },
+    {
+     "id": "gemini-2.5-flash-lite",
+     "model": "gemini/gemini-2.5-flash-lite",
+     "mode": "chat",
+     "aliases": [
+      "cheap"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T13:48:00Z",
+     "success_rate_24h": 1.0
+    },
+    {
+     "id": "gemini-3.5-flash-lite",
+     "model": "gemini/gemini-3.5-flash-lite",
+     "mode": "chat",
+     "aliases": [
+      "cheap"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T13:29:00Z",
+     "success_rate_24h": 0.97
+    },
+    {
+     "id": "gemini-3.8-flash",
+     "model": "gemini/gemini-3.8-flash",
+     "mode": "chat",
+     "aliases": [
+      "smart",
+      "long-context"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T13:57:00Z",
+     "success_rate_24h": 0.98
+    },
+    {
+     "id": "gemini-2.5-flash",
+     "model": "gemini/gemini-2.5-flash",
+     "mode": "chat",
+     "aliases": [
+      "long-context"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T12:00:00Z",
+     "success_rate_24h": 0.95
+    },
+    {
+     "id": "gemini-2.5-pro",
+     "model": "gemini/gemini-2.5-pro",
+     "mode": "chat",
+     "aliases": [
+      "smart",
+      "long-context"
+     ],
+     "state": "cooling",
+     "blocked_until": "2026-11-12T14:01:12Z",
+     "last_status": 429,
+     "last_used_at": "2026-11-12T13:59:00Z",
+     "success_rate_24h": 0.71
+    },
+    {
+     "id": "gemini-embedding-2",
+     "model": "gemini/gemini-embedding-2",
+     "mode": "embedding",
+     "aliases": [
+      "embed"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T13:51:00Z",
+     "success_rate_24h": 1.0
+    }
+   ]
+  },
+  {
+   "id": "groq",
+   "kind": "cloud",
+   "tier": "free",
+   "key_env": "GROQ_API_KEY",
+   "configured": true,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "unknown",
+    "human_review": "unknown",
+    "region": "us",
+    "commercial_use": "allowed",
+    "terms_url": "https://groq.com/terms-of-use/",
+    "note": "Not re-checked. Treated as unknown, so the private class skips it."
+   },
+   "state": "ok",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 86,
+     "tokens": 121300
+    },
+    "month": {
+     "requests": 640,
+     "tokens": 810000
+    }
+   },
+   "limits": [
+    {
+     "window": "minute",
+     "metric": "requests",
+     "limit": 30,
+     "remaining": 27,
+     "reset_at": "2026-11-12T14:00:41Z",
+     "source": "header"
+    },
+    {
+     "window": "minute",
+     "metric": "tokens",
+     "limit": 8000,
+     "remaining": 5200,
+     "reset_at": "2026-11-12T14:00:38Z",
+     "source": "header"
+    },
+    {
+     "window": "day",
+     "metric": "requests",
+     "limit": 1000,
+     "remaining": 914,
+     "reset_at": "2026-11-12T23:22:00Z",
+     "source": "header"
+    },
+    {
+     "window": "day",
+     "metric": "tokens",
+     "limit": 200000,
+     "remaining": 78700,
+     "reset_at": "2026-11-12T23:22:00Z",
+     "source": "header"
+    }
+   ],
+   "deployments": [
+    {
+     "id": "groq-gpt-oss-20b",
+     "model": "groq/openai/gpt-oss-20b",
+     "mode": "chat",
+     "aliases": [
+      "fast",
+      "cheap"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T13:58:25Z",
+     "success_rate_24h": 1.0
+    },
+    {
+     "id": "groq-gpt-oss-120b",
+     "model": "groq/openai/gpt-oss-120b",
+     "mode": "chat",
+     "aliases": [
+      "smart"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T13:54:00Z",
+     "success_rate_24h": 0.99
+    }
+   ]
+  },
+  {
+   "id": "ollama",
+   "kind": "local",
+   "tier": "local",
+   "key_env": null,
+   "configured": true,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "no",
+    "human_review": "no",
+    "region": "local",
+    "commercial_use": "depends-on-model-licence",
+    "terms_url": "https://ollama.com",
+    "note": "Runs on this machine. Check each model's licence before commercial use."
+   },
+   "state": "ok",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 58,
+     "tokens": 40800
+    },
+    "month": {
+     "requests": 402,
+     "tokens": 290000
+    }
+   },
+   "limits": [],
+   "deployments": [
+    {
+     "id": "ollama-llama3.2-3b",
+     "model": "ollama/llama3.2:3b",
+     "mode": "chat",
+     "aliases": [
+      "fast",
+      "cheap"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T13:56:00Z",
+     "success_rate_24h": 1.0
+    },
+    {
+     "id": "ollama-qwen3-14b",
+     "model": "ollama/qwen3:14b",
+     "mode": "chat",
+     "aliases": [
+      "smart"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T13:38:00Z",
+     "success_rate_24h": 1.0
+    },
+    {
+     "id": "ollama-nomic-embed",
+     "model": "ollama/nomic-embed-text",
+     "mode": "embedding",
+     "aliases": [
+      "embed"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T13:10:00Z",
+     "success_rate_24h": 1.0
+    }
+   ]
+  },
+  {
+   "id": "siliconflow",
+   "kind": "cloud",
+   "tier": "metered",
+   "key_env": "SILICONFLOW_API_KEY",
+   "configured": true,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "unknown",
+    "human_review": "unknown",
+    "region": "unknown",
+    "commercial_use": "unknown",
+    "terms_url": "https://siliconflow.com/terms",
+    "note": "Not checked."
+   },
+   "state": "ok",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 9,
+     "tokens": 7200
+    },
+    "month": {
+     "requests": 31,
+     "tokens": 26400
+    }
+   },
+   "limits": [
+    {
+     "window": "month",
+     "metric": "tokens",
+     "limit": null,
+     "remaining": null,
+     "reset_at": null,
+     "source": "catalog"
+    }
+   ],
+   "deployments": [
+    {
+     "id": "siliconflow-qwen-3-5-9b",
+     "model": "openai/Qwen/Qwen3.5-9B",
+     "mode": "chat",
+     "aliases": [
+      "fast",
+      "cheap"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T09:00:00Z",
+     "success_rate_24h": 0.88
+    },
+    {
+     "id": "siliconflow-bge-m3",
+     "model": "openai/BAAI/bge-m3",
+     "mode": "embedding",
+     "aliases": [
+      "embed"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": null,
+     "success_rate_24h": null
+    },
+    {
+     "id": "siliconflow-bge-reranker",
+     "model": "hosted_vllm/BAAI/bge-reranker-v2-m3",
+     "mode": "rerank",
+     "aliases": [
+      "rerank"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": null,
+     "success_rate_24h": null
+    }
+   ]
+  },
+  {
+   "id": "deepseek",
+   "kind": "cloud",
+   "tier": "paid",
+   "key_env": "DEEPSEEK_API_KEY",
+   "configured": true,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "unknown",
+    "human_review": "unknown",
+    "region": "cn",
+    "commercial_use": "unknown",
+    "terms_url": "https://platform.deepseek.com/downloads/DeepSeek%20Open%20Platform%20Terms%20of%20Service.html",
+    "note": "Hosted in the PRC. Not checked further."
+   },
+   "state": "ok",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 14,
+     "tokens": 38900
+    },
+    "month": {
+     "requests": 96,
+     "tokens": 402000
+    }
+   },
+   "limits": [],
+   "deployments": [
+    {
+     "id": "deepseek-flash",
+     "model": "deepseek/deepseek-flash",
+     "mode": "chat",
+     "aliases": [
+      "cheap",
+      "smart",
+      "long-context"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T13:13:00Z",
+     "success_rate_24h": 1.0
+    },
+    {
+     "id": "deepseek-v4-pro",
+     "model": "deepseek/deepseek-v4-pro",
+     "mode": "chat",
+     "aliases": [
+      "smart",
+      "long-context"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 500,
+     "last_used_at": "2026-11-12T11:00:00Z",
+     "success_rate_24h": 0.92
+    }
+   ]
+  },
+  {
+   "id": "openrouter",
+   "kind": "cloud",
+   "tier": "free",
+   "key_env": "OPENROUTER_API_KEY",
+   "configured": true,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "yes",
+    "human_review": "unknown",
+    "region": "varies",
+    "commercial_use": "unknown",
+    "terms_url": "https://openrouter.ai/terms",
+    "note": "Free endpoints follow the upstream host; many log or train on prompts."
+   },
+   "state": "cooling",
+   "blocked_until": "2026-11-12T14:02:14Z",
+   "block_reason": "Rate limited by the upstream host (HTTP 429). Retrying after the provider's cool-down.",
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 48,
+     "tokens": 52100
+    },
+    "month": {
+     "requests": 310,
+     "tokens": 402000
+    }
+   },
+   "limits": [
+    {
+     "window": "minute",
+     "metric": "requests",
+     "limit": 20,
+     "remaining": 0,
+     "reset_at": "2026-11-12T14:02:14Z",
+     "source": "header"
+    },
+    {
+     "window": "day",
+     "metric": "requests",
+     "limit": 50,
+     "remaining": 2,
+     "reset_at": "2026-11-13T01:40:00Z",
+     "source": "header"
+    }
+   ],
+   "deployments": [
+    {
+     "id": "openrouter-gemma-4-26b-free",
+     "model": "openrouter/google/gemma-4-26b-a4b-it:free",
+     "mode": "chat",
+     "aliases": [
+      "fast"
+     ],
+     "state": "cooling",
+     "blocked_until": "2026-11-12T14:02:14Z",
+     "last_status": 429,
+     "last_used_at": "2026-11-12T13:59:10Z",
+     "success_rate_24h": 0.42
+    },
+    {
+     "id": "openrouter-gemma-4-31b-free",
+     "model": "openrouter/google/gemma-4-31b-it:free",
+     "mode": "chat",
+     "aliases": [
+      "smart"
+     ],
+     "state": "cooling",
+     "blocked_until": "2026-11-12T14:02:14Z",
+     "last_status": 429,
+     "last_used_at": "2026-11-12T13:57:00Z",
+     "success_rate_24h": 0.5
+    },
+    {
+     "id": "openrouter-nemotron-ultra-free",
+     "model": "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+     "mode": "chat",
+     "aliases": [
+      "smart",
+      "long-context"
+     ],
+     "state": "cooling",
+     "blocked_until": "2026-11-12T14:02:14Z",
+     "last_status": 429,
+     "last_used_at": "2026-11-12T13:52:00Z",
+     "success_rate_24h": 0.6
+    },
+    {
+     "id": "openrouter-free-router",
+     "model": "openrouter/openrouter/free",
+     "mode": "chat",
+     "aliases": [
+      "fast",
+      "cheap",
+      "smart",
+      "long-context"
+     ],
+     "state": "cooling",
+     "blocked_until": "2026-11-12T14:02:14Z",
+     "last_status": 429,
+     "last_used_at": "2026-11-12T13:58:00Z",
+     "success_rate_24h": 0.55
+    }
+   ]
+  },
+  {
+   "id": "cohere",
+   "kind": "cloud",
+   "tier": "trial",
+   "key_env": "COHERE_API_KEY",
+   "configured": true,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "unknown",
+    "human_review": "unknown",
+    "region": "us",
+    "commercial_use": "prohibited",
+    "terms_url": "https://cohere.com/pricing",
+    "note": "Trial keys are not permitted for production or commercial use."
+   },
+   "state": "exhausted",
+   "blocked_until": "2026-11-29T20:00:00Z",
+   "block_reason": "Trial key used all 1,000 calls for this month.",
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "month": {
+     "requests": 1000,
+     "tokens": 402000
+    }
+   },
+   "limits": [
+    {
+     "window": "month",
+     "metric": "requests",
+     "limit": 1000,
+     "remaining": 0,
+     "reset_at": "2026-11-29T20:00:00Z",
+     "source": "estimate"
+    },
+    {
+     "window": "minute",
+     "metric": "requests",
+     "limit": 20,
+     "remaining": 20,
+     "reset_at": "2026-11-12T14:00:50Z",
+     "source": "catalog"
+    }
+   ],
+   "deployments": [
+    {
+     "id": "cohere-command-r7b",
+     "model": "cohere_chat/command-r7b-12-2024",
+     "mode": "chat",
+     "aliases": [
+      "fast",
+      "cheap"
+     ],
+     "state": "exhausted",
+     "blocked_until": "2026-11-29T20:00:00Z",
+     "last_status": 429,
+     "last_used_at": "2026-11-11T14:00:00Z",
+     "success_rate_24h": 0.9
+    },
+    {
+     "id": "cohere-command-a",
+     "model": "cohere_chat/command-a-03-2025",
+     "mode": "chat",
+     "aliases": [
+      "smart",
+      "long-context"
+     ],
+     "state": "exhausted",
+     "blocked_until": "2026-11-29T20:00:00Z",
+     "last_status": 429,
+     "last_used_at": "2026-11-10T14:00:00Z",
+     "success_rate_24h": 0.9
+    },
+    {
+     "id": "cohere-embed-v5-fast",
+     "model": "cohere/embed-v5.0-fast",
+     "mode": "embedding",
+     "aliases": [
+      "embed"
+     ],
+     "state": "exhausted",
+     "blocked_until": "2026-11-29T20:00:00Z",
+     "last_status": 429,
+     "last_used_at": "2026-11-09T14:00:00Z",
+     "success_rate_24h": 0.9
+    },
+    {
+     "id": "cohere-rerank-v4-fast",
+     "model": "cohere/rerank-v4.0-fast",
+     "mode": "rerank",
+     "aliases": [
+      "rerank"
+     ],
+     "state": "exhausted",
+     "blocked_until": "2026-11-29T20:00:00Z",
+     "last_status": 429,
+     "last_used_at": "2026-11-11T14:00:00Z",
+     "success_rate_24h": 0.9
+    }
+   ]
+  },
+  {
+   "id": "lmstudio",
+   "kind": "local",
+   "tier": "local",
+   "key_env": null,
+   "configured": true,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "no",
+    "human_review": "no",
+    "region": "local",
+    "commercial_use": "depends-on-model-licence",
+    "terms_url": "https://lmstudio.ai",
+    "note": "Runs on this machine."
+   },
+   "state": "unknown",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "month": {
+     "requests": 0,
+     "tokens": 0
+    }
+   },
+   "limits": [],
+   "deployments": []
+  },
+  {
+   "id": "jina",
+   "kind": "cloud",
+   "tier": "trial",
+   "key_env": "JINA_API_KEY",
+   "configured": false,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "unknown",
+    "human_review": "unknown",
+    "region": "unknown",
+    "commercial_use": "unknown",
+    "terms_url": "https://jina.ai/legal",
+    "note": "Not checked."
+   },
+   "state": "no_key",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "month": {
+     "requests": 0,
+     "tokens": 0
+    }
+   },
+   "limits": [],
+   "deployments": [
+    {
+     "id": "jina-embeddings-v3",
+     "model": "jina_ai/jina-embeddings-v3",
+     "mode": "embedding",
+     "aliases": [
+      "embed"
+     ],
+     "state": "no_key",
+     "blocked_until": null,
+     "last_status": null,
+     "last_used_at": null,
+     "success_rate_24h": null
+    },
+    {
+     "id": "jina-reranker-v2",
+     "model": "jina_ai/jina-reranker-v2-base-multilingual",
+     "mode": "rerank",
+     "aliases": [
+      "rerank"
+     ],
+     "state": "no_key",
+     "blocked_until": null,
+     "last_status": null,
+     "last_used_at": null,
+     "success_rate_24h": null
+    }
+   ]
+  },
+  {
+   "id": "novita",
+   "kind": "cloud",
+   "tier": "paid",
+   "key_env": "NOVITA_API_KEY",
+   "configured": false,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "unknown",
+    "human_review": "unknown",
+    "region": "unknown",
+    "commercial_use": "unknown",
+    "terms_url": "https://novita.ai/legal/terms-of-service",
+    "note": "Not checked."
+   },
+   "state": "no_key",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "month": {
+     "requests": 0,
+     "tokens": 0
+    }
+   },
+   "limits": [],
+   "deployments": [
+    {
+     "id": "novita-llama-3.1-8b",
+     "model": "novita/meta-llama/llama-3.1-8b-instruct",
+     "mode": "chat",
+     "aliases": [
+      "fast",
+      "cheap"
+     ],
+     "state": "no_key",
+     "blocked_until": null,
+     "last_status": null,
+     "last_used_at": null,
+     "success_rate_24h": null
+    },
+    {
+     "id": "novita-gpt-oss-120b",
+     "model": "novita/openai/gpt-oss-120b",
+     "mode": "chat",
+     "aliases": [
+      "cheap",
+      "smart"
+     ],
+     "state": "no_key",
+     "blocked_until": null,
+     "last_status": null,
+     "last_used_at": null,
+     "success_rate_24h": null
+    }
+   ]
+  },
+  {
+   "id": "nvidia_nim",
+   "kind": "cloud",
+   "tier": "paid",
+   "key_env": "NVIDIA_NIM_API_KEY",
+   "configured": false,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "unknown",
+    "human_review": "unknown",
+    "region": "us",
+    "commercial_use": "unknown",
+    "terms_url": "https://build.nvidia.com",
+    "note": "Not checked."
+   },
+   "state": "no_key",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "month": {
+     "requests": 0,
+     "tokens": 0
+    }
+   },
+   "limits": [],
+   "deployments": [
+    {
+     "id": "nim-gpt-oss-20b",
+     "model": "nvidia_nim/openai/gpt-oss-20b",
+     "mode": "chat",
+     "aliases": [
+      "fast",
+      "cheap"
+     ],
+     "state": "no_key",
+     "blocked_until": null,
+     "last_status": null,
+     "last_used_at": null,
+     "success_rate_24h": null
+    }
+   ]
+  },
+  {
+   "id": "voyage",
+   "kind": "cloud",
+   "tier": "paid",
+   "key_env": "VOYAGE_API_KEY",
+   "configured": true,
+   "enabled": false,
+   "policy": {
+    "trains_on_inputs": "unknown",
+    "human_review": "unknown",
+    "region": "us",
+    "commercial_use": "unknown",
+    "terms_url": "https://www.voyageai.com/tos",
+    "note": "Not checked."
+   },
+   "state": "disabled",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "month": {
+     "requests": 0,
+     "tokens": 0
+    }
+   },
+   "limits": [],
+   "deployments": [
+    {
+     "id": "voyage-4-lite",
+     "model": "voyage/voyage-4-lite",
+     "mode": "embedding",
+     "aliases": [
+      "embed"
+     ],
+     "state": "disabled",
+     "blocked_until": null,
+     "last_status": null,
+     "last_used_at": null,
+     "success_rate_24h": null
+    },
+    {
+     "id": "voyage-rerank-3-lite",
+     "model": "voyage/rerank-3-lite",
+     "mode": "rerank",
+     "aliases": [
+      "rerank"
+     ],
+     "state": "disabled",
+     "blocked_until": null,
+     "last_status": null,
+     "last_used_at": null,
+     "success_rate_24h": null
+    }
+   ]
+  }
+ ],
+ "aliases": [
+  {
+   "name": "fast",
+   "mode": "chat",
+   "available": 4,
+   "total": 8,
+   "next": "groq-gpt-oss-20b"
+  },
+  {
+   "name": "cheap",
+   "mode": "chat",
+   "available": 7,
+   "total": 11,
+   "next": "gemini-3.1-flash-lite"
+  },
+  {
+   "name": "smart",
+   "mode": "chat",
+   "available": 4,
+   "total": 9,
+   "next": "gemini-3.8-flash"
+  },
+  {
+   "name": "long-context",
+   "mode": "chat",
+   "available": 3,
+   "total": 7,
+   "next": "gemini-3.8-flash"
+  },
+  {
+   "name": "embed",
+   "mode": "embedding",
+   "available": 3,
+   "total": 6,
+   "next": "gemini-embedding-2"
+  },
+  {
+   "name": "rerank",
+   "mode": "rerank",
+   "available": 1,
+   "total": 4,
+   "next": "siliconflow-bge-reranker"
+  }
+ ],
+ "recent": [
+  {
+   "ts": "2026-11-12T13:59:20Z",
+   "alias": "fast",
+   "deployment": "gemini-3.1-flash-lite",
+   "provider": "gemini",
+   "status": 200,
+   "ok": true,
+   "latency_ms": 640,
+   "tokens_in": 412,
+   "tokens_out": 96,
+   "privacy": "standard"
+  },
+  {
+   "ts": "2026-11-12T13:59:10Z",
+   "alias": "fast",
+   "deployment": "openrouter-gemma-4-26b-free",
+   "provider": "openrouter",
+   "status": 429,
+   "ok": false,
+   "latency_ms": 310,
+   "tokens_in": null,
+   "tokens_out": null,
+   "privacy": "standard"
+  },
+  {
+   "ts": "2026-11-12T13:58:25Z",
+   "alias": "fast",
+   "deployment": "groq-gpt-oss-20b",
+   "provider": "groq",
+   "status": 200,
+   "ok": true,
+   "latency_ms": 380,
+   "tokens_in": 1204,
+   "tokens_out": 388,
+   "privacy": "standard"
+  },
+  {
+   "ts": "2026-11-12T13:57:50Z",
+   "alias": "smart",
+   "deployment": "ollama-qwen3-14b",
+   "provider": "ollama",
+   "status": 200,
+   "ok": true,
+   "latency_ms": 8420,
+   "tokens_in": 2210,
+   "tokens_out": 1650,
+   "privacy": "private"
+  },
+  {
+   "ts": "2026-11-12T13:56:55Z",
+   "alias": "smart",
+   "deployment": "gemini-3.8-flash",
+   "provider": "gemini",
+   "status": 200,
+   "ok": true,
+   "latency_ms": 2130,
+   "tokens_in": 5808,
+   "tokens_out": 1022,
+   "privacy": "standard"
+  },
+  {
+   "ts": "2026-11-12T13:56:00Z",
+   "alias": "embed",
+   "deployment": "ollama-nomic-embed",
+   "provider": "ollama",
+   "status": 200,
+   "ok": true,
+   "latency_ms": 95,
+   "tokens_in": 5120,
+   "tokens_out": null,
+   "privacy": "local"
+  },
+  {
+   "ts": "2026-11-12T13:54:50Z",
+   "alias": "smart",
+   "deployment": "gemini-2.5-pro",
+   "provider": "gemini",
+   "status": 429,
+   "ok": false,
+   "latency_ms": 210,
+   "tokens_in": null,
+   "tokens_out": null,
+   "privacy": "standard"
+  },
+  {
+   "ts": "2026-11-12T13:53:00Z",
+   "alias": "cheap",
+   "deployment": "groq-gpt-oss-120b",
+   "provider": "groq",
+   "status": 200,
+   "ok": true,
+   "latency_ms": 1190,
+   "tokens_in": 980,
+   "tokens_out": 402,
+   "privacy": "private"
+  },
+  {
+   "ts": "2026-11-12T13:50:40Z",
+   "alias": "long-context",
+   "deployment": "gemini-3.8-flash",
+   "provider": "gemini",
+   "status": 200,
+   "ok": true,
+   "latency_ms": 6820,
+   "tokens_in": 181400,
+   "tokens_out": 2310,
+   "privacy": "standard"
+  },
+  {
+   "ts": "2026-11-12T13:45:00Z",
+   "alias": "cheap",
+   "deployment": "deepseek-flash",
+   "provider": "deepseek",
+   "status": 200,
+   "ok": true,
+   "latency_ms": 1710,
+   "tokens_in": 3300,
+   "tokens_out": 812,
+   "privacy": "public"
+  },
+  {
+   "ts": "2026-11-12T13:35:00Z",
+   "alias": "fast",
+   "deployment": "ollama-llama3.2-3b",
+   "provider": "ollama",
+   "status": 200,
+   "ok": true,
+   "latency_ms": 920,
+   "tokens_in": 310,
+   "tokens_out": 140,
+   "privacy": "local"
+  },
+  {
+   "ts": "2026-11-12T13:13:20Z",
+   "alias": null,
+   "deployment": "deepseek-v4-pro",
+   "provider": "deepseek",
+   "status": 500,
+   "ok": false,
+   "latency_ms": null,
+   "tokens_in": null,
+   "tokens_out": null,
+   "privacy": "standard"
+  },
+  {
+   "ts": "2026-11-12T12:53:20Z",
+   "alias": "embed",
+   "deployment": "gemini-embedding-2",
+   "provider": "gemini",
+   "status": 200,
+   "ok": true,
+   "latency_ms": 180,
+   "tokens_in": 2048,
+   "tokens_out": null,
+   "privacy": "standard"
+  },
+  {
+   "ts": "2026-11-11T13:10:00Z",
+   "alias": "fast",
+   "deployment": "gemini-3.1-flash-lite",
+   "provider": "gemini",
+   "status": 200,
+   "ok": true,
+   "latency_ms": 590,
+   "tokens_in": 220,
+   "tokens_out": 64,
+   "privacy": "standard"
+  }
+ ],
+ "totals": {
+  "requests_today": 327,
+  "tokens_today": 358700
+ }
+}
