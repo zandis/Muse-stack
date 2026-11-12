@@ -70,3 +70,28 @@ jobs:
           done
           docker compose logs
           exit 1
+
+  phase0-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install phase 0 dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Pytest (circuit breaker, x402 mock, useful work, HTTP service)
+        run: python -m pytest tests -q
+
+  phase0-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: "1.9.0"
+      - name: Install forge-std and run Foundry tests
+        working-directory: contracts
+        run: |
+          forge install foundry-rs/forge-std@v1.17.0 --no-commit
+          forge test -vv

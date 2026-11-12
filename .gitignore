@@ -12,6 +12,19 @@ __pycache__/
 venv/
 .pytest_cache/
 .mypy_cache/
+*.egg-info/
+dist/
+build/
 
 *.log
 .DS_Store
+
+# Phase 0 local state (result catalogue, job output)
+data/
+
+# Foundry. Never commit broadcast artifacts — they can contain signed
+# transactions. Phase 0 has no deploy script; this is defence in depth.
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+contracts/lib/
