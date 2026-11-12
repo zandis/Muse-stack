@@ -129,4 +129,6 @@ class ResultStore:
             return
         self._path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"results": [asdict(item) for item in self._items.values()]}
-        self._path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        tmp = self._path.with_suffix(self._path.suffix + ".tmp")
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        tmp.replace(self._path)

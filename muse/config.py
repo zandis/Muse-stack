@@ -10,8 +10,8 @@ from typing import Mapping
 from muse.settlement.constants import (
     BASE_SEPOLIA_CAIP2,
     BASE_SEPOLIA_USDC,
-    MAINNET_NETWORKS,
     default_pay_to,
+    is_allowed_network,
     normalize_network,
 )
 
@@ -55,10 +55,14 @@ class Settings:
     def __post_init__(self) -> None:
         network = normalize_network(self.x402_network)
         object.__setattr__(self, "x402_network", network)
-        if network in MAINNET_NETWORKS:
+        # Allow-list, case-insensitive. "Mainnet", "EIP155:8453", "base-mainnet"
+        # must not start. The denylist approach missed those spellings.
+        if not is_allowed_network(network):
             raise ValueError(
-                "phase 0 refuses to start with a mainnet x402 network "
-                f"({self.x402_network!r}). Use eip155:84532 (Base Sepolia)."
+                "phase 0 refuses to start unless MUSE_X402_NETWORK is on the "
+                "Base Sepolia allow-list (eip155:84532), compared "
+                "case-insensitively (mainnet and other networks are refused). "
+                f"Got {self.x402_network!r}."
             )
         if self.x402_facilitator.strip().lower() != "mock":
             raise ValueError(

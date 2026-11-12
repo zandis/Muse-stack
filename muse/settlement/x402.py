@@ -9,16 +9,20 @@ libraries also look for. See:
 - https://docs.cdp.coinbase.com/x402/migration-guide
 
 This module only builds and parses messages. It does not verify or settle.
+Malformed headers raise ``InvalidPaymentHeader`` so the HTTP layer can
+return 400 without leaking exception text.
 """
 
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 from dataclasses import dataclass
 from typing import Any, Mapping
 
 from muse.settlement.constants import BASE_SEPOLIA_CAIP2, BASE_SEPOLIA_USDC
+from muse.settlement.quotes import Quote
 
 V2 = 2
 V1 = 1
@@ -31,6 +35,10 @@ X_PAYMENT_HEADER = "X-PAYMENT"
 X_PAYMENT_RESPONSE_HEADER = "X-PAYMENT-RESPONSE"
 
 
+class InvalidPaymentHeader(ValueError):
+    """The PAYMENT-SIGNATURE / X-PAYMENT header was present but unparseable."""
+
+
 def _b64(payload: dict[str, Any]) -> str:
     raw = json.dumps(payload, separators=(",", ":"), sort_keys=False).encode("utf-8")
     return base64.b64encode(raw).decode("ascii")
@@ -38,19 +46,29 @@ def _b64(payload: dict[str, Any]) -> str:
 
 def _unb64(value: str) -> dict[str, Any]:
     raw = value.strip()
-    # Allow raw JSON for tests and for humans curling the stub.
-    if raw.startswith("{") or raw.startswith("mock:"):
+    try:
+        # Allow raw JSON for tests and for humans curling the stub.
+        if raw.startswith("{"):
+            parsed = json.loads(raw)
+            if not isinstance(parsed, dict):
+                raise InvalidPaymentHeader("malformed payment header")
+            return parsed
         if raw.startswith("mock:"):
-            return {"mock_token": raw, "x402Version": V2, "scheme": "exact", "network": BASE_SEPOLIA_CAIP2}
-        parsed = json.loads(raw)
+            return {
+                "mock_token": raw,
+                "x402Version": V2,
+                "scheme": "exact",
+                "network": BASE_SEPOLIA_CAIP2,
+            }
+        padding = "=" * ((4 - len(raw) % 4) % 4)
+        parsed = json.loads(base64.b64decode(raw + padding, validate=False).decode("utf-8"))
         if not isinstance(parsed, dict):
-            raise ValueError("payment payload must be an object")
+            raise InvalidPaymentHeader("malformed payment header")
         return parsed
-    padding = "=" * ((4 - len(raw) % 4) % 4)
-    parsed = json.loads(base64.b64decode(raw + padding).decode("utf-8"))
-    if not isinstance(parsed, dict):
-        raise ValueError("payment payload must be an object")
-    return parsed
+    except InvalidPaymentHeader:
+        raise
+    except (ValueError, json.JSONDecodeError, binascii.Error, UnicodeDecodeError, TypeError) as exc:
+        raise InvalidPaymentHeader("malformed payment header") from exc
 
 
 @dataclass(frozen=True)
@@ -114,12 +132,24 @@ def payment_required(
     description: str,
     mime_type: str = "application/json",
     error: str = "PAYMENT_REQUIRED",
+    quote: Quote | None = None,
 ) -> tuple[dict[str, Any], dict[str, str]]:
     """Return ``(body, headers)`` for an HTTP 402 response.
 
     The body is the v1-compatible document (still widely parsed). The
     ``PAYMENT-REQUIRED`` header carries the v2 document, base64-encoded.
+    When a quote is supplied, its id, expiry, and bound nonce are
+    included so a client can construct a payment with
+    ``authorization.nonce = SHA-256(quoteId)``.
     """
+    v2_accept = option.as_v2()
+    v1_accept = option.as_v1(resource=resource_url, description=description, mime_type=mime_type)
+    if quote is not None:
+        for accept in (v2_accept, v1_accept):
+            accept["quoteId"] = quote.quote_id
+            accept["expiresAt"] = quote.expires_at
+            accept["nonce"] = quote.nonce
+            accept["extra"] = {**(accept.get("extra") or {}), "quoteId": quote.quote_id}
     v2 = {
         "x402Version": V2,
         "error": error,
@@ -128,19 +158,21 @@ def payment_required(
             "description": description,
             "mimeType": mime_type,
         },
-        "accepts": [option.as_v2()],
+        "accepts": [v2_accept],
     }
+    if quote is not None:
+        v2["quote"] = quote.as_dict()
     v1 = {
         "x402Version": V1,
         "error": error,
-        "accepts": [
-            option.as_v1(resource=resource_url, description=description, mime_type=mime_type)
-        ],
+        "accepts": [v1_accept],
     }
+    if quote is not None:
+        v1["quote"] = quote.as_dict()
+        v1["quoteId"] = quote.quote_id
     encoded = _b64(v2)
     headers = {
         PAYMENT_REQUIRED_HEADER: encoded,
-        # Help a v1 client that looks at a header of the same shape.
         "Access-Control-Expose-Headers": (
             f"{PAYMENT_REQUIRED_HEADER}, {PAYMENT_RESPONSE_HEADER}, {X_PAYMENT_RESPONSE_HEADER}"
         ),
@@ -149,7 +181,10 @@ def payment_required(
 
 
 def read_payment_header(headers: Mapping[str, str]) -> dict[str, Any] | None:
-    """Extract a payment payload from v2 or v1 header names, or None if absent."""
+    """Extract a payment payload from v2 or v1 header names, or None if absent.
+
+    Raises ``InvalidPaymentHeader`` if a header is present but unparseable.
+    """
     value = None
     for key, item in headers.items():
         if key.lower() in {PAYMENT_SIGNATURE_HEADER.lower(), X_PAYMENT_HEADER.lower()}:
