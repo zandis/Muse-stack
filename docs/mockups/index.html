@@ -1,0 +1,1579 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="referrer" content="no-referrer">
+<title>Muse 示範版 / Muse mock-up</title>
+<style>
+:root{
+  color-scheme:light dark;
+  --stage:#e8e0d1; --bg:#f7f1e7; --surface:#fffdf9; --surface2:#f1e9dc; --ink:#26302b; --muted:#5b645d; --line:#e0d5c3;
+  --accent:#1d6b50; --accent-ink:#ffffff; --accent-soft:#dcebe2; --accent-line:#a9cdb9;
+  --warn:#8a4b00; --warn-soft:#f8e7c8; --bad:#a3301d; --bad-soft:#f7dcd5; --track:#e6dccb; --tick:#b9ac95;
+  --shadow:0 1px 2px rgba(60,40,10,.06),0 6px 20px rgba(60,40,10,.07);
+  --scrim:rgba(30,25,15,.45);
+  --font:system-ui,-apple-system,"Segoe UI","PingFang TC","Noto Sans TC","Noto Sans CJK TC","Microsoft JhengHei","Heiti TC","WenQuanYi Zen Hei",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+:root[data-theme="dark"]{ color-scheme:dark }
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --stage:#0c100e; --bg:#141a17; --surface:#1c2420; --surface2:#262f2a; --ink:#ecf0e9; --muted:#a6b1a9; --line:#334039;
+    --accent:#6fd0a4; --accent-ink:#0d2218; --accent-soft:#1f3a2d; --accent-line:#2f5a46;
+    --warn:#f0b45a; --warn-soft:#3a2a10; --bad:#ff9d8b; --bad-soft:#40201a; --track:#2f3a34; --tick:#52605a;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.35); --scrim:rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"]{
+  --stage:#0c100e; --bg:#141a17; --surface:#1c2420; --surface2:#262f2a; --ink:#ecf0e9; --muted:#a6b1a9; --line:#334039;
+  --accent:#6fd0a4; --accent-ink:#0d2218; --accent-soft:#1f3a2d; --accent-line:#2f5a46;
+  --warn:#f0b45a; --warn-soft:#3a2a10; --bad:#ff9d8b; --bad-soft:#40201a; --track:#2f3a34; --tick:#52605a;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--stage);color:var(--ink);font:17px/1.55 var(--font);font-variant-numeric:tabular-nums;display:flex;flex-direction:column;overflow-x:hidden;overflow-wrap:anywhere}
+h1,h2,h3,h4,p,ul,ol{margin:0;padding:0}
+ul,ol{list-style:none}
+button,input,textarea,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:8px}
+.sr{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+svg.i{width:1.25em;height:1.25em;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* ---------- page toolbar (outside the app) ---------- */
+.tb{flex:none;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:8px 16px;background:var(--surface);border-bottom:1px solid var(--line);font-size:15px}
+.tb .brand{font-weight:700;letter-spacing:.02em;margin-right:4px}
+.tb .grp{display:flex;align-items:center;gap:8px}
+.tb label,.tb .lbl{color:var(--muted);font-size:14px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface2)}
+.seg button{border:0;background:transparent;padding:0 14px;min-height:44px;font-size:15px;font-weight:600;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.tb select,.tb .tbtn{min-height:44px;border:1px solid var(--line);background:var(--surface2);border-radius:12px;padding:0 12px;font-size:15px}
+.tb .tbtn{font-weight:600}
+.tb .sp{flex:1 1 auto}
+
+/* ---------- stage & device ---------- */
+#stage{flex:1;min-height:0;overflow:auto;padding:20px 16px 28px;display:flex}
+#scene{margin:auto;display:flex;flex-wrap:wrap;gap:20px;justify-content:center;align-items:flex-start;width:100%;max-width:1440px}
+.device{position:relative;overflow:hidden;background:var(--bg);display:flex;flex-direction:column;isolation:isolate}
+.device.phone{width:390px;height:844px;flex:none;border-radius:40px;margin:10px;box-shadow:0 0 0 10px #1c211f,0 0 0 11px #3a423e,0 30px 70px rgba(0,0,0,.28)}
+.device.desktop{flex:1 1 720px;max-width:1100px;height:740px;border-radius:14px;box-shadow:0 0 0 1px var(--line),0 30px 70px rgba(0,0,0,.2)}
+.fakebar{flex:none;height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 28px;font-size:14px;font-weight:600;background:var(--bg)}
+.fakebar .mock{margin:0}
+.winbar{flex:none;height:40px;display:flex;align-items:center;gap:8px;padding:0 14px;background:var(--surface2);border-bottom:1px solid var(--line);font-size:14px;color:var(--muted)}
+.winbar .dots{display:flex;gap:7px}
+.winbar .dots i{width:12px;height:12px;border-radius:50%;background:var(--line);display:block}
+.winbar .mid{flex:1;text-align:center;font-weight:600}
+.mock{display:inline-flex;align-items:center;gap:6px;font-size:13px;line-height:1;padding:6px 10px;border-radius:999px;background:var(--warn-soft);color:var(--warn);font-weight:700;border:1px dashed currentColor;white-space:nowrap}
+.app{flex:1;min-height:0;display:flex;flex-direction:column;position:relative}
+.device.desktop .app{flex-direction:row}
+@media (max-width:520px){
+  #stage{padding:0}
+  .device.phone{width:100%;height:100%;margin:0;border-radius:0;box-shadow:none}
+  .fakebar{display:none}
+  #scene{margin:0;max-width:none;height:100%;flex-wrap:nowrap}
+  .tb .brand{display:none}
+  .tb{padding:6px 12px;gap:6px 10px}
+  .tb .seg button{padding:0 11px}
+}
+
+/* ---------- layout inside the app ---------- */
+.main{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
+.topbar{flex:none;display:flex;align-items:center;gap:8px;padding:6px 16px 4px;min-height:64px}
+.topbar h1{flex:1;font-size:28px;line-height:1.2;font-weight:750;letter-spacing:0}
+.topbar .sub{display:block;font-size:15px;font-weight:500;color:var(--muted);margin-top:2px}
+.scroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:8px 16px 24px;scroll-behavior:auto}
+.col{display:flex;flex-direction:column;gap:16px;max-width:680px;margin:0 auto}
+.device.desktop .topbar{padding:20px 32px 4px;max-width:none}
+.device.desktop .scroll{padding:8px 32px 32px}
+.device.desktop .topbar h1{font-size:30px}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:52px;padding:0 22px;border-radius:16px;border:1.5px solid transparent;font-weight:650;font-size:17px;line-height:1.2;text-align:center;background:var(--surface2);color:var(--ink)}
+.btn.primary{background:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.06)}
+.btn.sec{background:var(--surface);border-color:var(--line);color:var(--ink)}
+.btn.sec:hover{border-color:var(--accent)}
+.btn.link{background:transparent;color:var(--accent);min-height:44px;padding:0 10px;font-weight:650}
+.btn.danger{background:var(--surface);border-color:var(--bad);color:var(--bad)}
+.btn.small{min-height:44px;padding:0 16px;font-size:16px;border-radius:14px}
+.btn.block{width:100%}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.icon-btn{width:48px;height:48px;border-radius:14px;border:0;background:transparent;display:inline-flex;align-items:center;justify-content:center;color:var(--ink)}
+.icon-btn:hover{background:var(--surface2)}
+.pausebtn{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 14px;border-radius:999px;border:1.5px solid var(--line);background:var(--surface);font-weight:650;font-size:16px}
+.pausebtn[aria-pressed="true"]{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+
+/* cards */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:var(--shadow)}
+.card h2{font-size:20px;line-height:1.3;font-weight:700}
+.card h3{font-size:17px;font-weight:700}
+.muted{color:var(--muted)}
+.small{font-size:15px}
+.stack{display:flex;flex-direction:column;gap:10px}
+.row{display:flex;align-items:center;gap:12px}
+.sp{flex:1}
+.tag{display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:650;line-height:1.2;padding:5px 10px;border-radius:999px;background:var(--surface2);border:1px solid var(--line);color:var(--ink)}
+.tag svg.i{width:1.1em;height:1.1em}
+.tag.ok{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent)}
+.tag.warn{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+.tag.bad{background:var(--bad-soft);border-color:var(--bad);color:var(--bad)}
+.tag.dash{border-style:dashed}
+
+/* banners */
+.banner{display:flex;gap:12px;align-items:flex-start;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--warn-soft);color:var(--ink)}
+.banner .ic{color:var(--warn);margin-top:2px}
+.banner b{display:block;font-size:17px}
+.banner span{font-size:15px;color:var(--muted)}
+.banner .btn{flex:none;margin-left:auto}
+.banner.info{background:var(--surface2)}
+.banner.info .ic{color:var(--muted)}
+.banner.bad{background:var(--bad-soft)}
+.banner.bad .ic{color:var(--bad)}
+
+/* tab bar / sidebar */
+.tabbar{flex:none;display:flex;background:var(--surface);border-top:1px solid var(--line);padding:6px 4px 10px}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;border:0;background:transparent;min-height:56px;padding:4px 0;font-size:13px;font-weight:550;color:var(--muted);border-radius:14px;line-height:1.2}
+.tab .pill{display:flex;align-items:center;justify-content:center;width:56px;height:30px;border-radius:999px}
+.tab svg.i{width:24px;height:24px}
+.tab[aria-current="page"]{color:var(--accent);font-weight:750}
+.tab[aria-current="page"] .pill{background:var(--accent-soft);box-shadow:inset 0 0 0 1.5px var(--accent-line)}
+.tab .dotb{position:absolute;top:-2px;right:6px;min-width:20px;height:20px;border-radius:10px;background:var(--bad);color:var(--surface);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 5px}
+.tab .pill{position:relative}
+.sidebar{flex:none;width:236px;background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:18px 12px;gap:4px}
+.sidebar .logo{display:flex;align-items:center;gap:10px;padding:4px 10px 16px;font-size:22px;font-weight:800}
+.sidebar .sbtn{display:flex;align-items:center;gap:12px;min-height:48px;padding:0 12px;border-radius:14px;border:0;background:transparent;font-size:17px;font-weight:550;color:var(--ink);text-align:left;width:100%}
+.sidebar .sbtn:hover{background:var(--surface2)}
+.sidebar .sbtn[aria-current="page"]{background:var(--accent-soft);color:var(--accent);font-weight:750;box-shadow:inset 3px 0 0 var(--accent)}
+.sidebar hr{border:0;border-top:1px solid var(--line);margin:10px 4px}
+.sidebar .sbtn .dotb{margin-left:auto;min-width:22px;height:22px;border-radius:11px;background:var(--bad);color:var(--surface);font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 6px}
+
+/* gauge */
+.gauge{position:relative;display:grid;place-items:center}
+.gauge svg{display:block;overflow:visible}
+.gauge .track{stroke:var(--track)}
+.gauge .fill{stroke:var(--accent);transition:stroke-dasharray 1.1s cubic-bezier(.2,.8,.2,1)}
+.gauge.low .fill{stroke:var(--warn)}
+.gauge.none .fill{stroke:var(--muted)}
+.gauge .tick{stroke:var(--tick)}
+.gauge .center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.gauge .num{font-weight:800;letter-spacing:-.02em;line-height:1}
+.gauge.paused{opacity:.55}
+.hero{padding:22px 18px 20px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:6px;background:linear-gradient(180deg,var(--surface) 0%,var(--surface) 60%,var(--accent-soft) 160%)}
+.hero .status{display:inline-flex;align-items:center;gap:8px;font-size:18px;font-weight:700;margin-top:-6px}
+.hero .status svg{width:1.2em;height:1.2em}
+.refill{display:flex;align-items:center;gap:12px;margin-top:10px;padding:10px 16px;border-radius:16px;background:var(--surface2);border:1px solid var(--line)}
+.refill .big{font-size:24px;font-weight:750;letter-spacing:.01em}
+.refill small{display:block;font-size:14px;color:var(--muted);line-height:1.3;text-align:left}
+.refill svg{color:var(--accent);width:1.6em;height:1.6em}
+.rows{display:flex;flex-direction:column;padding:4px 0}
+.rows>.r{display:flex;align-items:center;gap:14px;min-height:68px;padding:10px 18px;border:0;background:transparent;width:100%;text-align:left;border-top:1px solid var(--line)}
+.rows>.r:first-child{border-top:0}
+button.r:hover{background:var(--surface2)}
+.rows .ico{width:42px;height:42px;border-radius:14px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;flex:none}
+.rows .t{display:flex;flex-direction:column;line-height:1.3}
+.rows .t small{font-size:15px;color:var(--muted)}
+.rows .t b{font-size:17px}
+.rows .chev{margin-left:auto;color:var(--muted)}
+.bar{height:12px;border-radius:999px;background:var(--track);overflow:hidden;position:relative}
+.bar>i{display:block;height:100%;border-radius:999px;background:var(--accent);transition:width .9s cubic-bezier(.2,.8,.2,1)}
+.bar.est>i{background:repeating-linear-gradient(135deg,var(--accent) 0 5px,var(--accent-soft) 5px 9px);outline:2px dashed var(--accent);outline-offset:-2px}
+.bar.low>i{background:var(--warn)}
+.bar.thin{height:8px}
+
+/* ask */
+.thread{display:flex;flex-direction:column;gap:14px;padding-bottom:6px}
+.bub{max-width:88%;padding:12px 16px;border-radius:20px;font-size:17px;line-height:1.6}
+.bub.me{align-self:flex-end;background:var(--accent);color:var(--accent-ink);border-bottom-right-radius:6px}
+.bub.bot{align-self:flex-start;background:var(--surface);border:1px solid var(--line);border-bottom-left-radius:6px;box-shadow:var(--shadow)}
+.bub.bot p+p{margin-top:8px}
+.quiet{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);font-size:15px;color:var(--muted);line-height:1.4}
+.quiet .lnk{border:0;background:transparent;color:var(--accent);font-weight:650;font-size:15px;min-height:44px;padding:0 8px;text-decoration:underline;text-underline-offset:3px}
+.techline{margin-top:8px;padding:10px 12px;border-radius:12px;background:var(--surface2);font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,"Noto Sans Mono CJK TC",monospace;color:var(--muted);overflow-wrap:anywhere}
+.techline b{color:var(--ink)}
+.acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.cardx{align-self:stretch;background:var(--surface);border:1.5px solid var(--accent-line);border-radius:20px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.cardx h3{font-size:18px}
+.cardx .lead{display:flex;gap:10px;align-items:flex-start}
+.cardx .lead .ico{width:38px;height:38px;border-radius:12px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;flex:none}
+.cardx.done{border-color:var(--line);background:var(--surface2)}
+.btnrow{display:flex;gap:10px;flex-wrap:wrap}
+.btnrow .btn{flex:1 1 140px}
+.choice{display:flex;flex-direction:column;gap:10px}
+.opt{display:flex;gap:12px;align-items:flex-start;width:100%;text-align:left;border:1.5px solid var(--line);background:var(--surface);border-radius:18px;padding:14px;min-height:64px}
+.opt:hover{border-color:var(--accent)}
+.opt.best{border-color:var(--accent);background:var(--accent-soft)}
+.opt .ico{width:40px;height:40px;border-radius:12px;background:var(--surface2);display:grid;place-items:center;flex:none;color:var(--accent)}
+.opt b{display:block;font-size:17px;line-height:1.35}
+.opt small{display:block;font-size:15px;color:var(--muted);line-height:1.4;margin-top:2px}
+.opt .tag{margin-top:6px}
+.typing{display:flex;gap:6px;padding:16px 18px}
+.typing i{width:9px;height:9px;border-radius:50%;background:var(--muted);animation:blink 1.2s infinite both}
+.typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
+.composer{flex:none;display:flex;gap:10px;align-items:flex-end;padding:10px 12px;background:var(--bg);border-top:1px solid var(--line)}
+.composer input{flex:1;min-height:52px;border-radius:26px;border:1.5px solid var(--line);background:var(--surface);padding:0 18px;font-size:17px}
+.composer input:disabled{opacity:.6}
+.composer .send{width:52px;height:52px;border-radius:50%;border:0;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;flex:none}
+.composer .send[disabled]{opacity:.45}
+.device.desktop .composer{padding:12px 32px}
+.device.desktop .composer input{max-width:none}
+.pnote{padding:2px 16px 0;font-size:15px;color:var(--muted)}
+
+/* chores */
+.addbox textarea,.field{width:100%;min-height:76px;border:1.5px solid var(--line);background:var(--bg);border-radius:16px;padding:12px 14px;resize:none;font-size:17px;line-height:1.5}
+input.field{min-height:52px;padding:0 14px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1.5px solid var(--line);background:var(--surface);border-radius:999px;min-height:44px;padding:8px 14px;font-size:15px;font-weight:550;text-align:left;line-height:1.3}
+.chip:hover{border-color:var(--accent)}
+.chip[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:750}
+.chip[aria-pressed="true"]::before{content:"\2713\00a0"}
+.chore h3{font-size:18px;line-height:1.4;font-weight:700}
+.chore .meta{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:15px;margin-top:8px}
+.chore .meta dt{color:var(--muted)}
+.chore .meta dd{margin:0}
+.chore .budget{margin-top:10px;font-size:14px;color:var(--muted);display:flex;gap:6px;align-items:center}
+.chore.new{animation:pop .5s ease}
+@keyframes pop{from{transform:scale(.97);opacity:.4}to{transform:none;opacity:1}}
+.empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;padding:26px 18px}
+.empty svg{width:72px;height:72px;color:var(--accent);opacity:.85}
+.empty h2{font-size:20px}
+.empty p{color:var(--muted);max-width:30em}
+
+/* helpers */
+.hgrid{display:grid;gap:14px}
+.device.desktop .hgrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.device.desktop .col.wide{max-width:980px}
+.hcard{display:flex;flex-direction:column;gap:12px}
+.hcard .head{display:flex;gap:14px;align-items:center}
+.hcard .head h3{font-size:20px}
+.hcard .nums{font-size:17px;font-weight:650}
+.hcard dl{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:0;font-size:15px}
+.hcard dt{color:var(--muted)}
+.hcard dd{margin:0}
+.srcnote{font-size:14px;color:var(--muted);display:flex;gap:8px;align-items:flex-start;line-height:1.4}
+.srcnote svg{margin-top:2px}
+.sect{font-size:20px;font-weight:750;margin:10px 2px 0}
+.sect small{display:block;font-size:15px;font-weight:500;color:var(--muted);margin-top:2px}
+.addrow{display:flex;gap:14px;align-items:center;width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:14px 16px;min-height:76px;box-shadow:var(--shadow)}
+.addrow:hover{border-color:var(--accent)}
+.addrow .nm{font-size:18px;font-weight:700}
+.addrow .meta{font-size:15px;color:var(--muted);line-height:1.4}
+.addrow .rank{width:34px;height:34px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-weight:800;flex:none}
+.addrow.first{border:2px solid var(--accent)}
+.disc{width:100%;display:flex;align-items:center;gap:10px;min-height:56px;border:1px solid var(--line);background:var(--surface);border-radius:18px;padding:0 16px;font-weight:700;font-size:18px;text-align:left}
+.disc svg.chv{margin-left:auto;transition:transform .2s}
+.disc[aria-expanded="true"] svg.chv{transform:rotate(90deg)}
+.mini{display:flex;align-items:center;gap:14px;padding:12px 4px;border-top:1px solid var(--line)}
+.mini:first-child{border-top:0}
+.mini .t{display:flex;flex-direction:column;line-height:1.35}
+.mini .t small{font-size:15px;color:var(--muted)}
+
+/* activity */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.stat{background:var(--surface2);border-radius:16px;padding:10px 6px;text-align:center}
+.stat b{display:block;font-size:24px;line-height:1.2;font-weight:800}
+.stat span{font-size:14px;color:var(--muted);line-height:1.3;display:block}
+.switchrow{display:flex;align-items:center;gap:14px}
+.switch{flex:none;width:68px;height:40px;border-radius:20px;border:2px solid var(--muted);background:var(--surface2);position:relative;padding:0}
+.switch::after{content:"";position:absolute;top:4px;left:4px;width:28px;height:28px;border-radius:50%;background:var(--muted);transition:transform .2s}
+.switch[aria-checked="true"]{background:var(--warn-soft);border-color:var(--warn)}
+.switch[aria-checked="true"]::after{transform:translateX(28px);background:var(--warn)}
+.switch .sw{position:absolute;inset:0;display:flex;align-items:center;font-size:13px;font-weight:800;pointer-events:none}
+.logday{font-size:15px;font-weight:700;color:var(--muted);margin:6px 2px -4px;letter-spacing:.02em}
+.logitem{display:flex;gap:12px;padding:14px 16px;background:var(--surface);border:1px solid var(--line);border-radius:18px}
+.logitem .tm{flex:none;width:48px;font-size:15px;font-weight:700;color:var(--muted);padding-top:2px}
+.logitem .tx{flex:1;display:flex;flex-direction:column;gap:6px}
+.logitem .tx p{font-size:17px;line-height:1.5}
+.logitem .tx small{font-size:15px;color:var(--muted);line-height:1.4}
+.logitem.wait{border:1.5px solid var(--warn);background:var(--warn-soft)}
+
+/* settings */
+.stepper{display:flex;align-items:center;gap:12px;justify-content:center;margin:6px 0}
+.stepper .val{min-width:140px;text-align:center;font-size:34px;font-weight:800}
+.stepper button{width:56px;height:56px;border-radius:50%;border:1.5px solid var(--line);background:var(--surface);display:grid;place-items:center}
+.stepper button:hover{border-color:var(--accent)}
+.stepper button[disabled]{opacity:.4}
+.radio{display:flex;gap:12px;align-items:flex-start;width:100%;text-align:left;border:1.5px solid var(--line);background:var(--surface);border-radius:16px;padding:12px 14px;min-height:64px}
+.radio .dot{width:24px;height:24px;border-radius:50%;border:2px solid var(--muted);flex:none;margin-top:2px;display:grid;place-items:center}
+.radio[aria-checked="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.radio[aria-checked="true"] .dot{border-color:var(--accent);background:var(--accent)}
+.radio[aria-checked="true"] .dot::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent-ink)}
+.radio b{display:block}
+.radio small{font-size:15px;color:var(--muted);line-height:1.4;display:block}
+.perm{display:flex;gap:12px;align-items:center;padding:12px 0;border-top:1px solid var(--line)}
+.perm:first-of-type{border-top:0}
+.perm p{flex:1;font-size:17px;line-height:1.5}
+.perm.off p{text-decoration:line-through;color:var(--muted)}
+.memrow{display:flex;gap:8px;align-items:center;padding:6px 0}
+.memrow input{flex:1}
+
+/* sheets & overlays */
+.layer{position:absolute;inset:0;z-index:40;display:flex;align-items:flex-end;justify-content:center}
+.scrim{position:absolute;inset:0;background:var(--scrim);animation:fade .25s}
+.sheet{position:relative;width:100%;max-height:92%;overflow-y:auto;background:var(--surface);border-radius:28px 28px 0 0;padding:14px 20px 28px;display:flex;flex-direction:column;gap:14px;box-shadow:0 -10px 40px rgba(0,0,0,.25)}
+.sheet.enter{animation:up .34s cubic-bezier(.2,.8,.2,1)}
+.sheet .grab{width:44px;height:5px;border-radius:3px;background:var(--line);align-self:center;flex:none}
+.sheet h2{font-size:23px;line-height:1.3;font-weight:750}
+.device.desktop .layer{align-items:center}
+.device.desktop .sheet{width:500px;border-radius:24px;max-height:86%}
+.device.desktop .sheet .grab{display:none}
+@keyframes up{from{transform:translateY(60%);opacity:.3}to{transform:none;opacity:1}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.device.desktop .sheet.enter{animation:pop .3s ease}
+.sample{font-size:14px;color:var(--muted);text-align:center;border:1px dashed var(--line);border-radius:10px;padding:4px 8px}
+.okmark{width:76px;height:76px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;align-self:center;animation:pop .5s ease}
+.okmark svg{width:44px;height:44px;stroke-width:3}
+.spinner{width:46px;height:46px;border-radius:50%;border:5px solid var(--track);border-top-color:var(--accent);animation:spin 1s linear infinite;align-self:center}
+@keyframes spin{to{transform:rotate(360deg)}}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:16px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;font-weight:600}
+.quote{background:var(--surface2);border-radius:14px;padding:12px 14px;font-size:16px;line-height:1.5}
+.steps{display:flex;flex-direction:column;gap:10px;counter-reset:s}
+.steps li{display:flex;gap:12px;align-items:flex-start;font-size:16px;line-height:1.5}
+.steps li::before{counter-increment:s;content:counter(s);flex:none;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-weight:800;display:grid;place-items:center;font-size:15px}
+.progress{height:10px;border-radius:5px;background:var(--track);overflow:hidden}
+.progress i{display:block;height:100%;width:0;background:var(--accent);animation:load 2.2s linear forwards}
+@keyframes load{to{width:100%}}
+
+/* guided key flow */
+.flow{position:absolute;inset:0;z-index:35;background:var(--bg);display:flex;flex-direction:column;animation:fade .2s}
+.flow .fbar{flex:none;display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--surface2);border-bottom:1px solid var(--line)}
+.flow .url{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 12px;font-size:14px;color:var(--muted);display:flex;gap:8px;align-items:center;min-height:44px;overflow:hidden;white-space:nowrap}
+.flow .page{flex:1;min-height:0;overflow-y:auto;padding:20px 16px 280px;background:#fbfbf9;color:#222;display:flex;flex-direction:column;align-items:center;gap:16px}
+:root[data-theme="dark"] .flow .page{background:#e9e9e4}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .flow .page{background:#e9e9e4}}
+.flow .page .pg{width:100%;max-width:420px;background:#fff;border:1px solid #d8d8d2;border-radius:14px;padding:20px;display:flex;flex-direction:column;gap:12px;color:#222}
+.flow .page h3{font-size:20px;color:#222}
+.flow .page .fakein{border:1px solid #bbb;border-radius:8px;min-height:44px;padding:10px 12px;background:#fff;color:#555;font-size:16px;overflow-wrap:anywhere}
+.flow .page .pbtn{min-height:48px;border-radius:8px;border:2px solid #3a3a3a;background:#3a3a3a;color:#fff;font-weight:650;font-size:16px;padding:0 16px}
+.flow .page .pbtn.hl{box-shadow:0 0 0 4px #fff,0 0 0 8px var(--accent);animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 4px #fff,0 0 0 12px var(--accent-line)}}
+.flow .pagelabel{font-size:14px;color:#555}
+.stepcard{position:absolute;left:0;right:0;bottom:0;z-index:2;background:var(--surface);border-radius:26px 26px 0 0;padding:16px 20px 24px;box-shadow:0 -10px 40px rgba(0,0,0,.28);display:flex;flex-direction:column;gap:10px;animation:up .32s cubic-bezier(.2,.8,.2,1)}
+.device.desktop .stepcard{left:50%;right:auto;width:560px;transform:translateX(-50%);bottom:16px;border-radius:24px}
+.stepcard .sn{display:flex;align-items:center;gap:8px;font-weight:700;color:var(--accent);font-size:15px}
+.dots{display:flex;gap:6px}
+.dots i{width:22px;height:6px;border-radius:3px;background:var(--track)}
+.dots i.on{background:var(--accent)}
+.stepcard h2{font-size:21px;line-height:1.35}
+
+/* onboarding */
+.ob{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--bg)}
+.ob .body{flex:1;min-height:0;overflow-y:auto;padding:12px 24px 12px;display:flex;flex-direction:column;gap:16px;max-width:560px;width:100%;margin:0 auto}
+.ob .foot{flex:none;padding:12px 24px 24px;display:flex;flex-direction:column;gap:6px;max-width:560px;width:100%;margin:0 auto}
+.ob h1{font-size:30px;line-height:1.25;font-weight:800}
+.ob .lead{font-size:19px;line-height:1.6}
+.stepper-top{display:flex;align-items:center;justify-content:space-between;padding:10px 24px 0;max-width:560px;width:100%;margin:0 auto;gap:10px}
+.stepper-top .t{font-size:15px;font-weight:700;color:var(--muted)}
+.stepper-top .dots i{width:30px;height:7px}
+.mark{display:flex;align-items:center;gap:12px;font-size:30px;font-weight:850;letter-spacing:.01em;margin-top:6px}
+.mark svg{width:56px;height:56px}
+.promises{display:flex;flex-direction:column;gap:8px}
+.promises li{display:flex;gap:12px;align-items:center;font-size:17px;font-weight:600;line-height:1.4}
+.promises .ico{width:38px;height:38px;border-radius:12px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;flex:none}
+.bigopt{display:flex;flex-direction:column;gap:6px;width:100%;text-align:left;background:var(--surface);border:1.5px solid var(--line);border-radius:20px;padding:16px;box-shadow:var(--shadow)}
+.bigopt:hover{border-color:var(--accent)}
+.bigopt .tag{align-self:flex-start}
+.bigopt b{font-size:18px;line-height:1.4}
+.gain{background:var(--accent-soft);border:1.5px solid var(--accent-line);border-radius:20px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.gain .row{align-items:flex-start}
+.gain p{font-size:16px;line-height:1.5}
+.gain .ico{color:var(--accent);margin-top:2px}
+
+/* toast */
+#toast{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);z-index:60;pointer-events:none;display:flex;justify-content:center;width:calc(100% - 32px)}
+#toast div{background:var(--ink);color:var(--bg);padding:12px 18px;border-radius:14px;font-size:16px;font-weight:600;box-shadow:0 8px 30px rgba(0,0,0,.3);animation:up .3s ease;max-width:420px;text-align:center}
+
+/* desktop popover */
+#pop{flex:0 0 290px;display:flex;flex-direction:column;gap:6px}
+#pop[hidden]{display:none}
+.menubar{height:30px;border-radius:10px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:flex-end;gap:14px;padding:0 12px;font-size:14px;font-weight:600}
+.menubar .mi{display:flex;align-items:center;gap:6px;padding:2px 8px;border-radius:7px;background:var(--accent-soft);color:var(--accent)}
+.menubar .mi svg{width:16px;height:16px}
+.popover{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:16px;box-shadow:0 16px 50px rgba(0,0,0,.2);display:flex;flex-direction:column;gap:12px;align-items:stretch;position:relative}
+.popover::before{content:"";position:absolute;top:-7px;right:30px;width:12px;height:12px;background:var(--surface);border-left:1px solid var(--line);border-top:1px solid var(--line);transform:rotate(45deg)}
+.popover .g{display:flex;gap:14px;align-items:center}
+.popover .gtx b{font-size:30px;line-height:1.1;display:block;font-weight:800}
+.popover .gtx span{font-size:15px;color:var(--muted);line-height:1.35;display:block}
+.popover .line{display:flex;justify-content:space-between;gap:10px;font-size:15px;padding:8px 0;border-top:1px solid var(--line)}
+.popover .line b{font-weight:700}
+.popover .btnrow .btn{flex:1 1 100px;min-height:46px;font-size:16px;padding:0 10px}
+
+/* endpoint */
+.codebox{display:flex;gap:10px;align-items:center;border:1.5px solid var(--line);border-radius:14px;padding:6px 6px 6px 14px;background:var(--bg);font:16px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.codebox span{flex:1;overflow-wrap:anywhere}
+.appline{display:flex;gap:14px;align-items:center;padding:14px 0;border-top:1px solid var(--line);flex-wrap:wrap}
+.appline:first-of-type{border-top:0}
+.appline .t{flex:1 1 220px;display:flex;flex-direction:column;line-height:1.4}
+.appline .t small{font-size:15px;color:var(--muted)}
+.appline code{font:15px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--surface2);padding:2px 8px;border-radius:8px}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
+  .spinner{animation:none;border-top-color:var(--accent);border-right-color:var(--accent)}
+  .typing i{animation:none;opacity:.6}
+}
+
+.ob .seg{align-self:flex-start}
+.ob .seg button{min-width:110px}
+
+.mini{flex-wrap:wrap}.mini .tag{margin-left:50px}
+.tb .mock{display:none}
+@media (max-width:520px){.tb .mock{display:inline-flex}}
+</style>
+</head>
+<body>
+<header class="tb" id="tb"></header>
+<main id="stage">
+  <div id="scene">
+    <div class="device phone" id="device"></div>
+    <aside id="pop" hidden></aside>
+  </div>
+</main>
+<noscript>This mock-up needs JavaScript. 這個示範版需要 JavaScript。</noscript>
+<script>
+/* ===== Every string in the mock-up lives here. {0} {1} ... are filled in by t(). ===== */
+const D = {
+zh: {
+  mock: '示範版：假資料', brandTitle: 'Muse 示範版',
+  view_phone: '手機', view_desktop: '電腦', view_label: '畫面', lang_label: '語言', demo_label: '示範情境',
+  demo_normal: '平常的一天', demo_used: '額度用完了', demo_offline: '沒有網路', demo_error: '幫手連不上',
+  demo_choice: '最強額度用完（問問）', demo_empty: '空白狀態', restart: '從頭開始', skipapp: '直接看 App',
+  close: '關閉', back: '返回', ok: '好', undo: '復原', undone: '已復原',
+  tab_today: '今天', tab_ask: '問問', tab_chores: '例行工作', tab_helpers: '幫手', tab_activity: '紀錄', tab_settings: '設定',
+  nav_more: '更多', nav_endpoint: '給其他 App 用的連線位址', menu_main: '主要選單',
+
+  /* onboarding */
+  step_of: '第 {0} 步，共 {1} 步', step_short: '大約 1 分鐘',
+  w_title: '歡迎使用 Muse',
+  w_is: 'Muse 是你的小幫手：用你本來就有資格使用的 AI 服務，幫你做例行工作，而且不會讓你的荷包嚇一跳。',
+  w_isnot: 'Muse 不是醫生，也不是律師；沒有你的同意，它一毛錢都不會花。',
+  w_p1: '只用你自己的帳號', w_p2: '花費絕不超過你設定的上限', w_p3: '它做的每一件事都有紀錄',
+  w_lang: '選擇語言', w_continue: '繼續',
+  c_title: '接上你的第一位幫手',
+  c_body: '幫手就是 Muse 可以替你使用的 AI 服務，用的是你自己的免費帳號。點一下就好。',
+  c_btn: '一鍵連接 OpenRouter', c_btn_sub: '你會在 OpenRouter 自己的頁面按「同意」。Muse 看不到你的密碼。',
+  c_or: '或者', c_local: '改用這支手機內建的 AI', c_local_tag: '你的手機可以',
+  c_local_sub: '不用註冊，內容完全不離開手機，只是慢一點。需要約 1.2 GB 空間。',
+  a_title: 'OpenRouter 想連接 Muse', a_sample: '示範：這是服務商自己的核准頁面',
+  a_can: 'Muse 可以：用你的免費額度回答你的問題。', a_cant: 'Muse 不能：看到你的付款資料，或替你花錢。',
+  a_approve: '同意', a_cancel: '取消', a_ok: '已連接',
+  l_title: '正在準備這支手機上的 AI', l_note: '下載約 1.2 GB（示範，其實沒有下載）',
+  s_ok_title: 'OpenRouter 已接上', s_gain: '你多了每天約 50 次的提問額度。',
+  s_cav1: '額度不大：每天約 50 次。我們很快會建議你再接一位幫手。',
+  s_cav2: '有些免費 AI 會從你送出的內容學習。Muse 會標示出來，私密的東西不會送給它們。',
+  s_ok_local: '這支手機上的 AI 已準備好', s_gain_local: '沒有每日上限，內容也不會離開手機。',
+  s_cav_local: '它比較慢，也比較不擅長長篇文件。需要時可以再接其他幫手。',
+  f_title: '問個問題，或挑一件例行工作',
+  f_q1: '你可以幫我做些什麼？', f_q2: '幫我寫一則禮貌的訊息，請房東修熱水器',
+  f_c1: '每天早上，給我一份今日重點',
+  f_tag_q: '問一個問題', f_tag_c: '例行工作', f_skip: '先不要，直接進入',
+
+  /* first answers */
+  ans_q1: ['我可以幫你這些事：', '回答問題，也可以根據你自己的檔案回答。', '做固定的例行工作，例如每週整理新聞。', '做研究，寫成報告。', '每一次我都會告訴你用了誰的額度、花了多少。要改動任何東西之前，我一定先問你。'],
+  ans_q2: ['好的，這是草稿：', '林先生您好，家裡的熱水器這幾天時冷時熱，好像出了問題。方便的話，可否請您安排人來看看？我平日晚上和週末都在家。謝謝您！'],
+  ans_chore: ['好，我會每天早上為你整理一份今日重點。','第一份明天早上 8 點會準備好。'],
+  line_free: '用你的 {0} 額度回答 · {1}後補滿 · 沒有花錢',
+  line_spent: '用付費服務回答 · 花了 {0}（在今天的上限內）',
+  line_local: '用這支手機上的 AI 回答 · 沒有每日上限 · 沒有花錢',
+  details: '細節', details_hide: '收起細節', d_provider: '服務商', d_model: '型號', d_privacy: '隱私等級', d_sent: '送出的內容',
+  d_sent_files: '3 個檔案裡的 3 小段（約 900 字）', d_sent_q: '你的問題（約 40 字）', d_sent_search: '搜尋字詞與 4 個網頁的重點',
+  d_sent_none: '沒有送出任何東西', d_pc_nolearn: '私密（不會學習）', d_pc_std: '標準', d_pc_device: '只在這台裝置',
+  hours: '{0} 小時', hm: '{0} 小時 {1} 分', mins: '{0} 分鐘',
+
+  /* today */
+  today: '今天', today_date: '11 月 12 日 星期四',
+  g_label: '今天剩下的免費額度', g_about: '約', g_ok: '還很充裕', g_low: '快用完了', g_none: '暫時用完了', g_incl_est: '含估計值',
+  nr_label: '下一次補滿', nr_in: '還有', nr_at: '{0} 補滿', paused_label: '已暫停',
+  r_chores: '例行工作', r_chores_v: '{0} 個進行中 · 今天完成 {1} 個', r_chores_none: '還沒有例行工作',
+  r_wait: '等你決定', r_wait_v: '{0} 件事', r_wait_none: '目前沒有',
+  r_spent: '今天花費', r_spent_v: '{0} · 上限 {1}',
+  pause_short: '暫停', pause_all: '全部暫停', resume: '恢復', resume_all: '全部恢復',
+  pb_title: '全部已暫停', pb_body: '在你按「恢復」之前，幫手什麼都不會做。',
+  u_title: '額度用到 {0}', u_sub: '這段時間還可以這樣：',
+  u_1: '例行工作會先排隊，額度一補滿就開始。', u_2: '你可以把問題交給自己的 ChatGPT App。',
+  u_3: '想現在就要答案？在上限內可以花一點錢，但每一次都會先問你。', u_btn: '在我的 ChatGPT 開啟',
+  off_t: '沒有網路', off_b: 'Muse 暫時只在這支手機上運作。畫面上是 {0} 的資料，可能已經過時。',
+  off_works: '還能做的事：看紀錄、改設定。提問會先存起來，連上網路再送出。',
+  er_t: 'Groq 好像連不上了', er_b: '它的授權可能過期了。其他幫手還能用，你不會漏掉任何事。', er_btn: '重新接上 Groq', er_short: 'Groq 連不上',
+  wt_title: '等你決定的事', wt_empty: '目前沒有需要你決定的事。',
+
+  /* ask */
+  ask: '問問', ask_ph: '想問什麼都可以', ask_send: '送出', ask_paused: '已暫停。按「恢復」之後才能提問。',
+  ask_off: '沒有網路，已先存起來。連上網路後我會自動送出。',
+  ask_demo_reply: '這是示範版，所以回答是事先寫好的。真正的 Muse 會在這裡用你的額度回答。',
+  t1_q: '房東寄來新的租約。如果續約，租金和押金有什麼改變？',
+  t1_a: ['租金每月從 NT$18,000 調到 NT$18,500。押金還是兩個月，沒變。', '有一個地方要注意：提前退租要提前 60 天通知，舊約只要 30 天。', '我讀了你的 3 個檔案：新租約、去年的租約，和房東的來信。'],
+  cf1_t: '要不要把重點存成筆記？', cf1_b: '會存進資料夾「租約」，檔名是「租約重點 2026」。你按「確定」之前，什麼都不會存。',
+  cf2_t: '要把 4 張新收據移到「收據 2026」嗎？', cf2_b: '只是搬動檔案，之後隨時可以復原。',
+  cf_yes: '確定', cf_no: '先不要', cf_done1: '已存進資料夾「租約」。', cf_done2: '已把 4 張收據移到「收據 2026」。', cf_skipped: '好，什麼都沒有動。',
+  cf_nothing: '還沒有動任何東西',
+  t2_q: '幫我做一份報告：台北捷運沿線小店的租金，這三年怎麼變。',
+  t2_a: ['好。我先查資料、讀文章，這些用小額度就行，不花錢。最後整理成報告，需要比較強的幫手。', '進度：查了 6 個網頁，讀完 4 篇，整理出 12 個重點。'],
+  ch_title: '最強的免費額度今天用完了', ch_body: '資料我都先整理好了。最後一步，你想怎麼做？',
+  ch_wait: '等到 {0} 補滿再寫', ch_wait_s: '不花錢。我先把資料備好，寫完通知你。',
+  ch_hand: '交給我的 ChatGPT App', ch_hand_s: '我把問題和重點準備好，你在自己的 App 裡執行。',
+  ch_spend: '花約 {0}，現在就完成', ch_spend_s: '在今天 {1} 的上限內，目前已花 {2}。',
+  tag_free: '不花錢', tag_cost: '會花錢', tag_best: '建議',
+  ch_r_wait: '好。我會在 {0} 完成報告，到時候通知你。', ch_r_hand: '好，已交給你的 ChatGPT。做完把答案帶回來就行。',
+  ch_r_spend: ['報告寫好了。重點：三條主要捷運線沿線的小店，租金這三年大多上漲，熱門站點漲得比較多。', '完整報告已放在「報告」資料夾。（示範內容）'],
+  ho_btn: '在我的 ChatGPT 開啟', ho_title: '交給你的 ChatGPT', ho_send_h: '會送出的內容',
+  ho_q_h: '你的問題', ho_ctx_h: '附上的重點', ho_ctx: '資料整理出的 12 個重點，不是整份檔案。',
+  ho_not: '不會送出：你的名字、其他檔案、帳號資料。', ho_how_h: '接下來會這樣',
+  ho_s1: 'Muse 打開你的 ChatGPT App，問題已經填好。', ho_s2: '你在 ChatGPT 裡按送出。用的是你自己的訂閱，Muse 不會登入你的帳號。',
+  ho_s3: '拿到答案後，按「分享」選 Muse，或複製後貼回來。我會把它和這段對話放在一起。',
+  ho_open: '開啟 ChatGPT', ho_cancel: '取消',
+  ho_o_title: 'ChatGPT 已開啟（示範）', ho_o_body: '做完之後，把答案帶回 Muse：', ho_paste: '貼上答案（示範）', ho_later: '晚點再說',
+  ho_filed: ['（示範）這是你在 ChatGPT 得到的答案：三條捷運線沿線的小店租金三年來上漲，熱門站點漲幅較大。', '已和這段對話放在一起。'],
+  ho_line: '你自己的 ChatGPT 訂閱回答 · Muse 沒有用任何額度 · 沒有花錢',
+  sg_t: '接上 Gemini，剛才那題會快很多。大約 2 分鐘、3 個步驟，每天多約 500 次額度。', sg_btn: '接上 Gemini', sg_later: '晚點再說',
+  ae_t: '這題沒有送出去', ae_b: 'Groq 沒有回應。你沒有被扣任何額度，也沒有花錢。', ae_retry: '再試一次', ae_other: '換別的幫手',
+  ae_demo: '換了另一位幫手，這次成功了。（示範）',
+  q_ask_chore: '好，已經幫你記下。',
+
+  /* chores */
+  ch_add_t: '新增例行工作', ch_add_ph: '用一句話說說，例如：每週一早上整理我的新聞', ch_add: '新增', chips_t: '試試看：',
+  chip1: '每週一早上，整理我的新聞來源', chip2: '每天睡前，把新掃描的文件分類', chip3: '每個月 1 號，整理上個月的收據',
+  c1: '每天早上 8 點，給我一份今日重點', c2: '幫我的檔案建立索引，之後才能根據檔案回答', c3: '每天睡前，把新掃描的文件分類加標籤', c4: '每個月 1 號，整理上個月的收據',
+  c1_n: '明天 08:00', c1_l: '今天 08:00 · 整理了 5 個新聞來源',
+  c2_n: '進行中，你在忙時會先停下來', c2_l: '已處理 840／1,350 個檔案',
+  c3_n: '今晚 23:30', c3_l: '昨晚 23:30 · 整理了 14 個檔案',
+  c4_n: '12 月 1 日', c4_l: '11 月 1 日 · 整理了 23 張收據，有 2 張要請你看一下',
+  c_leftover: '用了快要重置的剩餘額度', c_leftover_d: '昨晚額度快補滿時，把用不完的 Gemini 額度拿來做事，沒有多花一毛錢。',
+  c_bud: '預算：每次最多 {0} 次請求，不花錢', c_new_n: '明天 08:00', c_new_l: '還沒有執行過', c_new_n_used: '額度補滿後（{0}）',
+  st_running: '進行中', st_done: '今天完成', st_sched: '已排程', st_paused: '已暫停', st_wait: '排隊等額度',
+  next_run: '下一次', last_res: '上一次', added: '已新增例行工作', just_added: '剛剛新增',
+  ce_title: '還沒有例行工作', ce_body: '例行工作是你希望一直幫你做的事，像「每週一整理新聞」。在上面用一句話告訴我就好。',
+  es_title: '開始之前，先看估計', es_chore: '這件事', es_type: '工作類型', es_t1: '日常整理', es_t2: '大型工作：研究報告',
+  es_ceil: '預設上限', es_c1: '每次最多 40 次請求、約 10 分鐘', es_c2: '最多 150 次請求、約 30 分鐘',
+  es_cost: '預估花費', es_cost_v: '{0}（用免費額度）', es_stop: '到了上限，我會停下來，告訴你做完了多少。',
+  es_when: '第一次執行', es_when_now: '現在', es_raise: '這次調高上限', es_raised: '已調高為兩倍（只限這一次）',
+  es_start: '開始', es_cancel: '取消', es_used_note: '免費額度現在用完了，所以會先排隊。',
+
+  /* helpers */
+  hp_title: '幫手', hp_yours: '你的幫手', left_of: '今天還剩 {0}／{1}', left_est: '大約還剩 {0}／{1}（估計）', left_zero: '今天用完了（共 {1}）',
+  refill_in: '{0}後補滿', refill_at: '{0} 補滿', no_limit: '沒有每日上限', good_for: '適合', est_tag: '估計值', rep_tag: '服務商提供',
+  gf_everyday: '日常使用', gf_long: '長篇文件', gf_quick: '快速回答', gf_private: '私密的小事',
+  pv_device: '只留在這台裝置', pv_nolearn: '不會從你的內容學習', pv_learn: '可能會從你送出的內容學習', pv_unchecked: '還沒確認',
+  src_rep: '剩餘數字由 {0} 提供。', src_est: '估計值：{0} 不提供剩餘數字，所以 Muse 自己數送出的次數。',
+  src_local: '在這支手機上運作，不需要額度。', disconnect: '中斷連接', disconnected: '已中斷 {0}',
+  ad_title: '新增幫手', ad_sub: '依「每分鐘設定換到多少額度」排序，最划算的在最上面。',
+  ad_meta: '約 {0} 分鐘 · {1} 個步驟 · 每天多約 {2} 次', ad_meta_local: '約 4 分鐘 · 2 個步驟 · 沒有每日上限', ad_best: '最划算',
+  ad_none: '你已經接上所有可接的幫手了。',
+  oa_title: '其他額度', oa_sub: '只顯示，Muse 還不能代你管理。', oa_tag: '僅顯示，尚未管理',
+  oa_1: '雲端儲存空間', oa_1v: '已用 4.2／5 GB', oa_2: '免費運算時間', oa_2v: '今天還剩 3／5 分鐘', oa_3: '區塊鏈額度（測試網路，沒有真錢）', oa_3v: '還剩 80／100 筆',
+  sub_title: '你的訂閱', sub_sub: 'Muse 不會登入這些帳號，只會帶著你的問題幫你打開它們。', sub_tag: '只能交接',
+  sub_1: 'ChatGPT', sub_2: 'Gemini App', sub_1d: '用你自己的訂閱', sub_2d: '用你自己的訂閱',
+  loc_name: '這支手機上的 AI',
+
+  /* guided key */
+  gk_sample: '示範：服務商的網頁（不是真的）', gk_step: '第 {0} 步，共 {1} 步', gk_eta: '約 {0} 分鐘',
+  gk_s_signin_t: '登入你的 {0} 帳號', gk_s_signin_b: '用你平常的電子郵件登入。還沒有帳號的話，網頁上有免費的「註冊」。',
+  gk_s_create_t: '按下「建立金鑰」', gk_s_create_b: '找到頁面上亮起來的按鈕，按下去。',
+  gk_s_name_t: '幫它取個名字', gk_s_name_b: '輸入「Muse」，再按「送出」。',
+  gk_s_copy_t: '複製金鑰', gk_s_copy_b: '按頁面上的「複製」。Muse 會注意到，然後問你要不要使用。',
+  gk_next: '我做好了，下一步', gk_leave: '先離開',
+  mp_h1: '登入', mp_email: '電子郵件', mp_btn1: '繼續', mp_h2: '金鑰', mp_none: '你還沒有任何金鑰', mp_create: '建立金鑰',
+  mp_h3: '你的新金鑰', mp_copy: '複製', mp_copied: '已複製', mp_h_name: '建立金鑰', mp_name: '名稱', mp_submit: '送出', mp_warn: '請現在複製，之後不會再顯示。',
+  gk_pr_t: '你剛剛複製了一組金鑰。要使用它嗎？', gk_pr_b: 'Muse 會用它替你向 {0} 提問，並安全地存在這支手機上，不會傳給任何人。',
+  gk_use: '使用', gk_nouse: '不要',
+  gk_test_t: '正在測試…', gk_test_b: '問它一個小問題，確認可以用。',
+  gk_ok_t: '{0} 已接上', gk_ok_b: '你每天多了約 {0} 次額度。', gk_n_learn: '提醒：{0} 可能會從你送出的內容學習，私密的內容不會送給它。',
+  gk_n_est: '剩餘次數是估計值，因為 {0} 沒有提供這個數字。', gk_done: '完成',
+
+  /* activity */
+  ac_title: '紀錄', ac_sum: '今天的摘要', ac_sum_a: '完成事項', ac_sum_b: '用免費額度', ac_sum_c: '花費', ac_sum_d: '還有 {0} 件事等你決定。',
+  ac_f_left: '離開過我的裝置', ac_f_cost: '花了錢', ac_f_wait: '等我決定', ac_filters: '篩選',
+  ac_day_today: '今天', ac_day_yest: '昨天', ac_sent_to: '送到：{0}', ac_nothing_left: '沒有東西離開你的裝置',
+  ac_wait_pre: '等你確認：', ac_view: '查看', ac_none_f: '沒有符合的紀錄。',
+  ps_title: '全部暫停', ps_body: '暫停後，例行工作和幫手都會停下來，直到你恢復。', ps_on: '開', ps_off: '關',
+  ae2_title: '還沒有紀錄', ae2_body: 'Muse 做的每一件事都會寫在這裡，讓你隨時回頭看。現在還沒有。',
+  l1: '研究報告停在最後一步：最強的免費額度用完了，等你決定怎麼做。', l1s: '沒有花錢',
+  l2: '查了 6 個網頁，讀了其中 4 個，為你的報告做準備', l2s: '用你的 Groq 額度 · 只有搜尋的字詞送到 Groq 和網路上',
+  l3: '把 12 個掃描檔改名，開頭加上日期', l3s: '你在 12:39 確認 · 只在這支手機上動作',
+  l4: '讀了你的 3 個檔案，來回答一個問題', l4s: '留在你的 Groq 額度內 · 除了送到 Groq，沒有任何東西離開你的帳號',
+  l5: '做好今天的早晨重點（5 個新聞來源）', l5s: '用了昨晚剩下的 Gemini 額度 · 沒有花錢',
+  l6: '把 14 個新掃描檔分類、加上標籤', l6s: '在額度補滿前用掉剩餘額度 · 沒有花錢',
+  l7: '花了 {0} 完成一篇很長的回答', l7s: '在你的上限內 · 你自己按了「花錢完成」',
+  lg_note: '把「租約重點 2026」存進資料夾「租約」', lg_note_s: '你剛剛確認',
+  lg_move: '把 4 張收據移到「收據 2026」', lg_move_s: '你剛剛確認 · 只在這支手機上動作',
+  lg_spent: '花了 {0} 完成研究報告的最後一步', lg_spent_s: '在你的上限內 · 你剛剛選的',
+  lg_conn: '用一鍵連接接上 OpenRouter', lg_conn_s: '你在 OpenRouter 的頁面按了同意',
+  lg_conn_loc: '準備好這支手機上的 AI', lg_conn_loc_s: '只在這支手機上，沒有東西離開',
+  lg_first: '回答了你的第一個問題', lg_first_s: '用你的 OpenRouter 額度 · 問題送到 OpenRouter · 沒有花錢',
+  lg_helper: '接上 {0}', lg_helper_s: '你剛剛設定好 · 金鑰存在這支手機上',
+  lg_chore: '新增例行工作：{0}', lg_chore_s: '你剛剛確認了估計',
+  lg_paused: '你按了「全部暫停」', lg_resumed: '你恢復了所有工作', lg_pause_s: '所有例行工作和幫手',
+  lg_hand: '把問題交給你的 ChatGPT App', lg_hand_s: '只送出你看過的問題和 12 個重點 · 沒有用額度',
+
+  /* settings */
+  se_title: '設定', cap_title: '每天最多花多少', cap_none: 'Muse 不會花任何錢。免費額度用完時，它會等待，或請你交給自己的 App。',
+  cap_some: '免費額度用完時，Muse 每天最多可以花 {0}，而且每一次花之前都會先問你。大約夠 {1} 篇長篇回答。',
+  cap_dec: '減少上限', cap_inc: '增加上限',
+  pr_title: '預設隱私', pr_note: '決定你的內容可以送到哪裡。',
+  pc1: '只在這台裝置', pc1d: '內容完全不離開這台裝置，只有裝置上的 AI 能處理。',
+  pc2: '私密', pc2d: '只送給不會從內容學習的幫手。',
+  pc3: '標準（預設）', pc3d: '一般問題可以送給任何檢查過的幫手；你檔案裡的內容只送給不學習的幫手。',
+  pc4: '開放', pc4d: '可以送給任何幫手，包括還沒確認的。',
+  pm_title: '幫手可以做的事', pm_note: '這些都是你同意過的。隨時可以收回。',
+  pm1: '讀取資料夾「租約」和「收據 2026」裡的檔案。', pm2: '替「掃描檔」資料夾裡的檔案改名或搬動，每一次都要先經過你確認。',
+  pm3: '帶著你同意的問題，打開你的 ChatGPT App。', pm4: '在你沒有使用手機時執行例行工作，而且只用免費額度。',
+  revoke: '收回', revoked: '已收回', allow_again: '再次允許',
+  me_title: 'Muse 記得的事', me_note: '可以隨時修改或刪除。', me_add_ph: '新增一件要記得的事', me_add: '新增', me_remove: '刪除',
+  m1: '用繁體中文回答我', m2: '叫我小美', m3: '房租每月 5 號繳', m4: '我的 ChatGPT 是免費版',
+  lang_t: '語言', ex_t: '匯出我的資料', ex_b: '把例行工作、紀錄和記憶存成一個檔案，帶得走。', ex_btn: '匯出', ex_done: '（示範）檔案已匯出',
+  ab_t: '關於', ab_b1: 'Muse 示範版 0.1。這裡的資料都是假的，不會送出任何東西。', ab_b2: '公司不保管你的金鑰、資料或金錢。',
+
+  /* desktop */
+  ep_title: '給其他 App 用的連線位址',
+  ep_body: '其他 App 可以借用 Muse 分配好的額度，一樣受每日上限約束。每個 App 一組存取碼，隨時可以收回。',
+  ep_addr: '位址', ep_copy: '複製', ep_copied: '已複製', ep_apps: '已授權的 App',
+  ep_a1: '記事 App', ep_a1u: '今天用了 12 次 · 每天最多 100 次', ep_a2: '自動化小工具', ep_a2u: '今天用了 4 次 · 每天最多 50 次',
+  ep_add: '新增 App', ep_note1: '這些 App 看不到你的檔案，只能提問。', ep_note2: '它們用掉的額度和花費，都算進你的今日數字和紀錄裡。',
+  ep_add_done: '（示範）已建立新的存取碼', ep_revoked: '已收回',
+  pp_open: '打開 Muse', menubar_time: '週四 {0}'
+},
+en: {
+  mock: 'Mock-up: sample data', brandTitle: 'Muse mock-up',
+  view_phone: 'Phone', view_desktop: 'Desktop', view_label: 'View', lang_label: 'Language', demo_label: 'Demo state',
+  demo_normal: 'A normal day', demo_used: 'Allowance used up', demo_offline: 'Offline', demo_error: 'A helper stopped working',
+  demo_choice: 'Strong allowance used up (Ask)', demo_empty: 'Empty states', restart: 'Start over', skipapp: 'Skip to the app',
+  close: 'Close', back: 'Back', ok: 'OK', undo: 'Undo', undone: 'Undone',
+  tab_today: 'Today', tab_ask: 'Ask', tab_chores: 'Chores', tab_helpers: 'Helpers', tab_activity: 'Activity', tab_settings: 'Settings',
+  nav_more: 'More', nav_endpoint: 'Endpoint for other apps', menu_main: 'Main menu',
+
+  step_of: 'Step {0} of {1}', step_short: 'About a minute',
+  w_title: 'Welcome to Muse',
+  w_is: 'Muse is a helper that does your chores using the AI services you already qualify for, and never surprises your wallet.',
+  w_isnot: 'Muse is not a doctor or a lawyer, and it won’t spend a cent without your say-so.',
+  w_p1: 'Uses only your own accounts', w_p2: 'Never spends past the cap you set', w_p3: 'Everything it does is written down',
+  w_lang: 'Choose your language', w_continue: 'Continue',
+  c_title: 'Connect your first helper',
+  c_body: 'A helper is an AI service Muse can use for you, through your own free account. One tap is all it takes.',
+  c_btn: 'Connect OpenRouter with one tap', c_btn_sub: 'You’ll approve on OpenRouter’s own page. Muse never sees your password.',
+  c_or: 'or', c_local: 'Use an AI on this device instead', c_local_tag: 'Your phone can do this',
+  c_local_sub: 'Nothing to sign up for and nothing leaves your phone, just a little slower. Needs about 1.2 GB of space.',
+  a_title: 'OpenRouter wants to connect to Muse', a_sample: 'Sample of the provider’s own approval page',
+  a_can: 'Muse can: use your free allowance to answer your questions.', a_cant: 'Muse can’t: see your payment details or spend your money.',
+  a_approve: 'Approve', a_cancel: 'Cancel', a_ok: 'Connected',
+  l_title: 'Getting the AI on this device ready', l_note: 'Downloading about 1.2 GB (sample, nothing is really downloaded)',
+  s_ok_title: 'OpenRouter is connected', s_gain: 'You gained about 50 questions a day.',
+  s_cav1: 'The allowance is small: about 50 a day. We’ll suggest a second helper soon.',
+  s_cav2: 'Some free AIs learn from what you send. Muse marks them, and keeps private things away from them.',
+  s_ok_local: 'The AI on this device is ready', s_gain_local: 'No daily limit, and nothing leaves your phone.',
+  s_cav_local: 'It’s slower and not as good with long documents. You can add other helpers when you need them.',
+  f_title: 'Ask something, or pick a first chore',
+  f_q1: 'What can you do for me?', f_q2: 'Help me write a polite message asking my landlord to fix the water heater',
+  f_c1: 'Every morning, give me a short rundown of the day',
+  f_tag_q: 'Ask a question', f_tag_c: 'Chore', f_skip: 'Skip for now',
+
+  ans_q1: ['Here’s what I can do for you:', 'Answer questions, including from your own files.', 'Do chores on a schedule, like summarising your news every week.', 'Research a topic and write it up.', 'Every time, I’ll tell you whose allowance I used and what it cost. Before I change anything, I always ask first.'],
+  ans_q2: ['Sure, here’s a draft:', 'Hello Mr. Lin, the water heater at home has been going hot and cold for a few days and seems to be faulty. Could you arrange for someone to take a look? I’m home on weekday evenings and weekends. Thank you!'],
+  ans_chore: ['Done. I’ll put together a short rundown of your day every morning.','The first one will be ready tomorrow at 8:00.'],
+  line_free: 'Answered with your {0} allowance · refills in {1} · nothing spent',
+  line_spent: 'Answered with a paid service · spent {0} (within today’s cap)',
+  line_local: 'Answered by the AI on this device · no daily limit · nothing spent',
+  details: 'Details', details_hide: 'Hide details', d_provider: 'Provider', d_model: 'Model', d_privacy: 'Privacy class', d_sent: 'Sent',
+  d_sent_files: '3 short passages from 3 files (about 900 words)', d_sent_q: 'Your question (about 20 words)', d_sent_search: 'Search words and the key points of 4 web pages',
+  d_sent_none: 'Nothing was sent', d_pc_nolearn: 'Private (does not learn)', d_pc_std: 'Standard', d_pc_device: 'This device only',
+  hours: '{0} h', hm: '{0} h {1} min', mins: '{0} min',
+
+  today: 'Today', today_date: 'Thursday, 12 November',
+  g_label: 'Free allowance left today', g_about: 'about', g_ok: 'Plenty left', g_low: 'Getting low', g_none: 'Used up for now', g_incl_est: 'includes estimates',
+  nr_label: 'Next refill', nr_in: 'in', nr_at: 'Refills at {0}', paused_label: 'Paused',
+  r_chores: 'Chores', r_chores_v: '{0} running · {1} done today', r_chores_none: 'No chores yet',
+  r_wait: 'Waiting for you', r_wait_v: '{0} waiting', r_wait_none: 'Nothing waiting',
+  r_spent: 'Spent today', r_spent_v: '{0} of {1}',
+  pause_short: 'Pause', pause_all: 'Pause everything', resume: 'Resume', resume_all: 'Resume everything',
+  pb_title: 'Everything is paused', pb_body: 'Your helper won’t do anything until you tap Resume.',
+  u_title: 'Used up until {0}', u_sub: 'Here’s what still works:',
+  u_1: 'Chores wait in line and start as soon as the allowance refills.', u_2: 'You can hand a question to your own ChatGPT app.',
+  u_3: 'Want an answer right now? Within your cap, Muse can spend a little, but always asks first.', u_btn: 'Open in my ChatGPT',
+  off_t: 'No internet', off_b: 'Muse is working on this device only for now. What you see is from {0} and may be out of date.',
+  off_works: 'Still works: reading your activity and changing settings. Questions are saved and sent when you’re back online.',
+  er_t: 'Groq seems to have stopped responding', er_b: 'Its sign-in may have expired. Your other helpers still work, so nothing is lost.', er_btn: 'Reconnect Groq', er_short: 'Groq not responding',
+  wt_title: 'Waiting for you', wt_empty: 'Nothing needs your decision right now.',
+
+  ask: 'Ask', ask_ph: 'Ask anything', ask_send: 'Send', ask_paused: 'Paused. Tap Resume to ask again.',
+  ask_off: 'No internet, so I’ve saved this. I’ll send it as soon as you’re back online.',
+  ask_demo_reply: 'This is a mock-up, so this answer is pre-written. The real Muse would answer here using your allowance.',
+  t1_q: 'My landlord sent a new lease. If I renew, what changes about the rent and deposit?',
+  t1_a: ['The rent goes from US$600 to US$617 a month. The deposit is still two months’ rent, unchanged.', 'One thing to watch: you now have to give 60 days’ notice to leave early, up from 30.', 'I read 3 of your files: the new lease, last year’s lease and your landlord’s letter.'],
+  cf1_t: 'Save these points as a note?', cf1_b: 'It would go in your “Lease” folder as “Lease highlights 2026”. Nothing is saved until you confirm.',
+  cf2_t: 'Move 4 new receipts into “Receipts 2026”?', cf2_b: 'Files are only moved, and you can undo it any time.',
+  cf_yes: 'Confirm', cf_no: 'Not now', cf_done1: 'Saved in your “Lease” folder.', cf_done2: 'Moved 4 receipts into “Receipts 2026”.', cf_skipped: 'Okay. Nothing was changed.',
+  cf_nothing: 'Nothing has been changed yet',
+  t2_q: 'Write me a report on how shop rents along Taipei’s MRT lines changed over the last three years.',
+  t2_a: ['Okay. I’ll search and read first; small allowances can do that, free of charge. The final write-up needs a stronger helper.', 'Progress: searched 6 web pages, read 4, noted 12 key points.'],
+  ch_title: 'Your strongest free allowance is used up for today', ch_body: 'I’ve got the material ready. For the last step, what would you like?',
+  ch_wait: 'Wait until it refills at {0}', ch_wait_s: 'Free. I’ll keep the material ready and tell you when it’s done.',
+  ch_hand: 'Hand it to my ChatGPT app', ch_hand_s: 'I’ll prepare the question and key points; you run it in your own app.',
+  ch_spend: 'Spend about {0} to finish now', ch_spend_s: 'Within today’s {1} cap. Spent so far: {2}.',
+  tag_free: 'Free', tag_cost: 'Costs money', tag_best: 'Suggested',
+  ch_r_wait: 'Okay. I’ll finish the report at {0} and let you know.', ch_r_hand: 'Okay, handed to your ChatGPT. Bring the answer back when you’re done.',
+  ch_r_spend: ['The report is done. Main finding: shop rents near the three main MRT lines mostly went up over three years, busier stations more than others.', 'The full report is in your “Reports” folder. (Sample content)'],
+  ho_btn: 'Open in my ChatGPT', ho_title: 'Hand off to your ChatGPT', ho_send_h: 'What will be sent',
+  ho_q_h: 'Your question', ho_ctx_h: 'Key points attached', ho_ctx: '12 key points from the material, not whole files.',
+  ho_not: 'Not sent: your name, other files, account details.', ho_how_h: 'What happens next',
+  ho_s1: 'Muse opens your ChatGPT app with the question already filled in.', ho_s2: 'You tap send in ChatGPT. It runs under your own subscription; Muse never signs in to your account.',
+  ho_s3: 'When you have the answer, tap Share and choose Muse, or copy it and paste it back. I’ll file it with this conversation.',
+  ho_open: 'Open ChatGPT', ho_cancel: 'Cancel',
+  ho_o_title: 'ChatGPT is open (sample)', ho_o_body: 'When you’re done there, bring the answer back to Muse:', ho_paste: 'Paste the answer (demo)', ho_later: 'Later',
+  ho_filed: ['(Sample) This is the answer you got in ChatGPT: shop rents near the three MRT lines rose over three years, more at busy stations.', 'Filed with this conversation.'],
+  ho_line: 'Answered in your own ChatGPT subscription · Muse used no allowance · nothing spent',
+  sg_t: 'That would have gone faster with Gemini connected. About 2 minutes, 3 steps, adds roughly 500 requests a day.', sg_btn: 'Connect Gemini', sg_later: 'Later',
+  ae_t: 'That question didn’t go through', ae_b: 'Groq didn’t respond. No allowance was used and nothing was spent.', ae_retry: 'Try again', ae_other: 'Use another helper',
+  ae_demo: 'Tried another helper and it worked this time. (Sample)',
+  q_ask_chore: 'Okay, noted.',
+
+  ch_add_t: 'Add a chore', ch_add_ph: 'Say it in one sentence, e.g. Every Monday morning, summarise my news', ch_add: 'Add', chips_t: 'Try one:',
+  chip1: 'Every Monday morning, summarise my news feeds', chip2: 'Every night, sort my new scans', chip3: 'On the 1st of each month, tidy last month’s receipts',
+  c1: 'Every morning at 8, give me a rundown of the day', c2: 'Index my files so I can answer questions from them', c3: 'Every night, sort and tag my new scans', c4: 'On the 1st of each month, tidy last month’s receipts',
+  c1_n: 'Tomorrow 08:00', c1_l: 'Today 08:00 · summarised 5 news sources',
+  c2_n: 'Running; pauses when you’re busy', c2_l: '840 of 1,350 files done',
+  c3_n: 'Tonight 23:30', c3_l: 'Last night 23:30 · sorted 14 files',
+  c4_n: '1 December', c4_l: '1 November · sorted 23 receipts, 2 need a look from you',
+  c_leftover: 'Ran on leftover allowance before it reset', c_leftover_d: 'Last night, just before the allowance refilled, it used Gemini allowance that would have gone to waste. Nothing extra was spent.',
+  c_bud: 'Budget: up to {0} requests a run, no money', c_new_n: 'Tomorrow 08:00', c_new_l: 'Hasn’t run yet', c_new_n_used: 'After the refill ({0})',
+  st_running: 'Running', st_done: 'Done today', st_sched: 'Scheduled', st_paused: 'Paused', st_wait: 'Waiting for allowance',
+  next_run: 'Next', last_res: 'Last', added: 'Chore added', just_added: 'Just added',
+  ce_title: 'No chores yet', ce_body: 'A chore is something you’d like done again and again, like “Every Monday, summarise my news.” Just say it in one sentence above.',
+  es_title: 'Before I start, here’s the estimate', es_chore: 'This chore', es_type: 'Type of job', es_t1: 'Everyday tidy-up', es_t2: 'Large job: research report',
+  es_ceil: 'Default ceiling', es_c1: 'Up to 40 requests and about 10 minutes a run', es_c2: 'Up to 150 requests and about 30 minutes',
+  es_cost: 'Expected cost', es_cost_v: '{0} (free allowance)', es_stop: 'At the limit I stop and tell you how far I got.',
+  es_when: 'First run', es_when_now: 'Now', es_raise: 'Raise the limit this once', es_raised: 'Doubled, for this job only',
+  es_start: 'Start', es_cancel: 'Cancel', es_used_note: 'Free allowance is used up right now, so it will wait in line first.',
+
+  hp_title: 'Helpers', hp_yours: 'Your helpers', left_of: '{0} of {1} left today', left_est: 'About {0} of {1} left (estimated)', left_zero: 'Used up for today ({1} total)',
+  refill_in: 'Refills in {0}', refill_at: 'Refills at {0}', no_limit: 'No daily limit', good_for: 'Good for', est_tag: 'Estimate', rep_tag: 'Reported by service',
+  gf_everyday: 'Everyday', gf_long: 'Long documents', gf_quick: 'Quick answers', gf_private: 'Private small jobs',
+  pv_device: 'Stays on this device', pv_nolearn: 'Does not learn from you', pv_learn: 'May learn from what you send', pv_unchecked: 'Not checked yet',
+  src_rep: 'The number left is reported by {0}.', src_est: 'Estimate: {0} doesn’t report what’s left, so Muse counts its own requests.',
+  src_local: 'Runs on this phone, so no allowance is needed.', disconnect: 'Disconnect', disconnected: '{0} disconnected',
+  ad_title: 'Add a helper', ad_sub: 'Ranked by how much you gain per minute of setup. Best first.',
+  ad_meta: 'about {0} min · {1} steps · adds roughly {2} requests a day', ad_meta_local: 'about 4 min · 2 steps · no daily limit', ad_best: 'Best next step',
+  ad_none: 'You’ve connected every helper available.',
+  oa_title: 'Other allowances', oa_sub: 'Shown only. Muse can’t manage these for you yet.', oa_tag: 'Shown, not managed yet',
+  oa_1: 'Cloud storage', oa_1v: '4.2 of 5 GB used', oa_2: 'Free compute time', oa_2v: '3 of 5 minutes left today', oa_3: 'Blockchain allowance (test network, no real money)', oa_3v: '80 of 100 transactions left',
+  sub_title: 'Your subscriptions', sub_sub: 'Muse never signs in to these. It only opens them with your question.', sub_tag: 'Hand-off only',
+  sub_1: 'ChatGPT', sub_2: 'Gemini app', sub_1d: 'Your own subscription', sub_2d: 'Your own subscription',
+  loc_name: 'AI on this device',
+
+  gk_sample: 'Sample of the provider’s web page (not real)', gk_step: 'Step {0} of {1}', gk_eta: 'about {0} min',
+  gk_s_signin_t: 'Sign in to your {0} account', gk_s_signin_b: 'Use your usual email. If you don’t have an account yet, the page has a free sign-up.',
+  gk_s_create_t: 'Press “Create key”', gk_s_create_b: 'Find the highlighted button on the page and press it.',
+  gk_s_name_t: 'Give it a name', gk_s_name_b: 'Type “Muse”, then press “Submit”.',
+  gk_s_copy_t: 'Copy the key', gk_s_copy_b: 'Press “Copy” on the page. Muse will notice and ask whether to use it.',
+  gk_next: 'I did this, next step', gk_leave: 'Leave for now',
+  mp_h1: 'Sign in', mp_email: 'Email', mp_btn1: 'Continue', mp_h2: 'API keys', mp_none: 'You have no keys yet', mp_create: 'Create key',
+  mp_h3: 'Your new key', mp_copy: 'Copy', mp_copied: 'Copied', mp_h_name: 'Create key', mp_name: 'Name', mp_submit: 'Submit', mp_warn: 'Copy it now. It won’t be shown again.',
+  gk_pr_t: 'You copied a key. Use it?', gk_pr_b: 'Muse will use it to ask {0} on your behalf and keep it safely on this phone. It isn’t shared with anyone.',
+  gk_use: 'Use it', gk_nouse: 'No',
+  gk_test_t: 'Testing…', gk_test_b: 'Asking one tiny question to make sure it works.',
+  gk_ok_t: '{0} is connected', gk_ok_b: 'You gained about {0} requests a day.', gk_n_learn: 'Note: {0} may learn from what you send. Private things won’t be sent to it.',
+  gk_n_est: 'The number left is an estimate, because {0} doesn’t report it.', gk_done: 'Done',
+
+  ac_title: 'Activity', ac_sum: 'Today’s summary', ac_sum_a: 'things done', ac_sum_b: 'on free allowance', ac_sum_c: 'spent', ac_sum_d: '{0} waiting for your decision.',
+  ac_f_left: 'Left my device', ac_f_cost: 'Cost money', ac_f_wait: 'Waiting for me', ac_filters: 'Filters',
+  ac_day_today: 'Today', ac_day_yest: 'Yesterday', ac_sent_to: 'Sent to: {0}', ac_nothing_left: 'Nothing left your device',
+  ac_wait_pre: 'Waiting for your OK: ', ac_view: 'View', ac_none_f: 'Nothing matches.',
+  ps_title: 'Pause everything', ps_body: 'Chores and helpers all stop until you resume.', ps_on: 'On', ps_off: 'Off',
+  ae2_title: 'No activity yet', ae2_body: 'Everything Muse does will be written here so you can look back any time. There’s nothing yet.',
+  l1: 'Stopped the research report before its last step: your strongest free allowance is used up. Waiting for your choice.', l1s: 'Nothing spent',
+  l2: 'Searched 6 web pages and read 4 of them for your report', l2s: 'On your Groq allowance · only the search words went to Groq and the web',
+  l3: 'Renamed 12 scanned files to start with their date', l3s: 'Confirmed by you at 12:39 · only on this phone',
+  l4: 'Read 3 of your files to answer a question', l4s: 'Stayed on your Groq allowance · nothing left your accounts except to Groq',
+  l5: 'Made your morning rundown (5 news sources)', l5s: 'Used last night’s leftover Gemini allowance · nothing spent',
+  l6: 'Sorted and tagged 14 new scans', l6s: 'Used leftover allowance before it refilled · nothing spent',
+  l7: 'Spent {0} to finish a very long answer', l7s: 'Within your cap · you tapped “Spend to finish”',
+  lg_note: 'Saved “Lease highlights 2026” in your “Lease” folder', lg_note_s: 'Confirmed by you just now',
+  lg_move: 'Moved 4 receipts into “Receipts 2026”', lg_move_s: 'Confirmed by you just now · only on this phone',
+  lg_spent: 'Spent {0} to finish the last step of the research report', lg_spent_s: 'Within your cap · your choice just now',
+  lg_conn: 'Connected OpenRouter with one tap', lg_conn_s: 'You approved it on OpenRouter’s page',
+  lg_conn_loc: 'Got the AI on this phone ready', lg_conn_loc_s: 'Only on this phone, nothing left it',
+  lg_first: 'Answered your first question', lg_first_s: 'On your OpenRouter allowance · question went to OpenRouter · nothing spent',
+  lg_helper: 'Connected {0}', lg_helper_s: 'You just set it up · the key is stored on this phone',
+  lg_chore: 'Added a chore: {0}', lg_chore_s: 'You confirmed the estimate',
+  lg_paused: 'You tapped “Pause everything”', lg_resumed: 'You resumed everything', lg_pause_s: 'All chores and helpers',
+  lg_hand: 'Handed a question to your ChatGPT app', lg_hand_s: 'Sent only the question you saw and 12 key points · no allowance used',
+
+  se_title: 'Settings', cap_title: 'Daily spending cap', cap_none: 'Muse will never spend money. When free allowances run out, it waits or hands off to your own app.',
+  cap_some: 'When free allowances run out, Muse may spend up to {0} a day, and always asks before each spend. That’s about {1} long answers.',
+  cap_dec: 'Lower the cap', cap_inc: 'Raise the cap',
+  pr_title: 'Default privacy', pr_note: 'Decides where your content may be sent.',
+  pc1: 'This device only', pc1d: 'Nothing leaves this device. Only the AI on this device can handle it.',
+  pc2: 'Private', pc2d: 'Goes only to helpers that don’t learn from what you send.',
+  pc3: 'Standard (default)', pc3d: 'Everyday questions may go to any checked helper. Passages from your files go only to helpers that don’t learn.',
+  pc4: 'Open', pc4d: 'May go to any helper, including ones not checked yet.',
+  pm_title: 'What your helper may do', pm_note: 'You agreed to each of these. Revoke any time.',
+  pm1: 'Read the files in your “Lease” and “Receipts 2026” folders.', pm2: 'Rename or move files in your “Scans” folder, always after you confirm.',
+  pm3: 'Open your ChatGPT app with a question you approved.', pm4: 'Run chores while you’re not using your phone, on free allowance only.',
+  revoke: 'Revoke', revoked: 'Revoked', allow_again: 'Allow again',
+  me_title: 'What Muse remembers', me_note: 'Change or delete any of these whenever you like.', me_add_ph: 'Add something to remember', me_add: 'Add', me_remove: 'Delete',
+  m1: 'Answer me in English', m2: 'Call me Mei', m3: 'Rent is paid on the 5th of each month', m4: 'My ChatGPT is the free version',
+  lang_t: 'Language', ex_t: 'Export my data', ex_b: 'Save your chores, activity and memory as one file you can take with you.', ex_btn: 'Export', ex_done: '(Sample) File exported',
+  ab_t: 'About', ab_b1: 'Muse mock-up 0.1. All data here is made up and nothing is sent anywhere.', ab_b2: 'The company never holds your keys, data or money.',
+
+  ep_title: 'Endpoint for other apps',
+  ep_body: 'Other apps can use the allowance Muse rations, under the same daily cap. Each app gets its own access code, and you can revoke it any time.',
+  ep_addr: 'Address', ep_copy: 'Copy', ep_copied: 'Copied', ep_apps: 'Apps with access',
+  ep_a1: 'Notes app', ep_a1u: '12 requests today · up to 100 a day', ep_a2: 'Automation tool', ep_a2u: '4 requests today · up to 50 a day',
+  ep_add: 'Add an app', ep_note1: 'These apps can’t see your files. They can only ask questions.', ep_note2: 'What they use counts in today’s numbers and in your activity.',
+  ep_add_done: '(Sample) New access code created', ep_revoked: 'Revoked',
+  pp_open: 'Open Muse', menubar_time: 'Thu {0}'
+}
+};
+/* ===== Muse mock-up app. Everything here is fake and local. ===== */
+const ICON = {
+  today: '<path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4-5"/><circle cx="12" cy="17" r="1"/>',
+  ask: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
+  chores: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1.2 1.2L7 5M3.5 12l1.2 1.2L7 11M3.5 18l1.2 1.2L7 17"/>',
+  helpers: '<path d="M9 2v6M15 2v6"/><path d="M6 8h12v3a6 6 0 0 1-12 0V8z"/><path d="M12 17v5"/>',
+  activity: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  settings: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
+  pause: '<path d="M8 5v14M16 5v14"/>', play: '<path d="M7 4l12 8-12 8z"/>',
+  shield: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
+  phone: '<path d="M7 2h10a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M11 18h2"/>',
+  eye: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 1-1 1.7M12 17h.01"/>',
+  check: '<path d="M5 12l5 5L20 7"/>', x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  right: '<path d="M9 6l6 6-6 6"/>', left: '<path d="M15 6l-6 6 6 6"/>', plus: '<path d="M12 5v14M5 12h14"/>', minus: '<path d="M5 12h14"/>',
+  external: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+  undo: '<path d="M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3"/>',
+  file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+  wallet: '<path d="M3 7a2 2 0 0 1 2-2h13v4M3 7v11a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1H5a2 2 0 0 1-2-2M16 14h2"/>',
+  hourglass: '<path d="M6 2h12M6 22h12M7 2v4l5 6-5 6v4M17 2v4l-5 6 5 6v4"/>',
+  wifioff: '<path d="M2 8.8a15 15 0 0 1 4-2.4M22 8.8a15 15 0 0 0-8.7-3.7M5 12.5a10 10 0 0 1 3-1.8M19 12.5a10 10 0 0 0-3.6-2.3M8.5 16a5 5 0 0 1 7 0M12 20h.01M3 3l18 18"/>',
+  alert: '<path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/>', send: '<path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>', copy: '<path d="M9 9h11v11H9zM5 15H4V4h11v1"/>',
+  download: '<path d="M12 3v12M7 10l5 5 5-5M4 20h16"/>', trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  lock: '<path d="M6 11h12v10H6zM8 11V7a4 4 0 0 1 8 0v4"/>', bolt: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
+  box: '<path d="M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10"/>', chip: '<path d="M7 7h10v10H7zM9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4"/>',
+  link: '<path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4"/>', leaf: '<path d="M5 19c0-9 5-14 15-14 0 10-5 15-14 15"/><path d="M5 19c2-5 5-8 9-10"/>',
+  folder: '<path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>',
+  empty: '<rect x="4" y="5" width="16" height="14" rx="3"/><path d="M8 10h8M8 14h5"/>',
+  battery: '<rect x="2" y="7" width="18" height="10" rx="3"/><path d="M22 10v4"/>', wifi: '<path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 20h.01"/>'
+};
+function icon(n, cls) {
+  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('class', 'i' + (cls ? ' ' + cls : '')); s.setAttribute('aria-hidden', 'true');
+  s.innerHTML = ICON[n] || ''; return s;
+}
+function add(el, kids) { for (const k of kids.flat(Infinity)) { if (k == null || k === false) continue; el.append(k.nodeType ? k : document.createTextNode(String(k))); } }
+function h(tag, props, ...kids) {
+  const el = document.createElement(tag);
+  if (props) for (const [k, v] of Object.entries(props)) {
+    if (v == null) continue;
+    if (k === 'class') el.className = v;
+    else if (k === 'text') el.textContent = v;
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (k === 'value') el.value = v;
+    else if (k.startsWith('aria-')) el.setAttribute(k, String(v));
+    else if (v === false) continue;
+    else if (v === true) el.setAttribute(k, '');
+    else el.setAttribute(k, v);
+  }
+  add(el, kids); return el;
+}
+const $ = (s) => document.querySelector(s);
+const rc = (el, ...k) => el.replaceChildren(...k.flat(Infinity).filter((x) => x != null && x !== false));
+
+/* ---------- data (fake) ---------- */
+const START = 13 * 3600 + 20 * 60;
+const HDB = {
+  openrouter: { name: 'OpenRouter', limit: 50, refill: 8 * 3600, good: 'gf_everyday', priv: 'learn', est: false, min: 1, steps: 1, adds: 50, model: 'free model (auto-picked)' },
+  groq: { name: 'Groq', limit: 1000, refill: 15 * 3600, good: 'gf_quick', priv: 'nolearn', est: false, min: 5, steps: 4, adds: 1000, model: 'llama-3.3-70b', url: 'console.groq.com/keys' },
+  gemini: { name: 'Gemini', limit: 500, refill: 16 * 3600, good: 'gf_long', priv: 'learn', est: true, min: 2, steps: 3, adds: 500, model: 'gemini-flash', url: 'aistudio.google.com/apikey' },
+  cloudflare: { name: 'Cloudflare', limit: 300, refill: 8 * 3600, good: 'gf_quick', priv: 'nolearn', est: false, min: 4, steps: 3, adds: 300, model: 'workers-ai/small', url: 'dash.cloudflare.com/profile/api-tokens' },
+  mistral: { name: 'Mistral', limit: 200, refill: 8 * 3600, good: 'gf_everyday', priv: 'unchecked', est: true, min: 5, steps: 4, adds: 200, model: 'mistral-small', url: 'console.mistral.ai/api-keys' },
+  local: { name: null, limit: null, refill: null, good: 'gf_private', priv: 'device', est: false, min: 4, steps: 2, adds: 0, model: 'small on-device model' }
+};
+const CAPS = [0, 10, 30, 60, 100];
+const PRIV = { device: ['phone', 'pv_device', ''], nolearn: ['shield', 'pv_nolearn', 'ok'], learn: ['eye', 'pv_learn', 'warn'], unchecked: ['help', 'pv_unchecked', 'dash'] };
+const DEMO_STATES = ['normal', 'used', 'offline', 'error', 'choice', 'empty'];
+
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let S = {};
+function fresh() {
+  return { lang: S.lang || 'zh', view: S.view || 'phone', demo: 'normal', screen: 'welcome', tab: 'today', sheet: null, flow: null, paused: false, capIdx: 2, mode: 'normal',
+    t0: Date.now(), connected: [], left: {}, spent: 0, chores: [], log: [], turns: [], pending: [], resolved: {}, choice: null, doneBase: 0, filters: [],
+    openDetails: {}, draft: '', otherOpen: false, perms: [true, true, true, true], privIdx: 2, mem: [{ k: 'm1' }, { k: 'm2' }, { k: 'm3' }, { k: 'm4' }], apps: [{ k: 'ep_a1', on: true }, { k: 'ep_a2', on: true }],
+    justAdded: null, animate: true, raised: false, copied: false, uid: 1 };
+}
+let TOASTEL = null, lastFk = null, lastSheetKey = null, lastFlowKey = null, timers = [];
+
+function t(k, ...a) {
+  let s = (D[S.lang] && D[S.lang][k]); if (s == null) s = k;
+  if (typeof s !== 'string') return s;
+  return s.replace(/\{(\d+)\}/g, (_, i) => (a[i] != null ? a[i] : ''));
+}
+const fmt = (n) => n.toLocaleString('en-US');
+function money(ntd) {
+  if (S.lang === 'zh') return 'NT$' + fmt(ntd);
+  const u = ntd / 30; return 'US$' + (Number.isInteger(u) ? u : u.toFixed(2));
+}
+const pad = (n) => String(n).padStart(2, '0');
+const nowSec = () => START + Math.floor((Date.now() - S.t0) / 1000);
+function hm(sec) { sec = ((sec % 86400) + 86400) % 86400; return pad(Math.floor(sec / 3600)) + ':' + pad(Math.floor(sec % 3600 / 60)); }
+function remain(id) { const r = HDB[id].refill; const d = (((r - nowSec()) % 86400) + 86400) % 86400; return d === 0 ? 86400 : d; }
+function dur(sec, mode) {
+  const hh = Math.floor(sec / 3600), mm = Math.floor(sec % 3600 / 60), ss = sec % 60;
+  if (mode === 'hms') return hh + ':' + pad(mm) + ':' + pad(ss);
+  if (hh > 0) return t('hm', hh, mm);
+  return t('mins', Math.max(1, mm));
+}
+const hname = (id) => HDB[id].name || t('loc_name');
+function eff(id) { return S.mode === 'used' ? 0 : (S.left[id] || 0); }
+function counted() { return S.connected.filter((i) => HDB[i].limit); }
+function pctLeft() {
+  const c = counted(); if (!c.length) return 100;
+  const l = c.reduce((a, i) => a + eff(i), 0), m = c.reduce((a, i) => a + HDB[i].limit, 0);
+  return Math.round(100 * l / m);
+}
+function earliest() { const c = counted(); if (!c.length) return null; return c.map((i) => ({ id: i, s: remain(i) })).sort((a, b) => a.s - b.s)[0]; }
+function anyEst() { return counted().some((i) => HDB[i].est && eff(i) > 0); }
+const capNtd = () => CAPS[S.capIdx];
+const waiting = () => S.pending.filter((p) => !S.resolved[p.id]).length + (S.choice === null && S.turns.some((x) => x.k === 'choice') ? 1 : 0);
+function addLog(o) { S.log.unshift(Object.assign({ id: 'n' + (S.uid++), day: 'today', time: hm(nowSec()) }, o)); }
+
+/* ---------- loading sample data ---------- */
+function loadFull() {
+  const keep = { lang: S.lang, view: S.view };
+  S = fresh(); Object.assign(S, keep);
+  Object.assign(S, { screen: 'app', tab: 'today', persona: 'full', connected: ['openrouter', 'groq', 'gemini'], left: { openrouter: 32, groq: 820, gemini: 0 }, doneBase: 10,
+    pending: [{ id: 'p1', tk: 'cf1_t', bk: 'cf1_b', ok: 'cf_done1', log: 'lg_note', logs: 'lg_note_s', undo: true }, { id: 'p2', tk: 'cf2_t', bk: 'cf2_b', ok: 'cf_done2', log: 'lg_move', logs: 'lg_move_s', undo: true }],
+    chores: [
+      { id: 'c1', tk: 'c1', st: 'done', nk: 'c1_n', lk: 'c1_l', req: 30 },
+      { id: 'c2', tk: 'c2', st: 'running', nk: 'c2_n', lk: 'c2_l', req: 200 },
+      { id: 'c3', tk: 'c3', st: 'sched', nk: 'c3_n', lk: 'c3_l', req: 40, leftover: true },
+      { id: 'c4', tk: 'c4', st: 'sched', nk: 'c4_n', lk: 'c4_l', req: 60 }],
+    turns: [
+      { k: 'me', tk: 't1_q' }, { k: 'ans', tk: 't1_a', via: 'groq', hrs: 3, sent: 'd_sent_files', id: 'a1' }, { k: 'confirm', pid: 'p1' }, { k: 'confirm', pid: 'p2' },
+      { k: 'me', tk: 't2_q' }, { k: 'ans', tk: 't2_a', via: 'groq', hrs: 3, sent: 'd_sent_search', id: 'a2' }, { k: 'choice' }],
+    log: [
+      { id: 'l1', day: 'today', time: '13:20', tk: 'l1', sk: 'l1s', wait: true },
+      { id: 'l2', day: 'today', time: '13:05', tk: 'l2', sk: 'l2s', left: 'Groq' },
+      { id: 'l3', day: 'today', time: '12:40', tk: 'l3', sk: 'l3s', undo: true },
+      { id: 'l4', day: 'today', time: '10:15', tk: 'l4', sk: 'l4s', left: 'Groq' },
+      { id: 'l5', day: 'today', time: '08:00', tk: 'l5', sk: 'l5s', left: 'Gemini' },
+      { id: 'l6', day: 'yest', time: '23:30', tk: 'l6', sk: 'l6s', left: 'Gemini' },
+      { id: 'l7', day: 'yest', time: '20:12', tk: 'l7', args: [{ m: 1 }], sk: 'l7s', cost: 1, left: 'paid' }] });
+}
+function loadFreshAfterConnect(kind) {
+  const keep = { lang: S.lang, view: S.view };
+  S = fresh(); Object.assign(S, keep);
+  if (kind === 'local') { S.connected = ['local']; S.left = {}; S.log = [{ id: 'n0', day: 'today', time: hm(nowSec()), tk: 'lg_conn_loc', sk: 'lg_conn_loc_s' }]; }
+  else { S.connected = ['openrouter']; S.left = { openrouter: 48 }; S.log = [{ id: 'n0', day: 'today', time: hm(nowSec()), tk: 'lg_conn', sk: 'lg_conn_s', left: 'OpenRouter' }]; }
+  S.persona = 'fresh'; S.screen = 'first'; S.firstKind = kind;
+}
+function applyDemo(d) {
+  if (S.screen !== 'app' || S.persona !== 'full') { loadFull(); }
+  S.demo = d; S.mode = 'normal'; S.paused = false; S.sheet = null; S.flow = null; S.animate = true;
+  if (d === 'used') { S.mode = 'used'; S.tab = 'today'; }
+  else if (d === 'offline') { S.mode = 'offline'; S.tab = 'today'; }
+  else if (d === 'error') { S.mode = 'error'; S.tab = 'today'; }
+  else if (d === 'choice') { S.tab = 'ask'; S.demo = 'choice'; }
+  else if (d === 'empty') { S.chores = []; S.log = []; S.turns = []; S.pending = []; S.tab = 'chores'; }
+  else S.tab = 'today';
+  render(true);
+}
+
+/* ---------- gauge ---------- */
+function arcPath() {
+  const r = 80, p = (d) => [100 + r * Math.cos(d * Math.PI / 180), 100 + r * Math.sin(d * Math.PI / 180)];
+  const a = p(135), b = p(45); return `M${a[0].toFixed(2)} ${a[1].toFixed(2)}A${r} ${r} 0 1 1 ${b[0].toFixed(2)} ${b[1].toFixed(2)}`;
+}
+function gauge(pct, o) {
+  o = o || {}; const size = o.size || 240, ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg'); svg.setAttribute('viewBox', '0 0 200 172'); svg.setAttribute('width', size); svg.setAttribute('height', Math.round(size * 172 / 200));
+  svg.setAttribute('aria-hidden', 'true');
+  const mk = (cls, extra) => { const p = document.createElementNS(ns, 'path'); p.setAttribute('d', arcPath()); p.setAttribute('pathLength', '100'); p.setAttribute('fill', 'none'); p.setAttribute('class', cls); p.setAttribute('stroke-width', o.mini ? 18 : 16); for (const [k, v] of Object.entries(extra || {})) p.setAttribute(k, v); return p; };
+  if (!o.mini) for (let i = 0; i <= 10; i++) {
+    const a = (135 + 27 * i) * Math.PI / 180, l = document.createElementNS(ns, 'line');
+    l.setAttribute('x1', 100 + 95 * Math.cos(a)); l.setAttribute('y1', 100 + 95 * Math.sin(a)); l.setAttribute('x2', 100 + 100 * Math.cos(a)); l.setAttribute('y2', 100 + 100 * Math.sin(a));
+    l.setAttribute('class', 'tick'); l.setAttribute('stroke-width', i % 5 === 0 ? 3 : 2); l.setAttribute('stroke-linecap', 'round'); svg.append(l);
+  }
+  svg.append(mk('track', { 'stroke-linecap': 'round' }));
+  let dash = pct + ' 100';
+  if (o.est) { let s = '', n = 0; while (n + 3.4 < pct) { s += '2.2 1.2 '; n += 3.4; } dash = s + '100'; }
+  const fill = mk('fill', { 'stroke-linecap': o.est ? 'butt' : 'round', 'stroke-dasharray': (o.animate && !reduced) ? '0 100' : dash });
+  if (pct <= 0) fill.setAttribute('opacity', '0');
+  svg.append(fill);
+  if (o.animate && !reduced) requestAnimationFrame(() => requestAnimationFrame(() => fill.setAttribute('stroke-dasharray', dash)));
+  const cls = 'gauge' + (pct <= 0 ? ' none' : pct < 25 ? ' low' : '') + (o.paused ? ' paused' : '');
+  return h('div', { class: cls, role: 'img', 'aria-label': pct + '%' }, svg, o.center ? h('div', { class: 'center' }, o.center) : null);
+}
+const gstat = (p) => p <= 0 ? ['hourglass', 'g_none'] : p < 25 ? ['alert', 'g_low'] : ['check', 'g_ok'];
+
+/* ---------- small components ---------- */
+function btn(label, cls, onclick, o) { o = o || {}; return h('button', Object.assign({ type: 'button', class: 'btn ' + (cls || ''), onclick }, o.attrs || {}), o.icon ? icon(o.icon) : null, label); }
+function cd(target, fmtMode, cls, tpl) { return h('span', { class: cls || '', 'data-cd': target, 'data-fmt': fmtMode, 'data-tpl': tpl || null, text: '' }); }
+function tag(kind, ic, text) { return h('span', { class: 'tag ' + (kind || '') }, ic ? icon(ic) : null, text); }
+function privBadge(p) { const [ic, k, c] = PRIV[p]; return tag(c, ic, t(k)); }
+function toast(msg) {
+  if (!TOASTEL) return; TOASTEL.replaceChildren(h('div', { text: msg })); clearTimeout(toast._t);
+  toast._t = setTimeout(() => TOASTEL && TOASTEL.replaceChildren(), 2600);
+}
+function go(tab) { S.tab = tab; S.animate = true; S.sheet = null; render(true); }
+function setPaused(v) {
+  S.paused = v; addLog({ tk: v ? 'lg_paused' : 'lg_resumed', sk: 'lg_pause_s' }); render();
+}
+
+/* ---------- onboarding ---------- */
+function obTop(n) {
+  return h('div', { class: 'stepper-top' }, h('span', { class: 't' }, t('step_of', n, 3), ' · ', t('step_short')), h('span', { class: 'dots', 'aria-hidden': 'true' }, [1, 2, 3].map((i) => h('i', { class: i <= n ? 'on' : '' }))));
+}
+function langSeg(id) {
+  return h('div', { class: 'seg', role: 'group', 'aria-label': t('lang_label') }, [['zh', '繁體中文'], ['en', 'English']].map(([c, n]) =>
+    h('button', { type: 'button', lang: c === 'zh' ? 'zh-Hant' : 'en', 'aria-pressed': S.lang === c, 'data-fk': (id || 'lang') + c, onclick: () => setLang(c) }, n)));
+}
+function renderWelcome() {
+  return h('div', { class: 'ob' }, obTop(1),
+    h('div', { class: 'body' },
+      h('div', { class: 'mark' }, markSvg(), 'Muse'),
+      h('h1', { text: t('w_title') }),
+      h('p', { class: 'lead', text: t('w_is') }),
+      h('p', { class: 'lead', text: t('w_isnot') }),
+      h('ul', { class: 'promises' }, [['link', 'w_p1'], ['wallet', 'w_p2'], ['activity', 'w_p3']].map(([i, k]) => h('li', null, h('span', { class: 'ico' }, icon(i)), t(k)))),
+      h('div', { class: 'stack' }, h('div', { class: 'small muted', text: t('w_lang') }), langSeg('wl'))),
+    h('div', { class: 'foot' }, btn(t('w_continue'), 'primary block', () => { S.screen = 'connect'; render(true); }, { attrs: { 'data-fk': 'w-go', 'data-autofocus': '1' } })));
+}
+function markSvg() {
+  const s = gauge(72, { size: 52, mini: true, center: h('span', { style: 'width:10px;height:10px;border-radius:50%;background:var(--accent);margin-top:14px' }) }); s.removeAttribute('role'); s.removeAttribute('aria-label'); s.setAttribute('aria-hidden', 'true'); return s;
+}
+function renderConnect() {
+  return h('div', { class: 'ob' }, obTop(2),
+    h('div', { class: 'body' },
+      h('button', { type: 'button', class: 'btn link', style: 'align-self:flex-start;margin-left:-10px', onclick: () => { S.screen = 'welcome'; render(); } }, icon('left'), t('back')),
+      h('h1', { text: t('c_title') }), h('p', { class: 'lead', text: t('c_body') }),
+      h('div', { class: 'stack' },
+        btn(t('c_btn'), 'primary block', () => { S.sheet = { type: 'approve', phase: 'ask' }; render(); }, { attrs: { 'data-fk': 'c-go', 'data-autofocus': '1' } }),
+        h('p', { class: 'small muted', text: t('c_btn_sub') })),
+      h('div', { class: 'row muted small', 'aria-hidden': 'true' }, h('hr', { style: 'flex:1;border:0;border-top:1px solid var(--line)' }), t('c_or'), h('hr', { style: 'flex:1;border:0;border-top:1px solid var(--line)' })),
+      h('button', { type: 'button', class: 'bigopt', onclick: () => { S.sheet = { type: 'local', boot: true }; render(); }, 'data-fk': 'c-local' },
+        tag('ok', 'phone', t('c_local_tag')), h('b', { text: t('c_local') }), h('span', { class: 'small muted', text: t('c_local_sub') }))));
+}
+function renderFirst() {
+  const local = S.firstKind === 'local';
+  const sug = [['q', 'f_q1', 'ans_q1'], ['q', 'f_q2', 'ans_q2'], ['c', 'f_c1', 'ans_chore']];
+  return h('div', { class: 'ob' }, obTop(3),
+    h('div', { class: 'body' },
+      h('div', { class: 'gain' },
+        h('div', { class: 'row' }, h('span', { class: 'ico' }, icon('check')), h('b', { text: t(local ? 's_ok_local' : 's_ok_title') })),
+        h('p', { text: t(local ? 's_gain_local' : 's_gain') }),
+        h('p', { class: 'muted' }, h('span', { class: 'row', style: 'align-items:flex-start;gap:8px' }, icon('info', ''), t(local ? 's_cav_local' : 's_cav1'))),
+        local ? null : h('p', { class: 'muted' }, h('span', { class: 'row', style: 'align-items:flex-start;gap:8px' }, icon('eye'), t('s_cav2')))),
+      h('h1', { text: t('f_title'), style: 'font-size:26px' }),
+      h('div', { class: 'stack' }, sug.map(([kind, k, a]) => h('button', { type: 'button', class: 'bigopt', 'data-fk': 'sug-' + k, onclick: () => pickFirst(kind, k, a) },
+        tag(kind === 'c' ? 'ok' : '', kind === 'c' ? 'chores' : 'ask', t(kind === 'c' ? 'f_tag_c' : 'f_tag_q')), h('b', { text: t(k) }))))),
+    h('div', { class: 'foot' }, btn(t('f_skip'), 'link', () => { S.screen = 'app'; S.tab = 'today'; S.animate = true; render(true); }, { attrs: { 'data-fk': 'f-skip' } })));
+}
+function pickFirst(kind, k, a) {
+  S.screen = 'app'; S.animate = true;
+  const via = S.connected[0];
+  if (kind === 'c') {
+    S.tab = 'chores'; S.sheet = { type: 'estimate', text: t(k), heavy: false, first: true }; render(true); return;
+  }
+  S.tab = 'ask'; S.turns = [{ k: 'me', text: t(k) }, { k: 'typing' }]; render(true);
+  timers.push(setTimeout(() => {
+    S.turns = S.turns.filter((x) => x.k !== 'typing');
+    S.turns.push({ k: 'ans', tk: a, via, hrs: via === 'local' ? 0 : 18, sent: via === 'local' ? 'd_sent_none' : 'd_sent_q', id: 'first', handoff: true });
+    addLog({ tk: 'lg_first', sk: 'lg_first_s', left: via === 'local' ? null : 'OpenRouter' });
+    if (via !== 'local') S.turns.push({ k: 'suggest', hid: 'gemini' });
+    render();
+  }, reduced ? 50 : 1100));
+}
+
+/* ---------- shell ---------- */
+const TABS = ['today', 'ask', 'chores', 'helpers', 'activity'];
+const effView = () => (S.view === 'desktop' && innerWidth >= 800) ? 'desktop' : 'phone';
+function pauseBtn(extra) {
+  return h('button', { type: 'button', class: 'pausebtn', 'aria-pressed': S.paused, 'data-fk': 'pause' + (extra || ''), onclick: () => setPaused(!S.paused) },
+    icon(S.paused ? 'play' : 'pause'), t(S.paused ? 'resume' : 'pause_short'));
+}
+function banners() {
+  const b = [];
+  if (S.paused) b.push(h('div', { class: 'banner', role: 'status' }, h('span', { class: 'ic' }, icon('pause')), h('div', null, h('b', { text: t('pb_title') }), h('span', { text: t('pb_body') })), btn(t('resume'), 'small primary', () => setPaused(false), { attrs: { 'data-fk': 'pause-b' } })));
+  if (S.mode === 'offline') b.push(h('div', { class: 'banner info', role: 'status' }, h('span', { class: 'ic' }, icon('wifioff')), h('div', null, h('b', { text: t('off_t') }), h('span', { text: t('off_b', '13:18') }))));
+  return b;
+}
+function tabTitle(tab) { return { today: t('today'), ask: t('ask'), chores: t('tab_chores'), helpers: t('hp_title'), activity: t('ac_title'), settings: t('se_title'), endpoint: t('ep_title') }[tab]; }
+function badgeFor(tab) { return tab === 'today' && waiting() > 0 ? waiting() : 0; }
+
+function renderApp() {
+  if (S.screen !== 'app') return S.screen === 'welcome' ? renderWelcome() : S.screen === 'connect' ? renderConnect() : renderFirst();
+  const desk = effView() === 'desktop';
+  const view = ({ today: vToday, ask: vAsk, chores: vChores, helpers: vHelpers, activity: vActivity, settings: vSettings, endpoint: vEndpoint })[S.tab]();
+  const topbar = h('div', { class: 'topbar' },
+    S.tab === 'settings' && !desk ? h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('back'), 'data-fk': 'back', onclick: () => go('today') }, icon('left')) : null,
+    h('h1', null, tabTitle(S.tab), S.tab === 'today' ? h('span', { class: 'sub', text: t('today_date') }) : null),
+    S.tab === 'today' && !desk ? h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('tab_settings'), 'data-fk': 'gear', onclick: () => go('settings') }, icon('settings')) : null,
+    pauseBtn());
+  const main = h('div', { class: 'main' }, banners(), topbar, h('div', { class: 'scroll', id: 'scroll', tabindex: '-1' }, view.body), view.composer || null);
+  if (desk) {
+    const nav = (tab, ic, label) => h('button', { type: 'button', class: 'sbtn', 'aria-current': S.tab === tab ? 'page' : null, 'data-fk': 'nav-' + tab, onclick: () => go(tab) }, icon(ic), label, badgeFor(tab) ? h('span', { class: 'dotb', text: String(badgeFor(tab)) }) : null);
+    const side = h('nav', { class: 'sidebar', 'aria-label': t('menu_main') },
+      h('div', { class: 'logo' }, markSvg(), 'Muse'),
+      TABS.map((x) => nav(x, x, tabTitle(x))), h('hr'),
+      nav('endpoint', 'link', t('nav_endpoint')), nav('settings', 'settings', t('tab_settings')),
+      h('div', { class: 'sp' }), langSeg('sd'));
+    return h('div', { class: 'app' }, side, main);
+  }
+  const bar = h('nav', { class: 'tabbar', 'aria-label': t('menu_main') }, TABS.map((x) => h('button', { type: 'button', class: 'tab', 'aria-current': S.tab === x ? 'page' : null, 'data-fk': 'tab-' + x, onclick: () => go(x) },
+    h('span', { class: 'pill' }, icon(x), badgeFor(x) ? h('span', { class: 'dotb', text: String(badgeFor(x)) }) : null), tabTitle(x))));
+  return h('div', { class: 'app' }, main, bar);
+}
+
+/* ---------- TODAY ---------- */
+function vToday() {
+  const pct = pctLeft(), [gi, gk] = gstat(pct), desk = effView() === 'desktop', e = earliest();
+  const runCount = S.chores.filter((c) => c.st === 'running').length, doneCount = S.chores.filter((c) => c.st === 'done').length;
+  const w = waiting();
+  const hero = h('div', { class: 'card hero' },
+    h('div', { class: 'muted', style: 'font-size:16px;font-weight:600', text: t('g_label') }),
+    gauge(pct, { size: desk ? 280 : 250, animate: S.animate, paused: S.paused, center: [
+      anyEst() ? h('span', { class: 'small muted', style: 'font-weight:700', text: t('g_about') }) : null,
+      h('span', { class: 'num', style: 'font-size:' + (desk ? 58 : 50) + 'px', text: pct + '%' }),
+      h('span', { class: 'status', style: 'font-size:17px;margin:8px 0 0' }, icon(S.paused ? 'pause' : gi), S.paused ? t('paused_label') : t(gk))] }),
+    anyEst() ? h('div', { class: 'small muted', style: 'margin-top:-6px', text: t('g_incl_est') }) : null,
+    S.mode === 'offline' ? h('div', { class: 'tag dash', style: 'margin-top:4px' }, icon('wifioff'), t('off_t') + ' · 13:18') : null,
+    e ? h('div', { class: 'refill' }, icon('bolt'), h('div', { style: 'text-align:left' }, h('small', { text: t('nr_label') + ' · ' + hm(nowSec() + e.s) }), h('span', { class: 'big' }, S.lang === 'zh' ? t('nr_in') + ' ' : t('nr_in') + ' ', cd(nowSec() + e.s, 'hms')))) : null);
+  const rows = h('div', { class: 'card rows' },
+    h('button', { type: 'button', class: 'r', 'data-fk': 'row-chores', onclick: () => go('chores') }, h('span', { class: 'ico' }, icon('chores')),
+      h('span', { class: 't' }, h('b', { text: t('r_chores') }), h('small', { text: S.chores.length ? t('r_chores_v', runCount, doneCount) : t('r_chores_none') })), icon('right', 'chev')),
+    h('button', { type: 'button', class: 'r', 'data-fk': 'row-wait', onclick: () => { S.sheet = { type: 'waiting' }; render(); } }, h('span', { class: 'ico' }, icon('hourglass')),
+      h('span', { class: 't' }, h('b', { text: t('r_wait') }), h('small', { text: w ? t('r_wait_v', w) : t('r_wait_none') })), w ? tag('warn', 'alert', String(w)) : null, icon('right', 'chev')),
+    h('div', { class: 'r' }, h('span', { class: 'ico' }, icon('wallet')),
+      h('span', { class: 't', style: 'flex:1' }, h('b', { text: t('r_spent') }), h('small', { text: t('r_spent_v', money(S.spent), money(capNtd())) }),
+        h('div', { class: 'bar thin', style: 'margin-top:6px', role: 'img', 'aria-label': t('r_spent_v', money(S.spent), money(capNtd())) }, h('i', { style: 'width:' + (capNtd() ? Math.round(100 * S.spent / capNtd()) : 0) + '%' })))));
+  const extras = [];
+  if (S.mode === 'error') extras.push(h('div', { class: 'card', style: 'border:2px solid var(--bad)' }, h('div', { class: 'row', style: 'align-items:flex-start' }, h('span', { style: 'color:var(--bad);margin-top:2px' }, icon('alert')), h('div', null, h('h2', { text: t('er_t') }), h('p', { class: 'muted', text: t('er_b') }))), btn(t('er_btn'), 'primary block', () => { S.flow = { id: 'groq', step: 1, phase: 'steps' }; render(); }, { attrs: { style: 'margin-top:12px', 'data-fk': 'er-btn' } })));
+  if (S.mode === 'used') extras.push(h('div', { class: 'card stack' }, h('h2', { text: t('u_title', hm(nowSec() + (e ? e.s : 0))) }), h('div', { class: 'muted', text: t('u_sub') }),
+    h('ul', { class: 'stack' }, [['hourglass', 'u_1'], ['external', 'u_2'], ['wallet', 'u_3']].map(([i, k]) => h('li', { class: 'row', style: 'align-items:flex-start' }, h('span', { style: 'color:var(--accent);margin-top:3px' }, icon(i)), t(k)))),
+    btn(t('u_btn'), 'primary block', () => openHandoff(), { icon: 'external', attrs: { 'data-fk': 'u-ho' } })));
+  if (S.mode === 'offline') extras.push(h('div', { class: 'card row', style: 'align-items:flex-start' }, h('span', { style: 'color:var(--accent)' }, icon('info')), h('p', { text: t('off_works') })));
+  S.animate = false;
+  if (desk) return { body: h('div', { class: 'col wide', style: 'max-width:980px' }, h('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start' }, hero, h('div', { class: 'stack', style: 'gap:16px' }, rows, extras))) };
+  return { body: h('div', { class: 'col' }, S.mode === 'error' ? extras : null, hero, S.mode === 'used' || S.mode === 'offline' ? extras : null, rows) };
+}
+
+/* ---------- ASK ---------- */
+function lastAnsId() { for (let i = S.turns.length - 1; i >= 0; i--) if (S.turns[i].k === 'ans') return S.turns[i].id || i; return null; }
+function quiet(a, i) {
+  const id = a.id || ('i' + i), open = S.openDetails[id];
+  let line;
+  if (a.filed) line = t('ho_line'); else if (a.spent) line = t('line_spent', money(1)); else if (a.via === 'local') line = t('line_local'); else line = t('line_free', hname(a.via), t('hours', a.hrs));
+  const H = HDB[a.via || 'groq'];
+  const tech = a.filed ? [[t('d_provider'), 'ChatGPT (your subscription)'], [t('d_sent'), t('ho_ctx')]] : [[t('d_provider'), a.spent ? 'paid (Groq, pay-as-you-go)' : hname(a.via)], [t('d_model'), H.model], [t('d_privacy'), H.priv === 'nolearn' ? t('d_pc_nolearn') : H.priv === 'device' ? t('d_pc_device') : t('d_pc_std')], [t('d_sent'), t(a.sent || 'd_sent_q')]];
+  return [h('div', { class: 'quiet' }, h('span', { class: 'row', style: 'gap:8px;align-items:flex-start;flex:1 1 200px' }, icon(a.filed ? 'external' : 'leaf'), h('span', { text: line })), h('button', { type: 'button', class: 'lnk', 'aria-expanded': !!open, 'data-fk': 'det-' + id, onclick: () => { S.openDetails[id] = !open; render(); } }, t(open ? 'details_hide' : 'details'))),
+    open ? h('div', { class: 'techline' }, tech.map(([k, v]) => h('div', null, h('b', { text: k + ': ' }), v))) : null];
+}
+function paras(k) { const v = t(k); return (Array.isArray(v) ? v : [v]).map((x) => h('p', { text: x })); }
+function confirmCard(pid) {
+  const p = S.pending.find((x) => x.id === pid); if (!p) return null; const r = S.resolved[pid];
+  if (r === 'yes') return h('div', { class: 'cardx done' }, h('div', { class: 'lead' }, h('span', { class: 'ico' }, icon('check')), h('div', null, h('b', { text: t(p.ok) }))), p.undone ? h('span', { class: 'small muted', text: t('undone') }) : h('div', { class: 'acts' }, btn(t('undo'), 'small sec', () => { p.undone = true; S.resolved[pid] = 'no'; const l = S.log.find((x) => x.pid === pid); if (l) l.undone = true; toast(t('undone')); render(); }, { icon: 'undo', attrs: { 'data-fk': 'cu-' + pid } })));
+  if (r === 'no') return h('div', { class: 'cardx done' }, h('div', { class: 'lead' }, h('span', { class: 'ico' }, icon('x')), h('b', { text: t('cf_skipped') })));
+  return h('div', { class: 'cardx' }, h('div', { class: 'lead' }, h('span', { class: 'ico' }, icon('file')), h('div', null, h('h3', { text: t(p.tk) }), h('p', { class: 'small muted', text: t(p.bk) }))),
+    h('div', { class: 'btnrow' }, btn(t('cf_yes'), 'primary', () => confirmPending(pid), { attrs: { 'data-fk': 'cy-' + pid } }), btn(t('cf_no'), 'sec', () => { S.resolved[pid] = 'no'; render(); }, { attrs: { 'data-fk': 'cn-' + pid } })));
+}
+function confirmPending(pid) {
+  const p = S.pending.find((x) => x.id === pid); S.resolved[pid] = 'yes';
+  addLog({ pid, tk: p.log, sk: p.logs, undo: true }); render();
+}
+function choiceCard() {
+  const e = earliest(), ref = hm(HDB.gemini.refill);
+  if (S.choice) {
+    const k = S.choice;
+    return h('div', { class: 'cardx done' }, h('div', { class: 'lead' }, h('span', { class: 'ico' }, icon(k === 'wait' ? 'hourglass' : k === 'hand' ? 'external' : 'wallet')), h('b', { text: k === 'wait' ? t('ch_r_wait', ref) : k === 'hand' ? t('ch_r_hand') : t('ch_r_spend')[0] })));
+  }
+  const opt = (best, ic, title, sub, tg, fn, fk) => h('button', { type: 'button', class: 'opt' + (best ? ' best' : ''), 'data-fk': fk, onclick: fn }, h('span', { class: 'ico' }, icon(ic)), h('span', null, h('b', { text: title }), h('small', { text: sub }), tg));
+  return h('div', { class: 'cardx', role: 'group', 'aria-label': t('ch_title') },
+    h('div', { class: 'lead' }, h('span', { class: 'ico', style: 'background:var(--warn-soft);color:var(--warn)' }, icon('hourglass')), h('div', null, h('h3', { text: t('ch_title') }), h('p', { class: 'small muted', text: t('ch_body') }))),
+    h('div', { class: 'choice' },
+      opt(true, 'hourglass', t('ch_wait', ref), t('ch_wait_s'), h('span', { class: 'row', style: 'gap:6px;margin-top:6px' }, tag('ok', 'check', t('tag_free')), tag('', 'leaf', t('tag_best'))), () => { S.choice = 'wait'; render(); }, 'ch-wait'),
+      opt(false, 'external', t('ch_hand'), t('ch_hand_s'), tag('ok', 'check', t('tag_free')), () => openHandoff('report'), 'ch-hand'),
+      opt(false, 'wallet', t('ch_spend', money(1)), t('ch_spend_s', null, money(capNtd()), money(S.spent)), tag('warn', 'wallet', t('tag_cost')), () => spendChoice(), 'ch-spend')));
+}
+function spendChoice() {
+  if (capNtd() < 1) { toast(t('cap_none')); return; }
+  S.spent += 1; S.choice = 'spend'; addLog({ tk: 'lg_spent', args: [{ m: 1 }], sk: 'lg_spent_s', cost: 1, left: 'paid' });
+  S.turns.push({ k: 'ans', tk: 'ch_r_spend', spent: true, id: 'sp', via: 'groq', sent: 'd_sent_search' }); render();
+}
+function suggestCard(hid) {
+  const H = HDB[hid]; if (S.connected.includes(hid) || S.resolved['sg-' + hid]) return null;
+  return h('div', { class: 'cardx' }, h('div', { class: 'lead' }, h('span', { class: 'ico' }, icon('helpers')), h('p', { text: t('sg_t') })),
+    h('div', { class: 'btnrow' }, btn(t('sg_btn'), 'primary', () => { S.flow = { id: hid, step: 1, phase: 'steps' }; render(); }, { attrs: { 'data-fk': 'sg-go' } }), btn(t('sg_later'), 'sec', () => { S.resolved['sg-' + hid] = 1; render(); }, { attrs: { 'data-fk': 'sg-later' } })));
+}
+function errCard() {
+  return h('div', { class: 'cardx', style: 'border-color:var(--bad)' }, h('div', { class: 'lead' }, h('span', { class: 'ico', style: 'background:var(--bad-soft);color:var(--bad)' }, icon('alert')), h('div', null, h('h3', { text: t('ae_t') }), h('p', { class: 'small muted', text: t('ae_b') }))),
+    h('div', { class: 'btnrow' }, btn(t('ae_retry'), 'primary', () => { S.turns = S.turns.filter((x) => x.k !== 'err'); S.turns.push({ k: 'typing' }); render(); timers.push(setTimeout(() => { S.turns = S.turns.filter((x) => x.k !== 'typing'); S.mode = 'normal'; S.demo = 'normal'; S.turns.push({ k: 'ans', tk: 'ae_demo', via: 'openrouter', hrs: 18, id: 'r' + S.uid++ }); render(); }, 900)); }, { attrs: { 'data-fk': 'ae-retry' } }), btn(t('ae_other'), 'sec', () => { S.turns = S.turns.filter((x) => x.k !== 'err'); S.mode = 'normal'; S.turns.push({ k: 'ans', tk: 'ae_demo', via: 'openrouter', hrs: 18, id: 'r' + S.uid++ }); render(); }, { attrs: { 'data-fk': 'ae-other' } })));
+}
+function vAsk() {
+  const la = lastAnsId(); const items = [];
+  S.turns.forEach((x, i) => {
+    if (x.k === 'me') items.push(h('div', { class: 'bub me', text: x.tk ? t(x.tk) : x.text }));
+    else if (x.k === 'ans') {
+      const id = x.id || ('i' + i);
+      items.push(h('div', { class: 'bub bot' }, x.tk ? paras(x.tk) : h('p', { text: x.text }), quiet(x, i)));
+      if ((x.handoff || id === la) && !x.filed && S.turns.slice(i + 1).every((y) => y.k !== 'ans')) items.push(h('div', { class: 'acts' }, btn(t('ho_btn'), 'sec small', () => openHandoff(), { icon: 'external', attrs: { 'data-fk': 'ho-' + id } })));
+    }
+    else if (x.k === 'plain') items.push(h('div', { class: 'bub bot', text: x.text }));
+    else if (x.k === 'confirm') { const c = confirmCard(x.pid); if (c) items.push(c); }
+    else if (x.k === 'choice') items.push(choiceCard());
+    else if (x.k === 'suggest') { const c = suggestCard(x.hid); if (c) items.push(c); }
+    else if (x.k === 'typing') items.push(h('div', { class: 'bub bot typing', role: 'status', 'aria-label': '…' }, h('i'), h('i'), h('i')));
+    else if (x.k === 'err') items.push(errCard());
+  });
+  if (!items.length) items.push(h('div', { class: 'empty' }, icon('ask'), h('h2', { text: t('ask') }), h('p', { class: 'muted', text: t('ask_ph') })));
+  const input = h('input', { type: 'text', 'aria-label': t('ask_ph'), placeholder: t('ask_ph'), disabled: S.paused, id: 'askin', enterkeyhint: 'send', onkeydown: (e) => { if (e.key === 'Enter') sendAsk(); } });
+  const composer = h('div', null, S.paused ? h('div', { class: 'pnote', text: t('ask_paused') }) : null,
+    h('div', { class: 'composer' }, input, h('button', { type: 'button', class: 'send', 'aria-label': t('ask_send'), disabled: S.paused, 'data-fk': 'send', onclick: sendAsk }, icon('send'))));
+  return { body: h('div', { class: 'col' }, h('div', { class: 'thread' }, items)), composer };
+}
+function sendAsk() {
+  const el = $('#askin'); if (!el || S.paused) return; const v = el.value.trim(); if (!v) { el.focus(); return; }
+  S.turns.push({ k: 'me', text: v });
+  if (S.mode === 'offline') { S.turns.push({ k: 'plain', text: t('ask_off') }); render(); return; }
+  if (S.mode === 'error') { S.turns.push({ k: 'err' }); render(); return; }
+  if (S.mode === 'used') { if (!S.turns.some((x) => x.k === 'choice' && S.choice === null)) { S.choice = null; S.turns.push({ k: 'choice' }); } render(); return; }
+  S.turns.push({ k: 'typing' }); render();
+  timers.push(setTimeout(() => { S.turns = S.turns.filter((x) => x.k !== 'typing'); const via = S.connected.find((i) => eff(i) > 0 || i === 'local') || S.connected[0]; S.turns.push({ k: 'ans', tk: 'ask_demo_reply', via, hrs: via === 'local' ? 0 : Math.floor(remain(via) / 3600), id: 'r' + S.uid++ }); render(); }, reduced ? 50 : 900));
+}
+function openHandoff(kind) { S.sheet = { type: 'handoff', phase: 'prep', kind }; render(); }
+
+/* ---------- CHORES ---------- */
+function choreStatus(c) {
+  if (S.paused) return ['pause', 'st_paused', 'warn'];
+  if (S.mode === 'used' && c.st === 'running') return ['hourglass', 'st_wait', 'warn'];
+  if (S.mode === 'used' && c.st === 'new') return ['hourglass', 'st_wait', 'warn'];
+  return { running: ['play', 'st_running', 'ok'], done: ['check', 'st_done', 'ok'], sched: ['activity', 'st_sched', ''], new: ['activity', 'st_sched', ''] }[c.st];
+}
+function submitChore(text) { text = (text || '').trim(); if (!text) return; S.sheet = { type: 'estimate', text, heavy: /report|research|報告|研究/i.test(text) }; render(); }
+function vChores() {
+  const ta = h('textarea', { rows: '2', 'aria-label': t('ch_add_t'), placeholder: t('ch_add_ph'), id: 'chin', value: S.draft,
+    oninput: (e) => { S.draft = e.target.value; const b = $('#chadd'); if (b) b.disabled = !S.draft.trim(); },
+    onkeydown: (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitChore(S.draft); } } });
+  const addbox = h('div', { class: 'card addbox stack' }, h('h2', { text: t('ch_add_t') }), ta,
+    btn(t('ch_add'), 'primary block', () => submitChore(S.draft), { icon: 'plus', attrs: { id: 'chadd', disabled: !S.draft.trim(), 'data-fk': 'ch-add' } }),
+    h('div', { class: 'small muted', text: t('chips_t') }),
+    h('div', { class: 'chips' }, ['chip1', 'chip2', 'chip3'].map((k) => h('button', { type: 'button', class: 'chip', 'data-fk': k, onclick: () => submitChore(t(k)) }, t(k)))));
+  const list = S.chores.length ? S.chores.map((c) => {
+    const [ic, sk, kind] = choreStatus(c), title = c.tk ? t(c.tk) : c.text;
+    const next = S.paused ? t('st_paused') : c.nk ? t(c.nk) : (c.nraw || ''), last = c.lk ? t(c.lk) : c.lraw;
+    return h('article', { class: 'card chore' + (c.fresh ? ' new' : '') },
+      h('div', { class: 'row', style: 'margin-bottom:8px;flex-wrap:wrap' }, tag(kind, ic, t(sk)), c.leftover ? tag('ok', 'leaf', t('c_leftover')) : null, c.fresh ? tag('', 'plus', t('just_added')) : null),
+      h('h3', { text: title }),
+      h('dl', { class: 'meta' }, h('dt', { text: t('next_run') }), h('dd', { text: next }), h('dt', { text: t('last_res') }), h('dd', { text: last })),
+      c.leftover ? h('p', { class: 'small muted', style: 'margin-top:8px', text: t('c_leftover_d') }) : null,
+      h('div', { class: 'budget' }, icon('wallet'), t('c_bud', c.req)));
+  }) : [h('div', { class: 'card empty' }, icon('empty'), h('h2', { text: t('ce_title') }), h('p', { text: t('ce_body') }))];
+  const desk = effView() === 'desktop';
+  return { body: h('div', { class: 'col' }, addbox, S.chores.length ? h('div', { class: desk ? 'hgrid' : 'stack' }, list) : list) };
+}
+
+/* ---------- HELPERS ---------- */
+function helperCard(id) {
+  const H = HDB[id], local = id === 'local', left = eff(id), pct = local ? 100 : Math.round(100 * left / H.limit), err = S.mode === 'error' && id === 'groq';
+  const est = H.est;
+  return h('article', { class: 'card hcard' + (S.justAdded === id ? ' chore new' : ''), id: 'hc-' + id },
+    h('div', { class: 'head' }, gauge(pct, { size: 72, mini: true, est, center: h('span', { style: 'font-size:15px;font-weight:800' }, (est ? '≈' : '') + (local ? '∞' : pct + '%')) }),
+      h('div', { style: 'min-width:0;flex:1' }, h('h3', { text: hname(id) }), h('div', { class: 'row', style: 'flex-wrap:wrap;gap:6px;margin-top:4px' }, err ? tag('bad', 'alert', t('er_short')) : null, est ? tag('dash', 'help', t('est_tag')) : tag('', 'check', t('rep_tag'))))),
+    local ? h('div', { class: 'nums', text: t('no_limit') }) : [
+      h('div', { class: 'nums' }, est ? '≈ ' : '', left === 0 ? t('left_zero', null, fmt(H.limit)) : t(est ? 'left_est' : 'left_of', fmt(left), fmt(H.limit))),
+      h('div', { class: 'bar' + (est ? ' est' : '') + (pct < 25 ? ' low' : ''), role: 'img', 'aria-label': pct + '%' }, h('i', { style: 'width:' + pct + '%' }))],
+    !local ? h('div', { class: 'row', style: 'font-weight:600' }, icon('bolt'), h('span', null, cd(nowSec() + remain(id), 'h', '', 'refill_in'), ' · ' + hm(H.refill))) : null,
+    h('dl', null, h('dt', { text: t('good_for') }), h('dd', { text: t(H.good) })),
+    h('div', { class: 'row', style: 'flex-wrap:wrap' }, privBadge(H.priv)),
+    h('div', { class: 'srcnote' }, icon('info'), local ? t('src_local') : t(est ? 'src_est' : 'src_rep', hname(id))),
+    err ? btn(t('er_btn'), 'primary block', () => { S.flow = { id: 'groq', step: 1, phase: 'steps' }; render(); }, { attrs: { 'data-fk': 'hc-re' } }) : null,
+    h('div', null, btn(t('disconnect'), 'link', () => { S.connected = S.connected.filter((x) => x !== id); toast(t('disconnected', hname(id))); render(); }, { attrs: { style: 'margin-left:-10px', 'data-fk': 'dc-' + id } })));
+}
+function vHelpers() {
+  const desk = effView() === 'desktop';
+  const cand = Object.keys(HDB).filter((k) => !S.connected.includes(k) && k !== 'local').sort((a, b) => HDB[b].adds / HDB[b].min - HDB[a].adds / HDB[a].min);
+  if (!S.connected.includes('local')) cand.push('local');
+  const addrow = (id, i) => {
+    const H = HDB[id], local = id === 'local';
+    return h('button', { type: 'button', class: 'addrow' + (i === 0 ? ' first' : ''), 'data-fk': 'add-' + id, onclick: () => { if (local) { S.sheet = { type: 'local', boot: false }; render(); } else if (id === 'openrouter') { S.sheet = { type: 'approve', phase: 'ask', inapp: true }; render(); } else { S.flow = { id, step: 1, phase: 'steps' }; render(); } } },
+      h('span', { class: 'rank', 'aria-hidden': 'true', text: String(i + 1) }),
+      h('span', { style: 'flex:1;min-width:0' }, h('span', { class: 'nm', text: hname(id) }), i === 0 ? ' ' : '', i === 0 ? tag('ok', 'bolt', t('ad_best')) : null,
+        h('div', { class: 'meta', text: local ? t('ad_meta_local') : t('ad_meta', H.min, H.steps, fmt(H.adds)) }), h('div', { style: 'margin-top:6px' }, privBadge(H.priv))), icon('right', 'chev'));
+  };
+  const other = h('div', { class: 'stack' }, h('button', { type: 'button', class: 'disc', 'aria-expanded': S.otherOpen, 'data-fk': 'other', onclick: () => { S.otherOpen = !S.otherOpen; render(); } }, icon('box'), t('oa_title'), icon('right', 'chv')),
+    S.otherOpen ? h('div', { class: 'card' }, h('p', { class: 'small muted', style: 'margin-bottom:6px', text: t('oa_sub') }),
+      [['box', 'oa_1', 'oa_1v'], ['chip', 'oa_2', 'oa_2v'], ['link', 'oa_3', 'oa_3v']].map(([i, a, b]) => h('div', { class: 'mini' }, h('span', { class: 'ico', style: 'color:var(--accent)' }, icon(i)), h('div', { class: 't', style: 'flex:1' }, h('b', { text: t(a) }), h('small', { text: t(b) })), tag('dash', null, t('oa_tag'))))) : null);
+  const subs = h('div', { class: 'stack' }, h('div', { class: 'sect' }, t('sub_title'), h('small', { text: t('sub_sub') })),
+    h('div', { class: 'card' }, ['1', '2'].map((n) => h('div', { class: 'mini' }, h('span', { style: 'color:var(--accent)' }, icon('external')), h('div', { class: 't', style: 'flex:1' }, h('b', { text: t('sub_' + n) }), h('small', { text: t('sub_' + n + 'd') })), tag('', 'external', t('sub_tag'))))));
+  return { body: h('div', { class: 'col wide' },
+    h('div', { class: 'sect', style: 'margin-top:0' }, t('hp_yours')),
+    h('div', { class: 'hgrid' }, S.connected.map(helperCard)),
+    h('div', { class: 'sect' }, t('ad_title'), h('small', { text: t('ad_sub') })),
+    cand.length ? h('div', { class: 'stack' }, cand.map(addrow)) : h('p', { class: 'muted', text: t('ad_none') }),
+    other, subs) };
+}
+
+/* ---------- ACTIVITY ---------- */
+function vActivity() {
+  const f = S.filters, wcount = waiting();
+  const today = S.log.filter((l) => l.day === 'today' && !l.wait);
+  const sum = h('div', { class: 'card' }, h('h2', { text: t('ac_sum') }),
+    h('div', { class: 'stats' },
+      h('div', { class: 'stat' }, h('b', { text: String(S.doneBase + today.length) }), h('span', { text: t('ac_sum_a') })),
+      h('div', { class: 'stat' }, h('b', { text: (S.spent ? 94 : 100) + '%' }), h('span', { text: t('ac_sum_b') })),
+      h('div', { class: 'stat' }, h('b', { text: money(S.spent) }), h('span', { text: t('ac_sum_c') + ' · ' + money(capNtd()) }))),
+    wcount ? h('p', { class: 'small', style: 'margin-top:10px;font-weight:650', text: t('ac_sum_d', wcount) }) : null);
+  const ps = h('div', { class: 'card switchrow' }, h('div', { style: 'flex:1' }, h('h3', { text: t('ps_title') }), h('p', { class: 'small muted', text: t('ps_body') })),
+    h('button', { type: 'button', class: 'switch', role: 'switch', 'aria-checked': S.paused, 'aria-label': t('ps_title'), 'data-fk': 'ps-sw', onclick: () => setPaused(!S.paused) }, h('span', { class: 'sw', style: 'padding-left:' + (S.paused ? 9 : 38) + 'px;color:' + (S.paused ? 'var(--warn)' : 'var(--muted)'), text: S.paused ? t('ps_on') : t('ps_off') })));
+  const chip = (k, label) => h('button', { type: 'button', class: 'chip', 'aria-pressed': f.includes(k), 'data-fk': 'f-' + k, onclick: () => { S.filters = f.includes(k) ? f.filter((x) => x !== k) : f.concat(k); render(); } }, label);
+  const chips = h('div', { class: 'chips', role: 'group', 'aria-label': t('ac_filters') }, chip('left', t('ac_f_left')), chip('cost', t('ac_f_cost')), chip('wait', t('ac_f_wait')));
+  const items = [];
+  const match = (x) => !f.length || (f.includes('left') && x.left) || (f.includes('cost') && x.cost) || (f.includes('wait') && x.wait);
+  S.pending.filter((p) => !S.resolved[p.id]).forEach((p) => { if (match({ wait: 1 })) items.push({ day: 'today', node: h('div', { class: 'logitem wait' }, h('div', { class: 'tm', text: hm(nowSec()) }), h('div', { class: 'tx' }, h('p', { text: t('ac_wait_pre') + t(p.tk) }), h('small', { text: t('cf_nothing') }), h('div', null, btn(t('ac_view'), 'small sec', () => { S.sheet = { type: 'waiting' }; render(); }, { attrs: { 'data-fk': 'v-' + p.id } })))) }); });
+  S.log.forEach((l) => {
+    if (l.wait && S.choice !== null) return; if (!match(l)) return;
+    const sent = l.left ? t('ac_sent_to', l.left === 'paid' ? t('pv_unchecked') && (S.lang === 'zh' ? '付費服務' : 'a paid service') : l.left) : null;
+    items.push({ day: l.day, node: h('div', { class: 'logitem' + (l.wait ? ' wait' : '') }, h('div', { class: 'tm', text: l.time }),
+      h('div', { class: 'tx' }, h('p', { text: t(l.tk, ...(l.args || []).map((a) => (a && a.m != null ? money(a.m) : a))) }), h('small', { text: t(l.sk) }),
+        h('div', { class: 'row', style: 'flex-wrap:wrap;gap:6px' }, sent ? tag('', 'external', sent) : tag('ok', 'lock', t('ac_nothing_left')), l.cost ? tag('warn', 'wallet', money(l.cost)) : null, l.wait ? tag('warn', 'hourglass', t('ac_f_wait')) : null),
+        l.undo ? h('div', null, l.undone ? h('span', { class: 'tag' }, icon('undo'), t('undone')) : btn(t('undo'), 'small sec', () => { l.undone = true; if (l.pid) { S.resolved[l.pid] = 'no'; const p = S.pending.find((x) => x.id === l.pid); if (p) p.undone = true; } toast(t('undone')); render(); }, { icon: 'undo', attrs: { 'data-fk': 'un-' + l.id } })) : null)) });
+  });
+  const out = []; let day = null;
+  items.forEach((it) => { if (it.day !== day) { day = it.day; out.push(h('div', { class: 'logday', text: t(day === 'today' ? 'ac_day_today' : 'ac_day_yest') })); } out.push(it.node); });
+  const empty = !S.log.length && !S.pending.length;
+  return { body: h('div', { class: 'col' }, sum, ps, empty ? null : chips,
+    empty ? h('div', { class: 'card empty' }, icon('activity'), h('h2', { text: t('ae2_title') }), h('p', { text: t('ae2_body') })) : (out.length ? h('div', { class: 'stack' }, out) : h('p', { class: 'muted', text: t('ac_none_f') }))) };
+}
+
+/* ---------- SETTINGS ---------- */
+function vSettings() {
+  const cap = capNtd();
+  const capc = h('div', { class: 'card stack' }, h('h2', { text: t('cap_title') }),
+    h('div', { class: 'stepper' },
+      h('button', { type: 'button', 'aria-label': t('cap_dec'), disabled: S.capIdx === 0, 'data-fk': 'cap-', onclick: () => { S.capIdx--; render(); } }, icon('minus')),
+      h('div', { class: 'val', 'aria-live': 'polite', text: money(cap) }),
+      h('button', { type: 'button', 'aria-label': t('cap_inc'), disabled: S.capIdx === CAPS.length - 1, 'data-fk': 'cap+', onclick: () => { S.capIdx++; render(); } }, icon('plus'))),
+    h('p', { class: 'muted', text: cap === 0 ? t('cap_none') : t('cap_some', money(cap), cap) }));
+  const priv = h('div', { class: 'card stack', role: 'radiogroup', 'aria-label': t('pr_title') }, h('h2', { text: t('pr_title') }), h('p', { class: 'small muted', text: t('pr_note') }),
+    [1, 2, 3, 4].map((n, i) => h('button', { type: 'button', class: 'radio', role: 'radio', 'aria-checked': S.privIdx === i, 'data-fk': 'pc' + n, onclick: () => { S.privIdx = i; render(); } }, h('span', { class: 'dot' }), h('span', null, h('b', { text: t('pc' + n) }), h('small', { text: t('pc' + n + 'd') })))));
+  const perms = h('div', { class: 'card' }, h('h2', { text: t('pm_title') }), h('p', { class: 'small muted', style: 'margin-bottom:6px', text: t('pm_note') }),
+    S.perms.map((on, i) => h('div', { class: 'perm' + (on ? '' : ' off') }, h('p', { text: t('pm' + (i + 1)) }), on ? btn(t('revoke'), 'small sec', () => { S.perms[i] = false; render(); }, { attrs: { 'data-fk': 'rv' + i } }) : h('span', { class: 'row' }, tag('bad', 'x', t('revoked')), btn(t('allow_again'), 'small link', () => { S.perms[i] = true; render(); }, { attrs: { 'data-fk': 'rv' + i } })))));
+  const mem = h('div', { class: 'card' }, h('h2', { text: t('me_title') }), h('p', { class: 'small muted', text: t('me_note') }),
+    S.mem.map((m, i) => h('div', { class: 'memrow' }, h('input', { class: 'field', 'aria-label': t('me_title') + ' ' + (i + 1), value: m.text != null ? m.text : t(m.k), oninput: (e) => { m.text = e.target.value; } }), h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('me_remove'), 'data-fk': 'mr' + i, onclick: () => { S.mem.splice(i, 1); render(); } }, icon('trash')))),
+    h('div', { class: 'memrow' }, h('input', { class: 'field', id: 'memnew', placeholder: t('me_add_ph'), 'aria-label': t('me_add_ph'), onkeydown: (e) => { if (e.key === 'Enter') addMem(); } }), btn(t('me_add'), 'sec small', addMem, { attrs: { 'data-fk': 'mem-add' } })));
+  const lang = h('div', { class: 'card row' }, h('h2', { style: 'flex:1', text: t('lang_t') }), langSeg('ls'));
+  const ex = h('div', { class: 'card stack' }, h('h2', { text: t('ex_t') }), h('p', { class: 'muted', text: t('ex_b') }), btn(t('ex_btn'), 'sec', () => toast(t('ex_done')), { icon: 'download', attrs: { 'data-fk': 'export' } }));
+  const ab = h('div', { class: 'card stack' }, h('h2', { text: t('ab_t') }), h('p', { class: 'muted', text: t('ab_b1') }), h('p', { class: 'muted', text: t('ab_b2') }));
+  return { body: h('div', { class: 'col' }, capc, priv, perms, mem, lang, ex, ab) };
+}
+function addMem() { const el = $('#memnew'); if (el && el.value.trim()) { S.mem.push({ k: null, text: el.value.trim() }); render(); } }
+
+/* ---------- ENDPOINT (desktop) ---------- */
+function vEndpoint() {
+  return { body: h('div', { class: 'col' },
+    h('div', { class: 'card stack' }, h('p', { text: t('ep_body') }), h('div', { class: 'small muted', text: t('ep_addr') }),
+      h('div', { class: 'codebox' }, h('span', { text: 'http://localhost:8787/v1' }), btn(t('ep_copy'), 'sec small', () => toast(t('ep_copied')), { icon: 'copy', attrs: { 'data-fk': 'ep-copy' } }))),
+    h('div', { class: 'card' }, h('h2', { text: t('ep_apps') }),
+      S.apps.map((a, i) => h('div', { class: 'appline' }, h('div', { class: 't' }, h('b', { text: t(a.k) }), h('small', { text: t(a.k + 'u') })), h('code', { text: i ? 'mu_••••••7c21' : 'mu_••••••a3f9' }),
+        a.on ? btn(t('revoke'), 'sec small', () => { a.on = false; render(); }, { attrs: { 'data-fk': 'ap' + i } }) : tag('bad', 'x', t('ep_revoked')))),
+      h('div', { style: 'margin-top:8px' }, btn(t('ep_add'), 'primary', () => toast(t('ep_add_done')), { icon: 'plus', attrs: { 'data-fk': 'ep-add' } }))),
+    h('div', { class: 'card stack' }, h('p', { class: 'row', style: 'align-items:flex-start' }, icon('lock'), t('ep_note1')), h('p', { class: 'row muted', style: 'align-items:flex-start' }, icon('wallet'), t('ep_note2')))) };
+}
+
+/* ---------- sheets ---------- */
+function layer(sheet, onScrim, extra) {
+  return h('div', { class: 'layer' }, h('div', { class: 'scrim', onclick: onScrim || null }), sheet);
+}
+function closeSheet() { S.sheet = null; render(); }
+function sheetEl(key, kids) {
+  const first = lastSheetKey !== key; lastSheetKey = key;
+  return h('div', { class: 'sheet' + (first && !reduced ? ' enter' : ''), role: 'dialog', 'aria-modal': 'true' }, h('div', { class: 'grab' }), kids);
+}
+function renderSheet() {
+  const sh = S.sheet; if (!sh) { lastSheetKey = null; return null; }
+  if (sh.type === 'approve') {
+    const k = 'approve';
+    if (sh.phase === 'ok') return layer(sheetEl(k, [h('div', { class: 'okmark' }, icon('check')), h('h2', { style: 'text-align:center', text: t('a_ok') })]));
+    return layer(sheetEl(k, [h('div', { class: 'sample', text: t('a_sample') }), h('h2', { text: t('a_title') }),
+      h('div', { class: 'stack' }, h('p', { class: 'row', style: 'align-items:flex-start' }, h('span', { style: 'color:var(--accent)' }, icon('check')), t('a_can')), h('p', { class: 'row', style: 'align-items:flex-start' }, h('span', { style: 'color:var(--bad)' }, icon('x')), t('a_cant'))),
+      btn(t('a_approve'), 'primary block', approve, { attrs: { 'data-autofocus': '1', 'data-fk': 'approve' } }), btn(t('a_cancel'), 'sec block', closeSheet, { attrs: { 'data-fk': 'a-cancel' } })]), closeSheet);
+  }
+  if (sh.type === 'local') {
+    return layer(sheetEl('local', [h('h2', { text: t('l_title') }), h('div', { class: 'progress', role: 'progressbar', 'aria-label': t('l_title') }, h('i')), h('p', { class: 'small muted', text: t('l_note') })]));
+  }
+  if (sh.type === 'waiting') {
+    const ps = S.pending.filter((p) => !S.resolved[p.id]);
+    return layer(sheetEl('waiting', [h('h2', { text: t('wt_title') }), ps.length ? ps.map((p) => h('div', { class: 'cardx' }, h('div', { class: 'lead' }, h('span', { class: 'ico' }, icon('file')), h('div', null, h('h3', { text: t(p.tk) }), h('p', { class: 'small muted', text: t(p.bk) }))),
+      h('div', { class: 'btnrow' }, btn(t('cf_yes'), 'primary', () => confirmPending(p.id), { attrs: { 'data-fk': 'wy-' + p.id } }), btn(t('cf_no'), 'sec', () => { S.resolved[p.id] = 'no'; render(); }, { attrs: { 'data-fk': 'wn-' + p.id } })))) : null,
+      S.choice === null && S.turns.some((x) => x.k === 'choice') ? h('button', { type: 'button', class: 'opt best', onclick: () => { S.sheet = null; go('ask'); } }, h('span', { class: 'ico' }, icon('hourglass')), h('span', null, h('b', { text: t('ch_title') }), h('small', { text: t('ch_body') }))) : null,
+      !ps.length && !(S.choice === null && S.turns.some((x) => x.k === 'choice')) ? h('p', { class: 'muted', text: t('wt_empty') }) : null,
+      btn(t('close'), 'sec block', closeSheet, { attrs: { 'data-autofocus': '1', 'data-fk': 'w-close' } })]), closeSheet);
+  }
+  if (sh.type === 'estimate') {
+    const heavy = sh.heavy, e = earliest(), used = S.mode === 'used', raised = S.raised;
+    const c = heavy ? t('es_c2') : t('es_c1');
+    return layer(sheetEl('estimate', [h('h2', { text: t('es_title') }),
+      h('div', { class: 'quote', text: '“' + sh.text + '”' }),
+      h('dl', { class: 'kv' }, h('dt', { text: t('es_type') }), h('dd', { text: t(heavy ? 'es_t2' : 'es_t1') }),
+        h('dt', { text: t('es_ceil') }), h('dd', { text: c + (raised ? ' × 2' : '') }),
+        h('dt', { text: t('es_cost') }), h('dd', { text: t('es_cost_v', money(0)) }),
+        h('dt', { text: t('es_when') }), h('dd', { text: used ? t('c_new_n_used', hm(nowSec() + (e ? e.s : 0))) : t('es_when_now') })),
+      raised ? h('p', { class: 'small', style: 'color:var(--accent);font-weight:650', text: t('es_raised') }) : null,
+      h('p', { class: 'small muted', text: t('es_stop') }), used ? h('p', { class: 'small', style: 'color:var(--warn);font-weight:650', text: t('es_used_note') }) : null,
+      btn(t('es_start'), 'primary block', () => startChore(sh), { attrs: { 'data-autofocus': '1', 'data-fk': 'es-start' } }),
+      h('div', { class: 'btnrow' }, btn(t('es_raise'), 'sec small', () => { S.raised = !S.raised; render(); }, { attrs: { 'data-fk': 'es-raise', 'aria-pressed': raised } }), btn(t('es_cancel'), 'sec small', () => { S.raised = false; closeSheet(); }, { attrs: { 'data-fk': 'es-cancel' } }))]), closeSheet);
+  }
+  if (sh.type === 'handoff') {
+    const lastMe = [...S.turns].reverse().find((x) => x.k === 'me'); const q = sh.kind === 'report' ? t('t2_q') : lastMe ? (lastMe.tk ? t(lastMe.tk) : lastMe.text) : t('t2_q');
+    if (sh.phase === 'opened') return layer(sheetEl('handoff2', [h('div', { class: 'okmark' }, icon('external')), h('h2', { style: 'text-align:center', text: t('ho_o_title') }), h('p', { class: 'muted', style: 'text-align:center', text: t('ho_o_body') }),
+      btn(t('ho_paste'), 'primary block', () => pasteBack(sh), { attrs: { 'data-autofocus': '1', 'data-fk': 'ho-paste' } }), btn(t('ho_later'), 'sec block', closeSheet, { attrs: { 'data-fk': 'ho-later' } })]), closeSheet);
+    return layer(sheetEl('handoff', [h('h2', { text: t('ho_title') }),
+      h('div', { class: 'stack' }, h('h3', { text: t('ho_send_h') }), h('div', { class: 'quote' }, h('b', { text: t('ho_q_h') + ': ' }), q), h('div', { class: 'quote' }, h('b', { text: t('ho_ctx_h') + ': ' }), sh.kind === 'report' ? t('ho_ctx') : t('d_sent_files')),
+        h('p', { class: 'small row', style: 'align-items:flex-start;color:var(--accent);font-weight:650' }, icon('lock'), t('ho_not'))),
+      h('div', { class: 'stack' }, h('h3', { text: t('ho_how_h') }), h('ol', { class: 'steps' }, ['ho_s1', 'ho_s2', 'ho_s3'].map((k) => h('li', { text: t(k) })))),
+      btn(t('ho_open'), 'primary block', () => { S.sheet = { type: 'handoff', phase: 'opened', kind: sh.kind }; if (sh.kind === 'report') S.choice = 'hand'; addLog({ tk: 'lg_hand', sk: 'lg_hand_s', left: 'ChatGPT' }); render(); }, { icon: 'external', attrs: { 'data-autofocus': '1', 'data-fk': 'ho-open' } }),
+      btn(t('ho_cancel'), 'sec block', closeSheet, { attrs: { 'data-fk': 'ho-cancel' } })]), closeSheet);
+  }
+  return null;
+}
+function pasteBack(sh) { S.turns.push({ k: 'ans', tk: 'ho_filed', filed: true, id: 'f' + S.uid++ }); S.sheet = null; S.tab = 'ask'; render(true); }
+function approve() {
+  const inapp = S.sheet && S.sheet.inapp;
+  S.sheet = { type: 'approve', phase: 'ok', inapp }; render();
+  if (inapp) { timers.push(setTimeout(() => { connectHelper('openrouter'); S.sheet = null; S.tab = 'helpers'; S.justAdded = 'openrouter'; render(true); }, reduced ? 80 : 900)); return; }
+  timers.push(setTimeout(() => { loadFreshAfterConnect('or'); render(true); }, reduced ? 80 : 1100));
+}
+function startChore(sh) {
+  const used = S.mode === 'used', e = earliest();
+  const c = { id: 'u' + S.uid++, text: sh.text, st: used ? 'new' : 'sched', nraw: used ? t('c_new_n_used', hm(nowSec() + (e ? e.s : 0))) : t('c_new_n'), lraw: t('c_new_l'), req: sh.heavy ? 150 * (S.raised ? 2 : 1) : 40 * (S.raised ? 2 : 1), fresh: true };
+  S.chores.forEach((x) => (x.fresh = false)); S.chores.unshift(c); S.draft = ''; S.raised = false; S.sheet = null;
+  addLog({ tk: 'lg_chore', args: [sh.text], sk: 'lg_chore_s' });
+  if (S.screen !== 'app') S.screen = 'app';
+  S.tab = 'chores'; render(true); toast(t('added'));
+}
+
+/* ---------- guided key flow ---------- */
+function stepKeys(n) { return n >= 4 ? ['signin', 'create', 'name', 'copy'] : ['signin', 'create', 'copy']; }
+function advanceFlow() {
+  const f = S.flow, n = HDB[f.id].steps;
+  if (f.step < n) { f.step++; render(); } else { f.phase = 'prompt'; render(); }
+}
+function renderFlow() {
+  const f = S.flow; if (!f) { lastFlowKey = null; return null; }
+  const H = HDB[f.id], keys = stepKeys(H.steps), n = keys.length, cur = keys[Math.min(f.step, n) - 1], desk = effView() === 'desktop';
+  let pg;
+  if (cur === 'signin') pg = [h('h3', { text: t('mp_h1') }), h('div', { class: 'pagelabel', text: t('mp_email') }), h('div', { class: 'fakein', text: 'mei@example.com' }), h('button', { type: 'button', class: 'pbtn hl', onclick: advanceFlow, 'data-fk': 'pg' }, t('mp_btn1'))];
+  else if (cur === 'create') pg = [h('h3', { text: t('mp_h2') }), h('p', { class: 'pagelabel', text: t('mp_none') }), h('button', { type: 'button', class: 'pbtn hl', onclick: advanceFlow, 'data-fk': 'pg' }, t('mp_create'))];
+  else if (cur === 'name') pg = [h('h3', { text: t('mp_h_name') }), h('div', { class: 'pagelabel', text: t('mp_name') }), h('div', { class: 'fakein', text: 'Muse' }), h('button', { type: 'button', class: 'pbtn hl', onclick: advanceFlow, 'data-fk': 'pg' }, t('mp_submit'))];
+  else pg = [h('h3', { text: t('mp_h3') }), h('div', { class: 'fakein', text: 'sk-demo-8f3a52d7c0e1b94a…c91d' }), h('p', { class: 'pagelabel', text: t('mp_warn') }), h('button', { type: 'button', class: 'pbtn hl', onclick: advanceFlow, 'data-fk': 'pg' }, t('mp_copy'))];
+  const stepCard = f.phase === 'steps' ? h('div', { class: 'stepcard', role: 'region', 'aria-label': t('gk_step', f.step, n) },
+    h('div', { class: 'sn' }, h('span', { class: 'dots', 'aria-hidden': 'true' }, keys.map((_, i) => h('i', { class: i < f.step ? 'on' : '' }))), t('gk_step', f.step, n), h('span', { class: 'muted', style: 'font-weight:500', text: '· ' + t('gk_eta', H.min) })),
+    h('h2', { text: t('gk_s_' + cur + '_t', hname(f.id)) }), h('p', { class: 'muted', text: t('gk_s_' + cur + '_b') }),
+    btn(cur === 'copy' ? t('mp_copy') : t('gk_next'), 'primary block', advanceFlow, { attrs: { 'data-autofocus': '1', 'data-fk': 'gk-next' } }),
+    btn(t('gk_leave'), 'link', () => { S.flow = null; render(); }, { attrs: { 'data-fk': 'gk-leave' } })) : null;
+  let sheet = null;
+  if (f.phase === 'prompt') sheet = layer(sheetEl('gkprompt', [h('div', { class: 'okmark', style: 'background:var(--accent-soft);color:var(--accent)' }, icon('copy')), h('h2', { style: 'text-align:center', text: t('gk_pr_t') }), h('p', { class: 'muted', style: 'text-align:center', text: t('gk_pr_b', hname(f.id)) }),
+    btn(t('gk_use'), 'primary block', () => { f.phase = 'test'; render(); timers.push(setTimeout(() => { if (S.flow === f && f.phase === 'test') { f.phase = 'result'; connectHelper(f.id); render(); } }, reduced ? 100 : 1500)); }, { attrs: { 'data-autofocus': '1', 'data-fk': 'gk-use' } }),
+    btn(t('gk_nouse'), 'sec block', () => { f.phase = 'steps'; render(); }, { attrs: { 'data-fk': 'gk-no' } })]));
+  if (f.phase === 'test') sheet = layer(sheetEl('gktest', [h('div', { class: 'spinner', role: 'status', 'aria-label': t('gk_test_t') }), h('h2', { style: 'text-align:center', text: t('gk_test_t') }), h('p', { class: 'muted', style: 'text-align:center', text: t('gk_test_b') })]));
+  if (f.phase === 'result') sheet = layer(sheetEl('gkresult', [h('div', { class: 'okmark' }, icon('check')), h('h2', { style: 'text-align:center', text: t('gk_ok_t', hname(f.id)) }),
+    h('div', { class: 'gain' }, h('p', { class: 'row', style: 'font-weight:700' }, icon('plus'), t('gk_ok_b', fmt(H.adds))), H.priv === 'learn' ? h('p', { class: 'row' }, icon('eye'), t('gk_n_learn', hname(f.id))) : null, H.est ? h('p', { class: 'row' }, icon('help'), t('gk_n_est', hname(f.id))) : null),
+    btn(t('gk_done'), 'primary block', () => { S.flow = null; S.tab = 'helpers'; S.justAdded = f.id; render(true); const jid = f.id; timers.push(setTimeout(() => { if (S.justAdded === jid) S.justAdded = null; }, 4000)); }, { attrs: { 'data-autofocus': '1', 'data-fk': 'gk-done' } })]));
+  const key = 'flow-' + f.id + f.phase + f.step;
+  return h('div', { class: 'flow', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('gk_sample') },
+    h('div', { class: 'fbar' }, h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('close'), 'data-fk': 'fx', onclick: () => { S.flow = null; render(); } }, icon('x')), h('div', { class: 'url' }, icon('lock'), H.url || 'example.com')),
+    h('div', { class: 'page' }, h('div', { class: 'pagelabel', text: t('gk_sample') }), h('div', { class: 'pg' }, pg)),
+    stepCard, sheet);
+}
+function connectHelper(id) {
+  if (!S.connected.includes(id)) { S.connected.push(id); S.left[id] = id === 'local' ? 0 : Math.round(HDB[id].limit * 0.98); addLog({ tk: 'lg_helper', args: [hname(id)], sk: 'lg_helper_s', left: null }); }
+  if (S.mode === 'error' && id === 'groq') { S.mode = 'normal'; S.demo = 'normal'; }
+}
+
+/* ---------- desktop popover ---------- */
+function renderPop() {
+  const pop = $('#pop'); const desk = effView() === 'desktop'; pop.hidden = !desk; if (!desk) { pop.replaceChildren(); return; }
+  const pct = pctLeft(), e = earliest(), [gi, gk] = gstat(pct);
+  rc(pop,
+    h('div', { class: 'menubar', 'aria-hidden': 'true' }, h('span', { class: 'mi' }, gauge(pct, { size: 18, mini: true }), pct + '%'), icon('wifi'), icon('battery'), t('menubar_time', hm(nowSec()))),
+    h('section', { class: 'popover', 'aria-label': 'Muse' },
+      h('div', { class: 'g' }, gauge(pct, { size: 120, paused: S.paused, mini: true, center: h('span', { style: 'font-weight:800;font-size:24px;margin-top:-6px' }, pct + '%') }),
+        h('div', { class: 'gtx' }, h('span', { class: 'small muted', text: t('g_label') }), h('span', { class: 'row', style: 'gap:6px;font-weight:700;font-size:17px;margin-top:4px' }, icon(S.paused ? 'pause' : gi), S.paused ? t('paused_label') : t(gk)))),
+      e ? h('div', { class: 'line' }, h('span', { text: t('nr_label') }), h('b', null, cd(nowSec() + e.s, 'hms'))) : null,
+      h('div', { class: 'line' }, h('span', { text: t('r_spent') }), h('b', { text: money(S.spent) + ' / ' + money(capNtd()) })),
+      h('div', { class: 'btnrow' }, btn(t(S.paused ? 'resume' : 'pause_all'), S.paused ? 'primary' : 'sec', () => setPaused(!S.paused), { icon: S.paused ? 'play' : 'pause', attrs: { 'data-fk': 'pp-pause' } }), btn(t('pp_open'), 'sec', () => { S.screen === 'app' && go('today'); }, { attrs: { 'data-fk': 'pp-open' } }))));
+}
+
+/* ---------- toolbar, render loop ---------- */
+function renderToolbar() {
+  const tb = $('#tb'); const narrow = innerWidth < 800;
+  const sel = h('select', { id: 'demosel', 'aria-label': t('demo_label'), onchange: (e) => applyDemo(e.target.value) }, DEMO_STATES.map((d) => h('option', { value: d, selected: S.demo === d, text: t('demo_' + d) })));
+  rc(tb, h('span', { class: 'brand', text: t('brandTitle') }), h('span', { class: 'mock', 'data-mock': '1' }, icon('info'), t('mock')),
+    narrow ? null : h('div', { class: 'grp' }, h('span', { class: 'lbl', text: t('view_label') }), h('div', { class: 'seg', role: 'group', 'aria-label': t('view_label') }, [['phone', 'view_phone'], ['desktop', 'view_desktop']].map(([v, k]) => h('button', { type: 'button', 'aria-pressed': S.view === v, 'data-fk': 'v-' + v, onclick: () => { S.view = v; S.animate = true; render(); } }, t(k))))),
+    h('div', { class: 'grp' }, h('span', { class: 'lbl', text: t('lang_label') }), h('div', { class: 'seg', role: 'group', 'aria-label': t('lang_label') }, [['zh', '繁體中文'], ['en', 'English']].map(([c, n]) => h('button', { type: 'button', lang: c === 'zh' ? 'zh-Hant' : 'en', 'aria-pressed': S.lang === c, 'data-fk': 'tl-' + c, onclick: () => setLang(c) }, n)))),
+    h('div', { class: 'grp' }, h('label', { class: 'lbl', for: 'demosel', text: t('demo_label') }), sel),
+    h('div', { class: 'sp' }),
+    h('button', { type: 'button', class: 'tbtn', 'data-fk': 'skip', onclick: () => { loadFull(); render(true); } }, t('skipapp')),
+    h('button', { type: 'button', class: 'tbtn', 'data-fk': 'restart', onclick: restart }, t('restart')));
+}
+function restart() { timers.forEach(clearTimeout); timers = []; const keep = { lang: S.lang, view: S.view }; S = fresh(); Object.assign(S, keep); render(true); }
+function setLang(c) { S.lang = c; document.documentElement.lang = c === 'zh' ? 'zh-Hant' : 'en'; document.title = t('brandTitle'); render(); }
+
+function chrome(desk) {
+  if (desk) return h('div', { class: 'winbar' }, h('span', { class: 'dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')), h('span', { class: 'mid', text: 'Muse' }), h('span', { class: 'mock', 'data-mock': '1' }, icon('info'), t('mock')));
+  return h('div', { class: 'fakebar', 'aria-hidden': 'true' }, h('span', { 'data-clock': '1', text: hm(nowSec()) }), h('span', { class: 'mock', 'data-mock': '1' }, t('mock')), h('span', { class: 'row', style: 'gap:6px' }, icon('wifi'), icon('battery')));
+}
+function render(resetScroll) {
+  const dev = $('#device'); const desk = effView() === 'desktop';
+  const old = $('#scroll'); const st = old ? old.scrollTop : 0;
+  dev.className = 'device ' + (desk ? 'desktop' : 'phone');
+  const app = renderApp(), sh = renderSheet(), fl = renderFlow();
+  rc(dev, chrome(desk), app, fl, sh, TOASTEL);
+  document.documentElement.lang = S.lang === 'zh' ? 'zh-Hant' : 'en';
+  const sc = $('#scroll');
+  if (sc) {
+    if (S.tab === 'ask' && S.screen === 'app') sc.scrollTop = sc.scrollHeight; else sc.scrollTop = resetScroll ? 0 : st;
+    if (S.tab === 'helpers' && S.justAdded) { const c = document.getElementById('hc-' + S.justAdded); if (c) sc.scrollTop = Math.max(0, c.offsetTop - 70); }
+  }
+  renderToolbar(); renderPop(); tick();
+  const af = dev.querySelector('[data-autofocus]'); const key = (S.sheet && S.sheet.type + (S.sheet.phase || '')) || (S.flow && 'f' + S.flow.phase + S.flow.step) || null;
+  if (key && af && key !== render._k) af.focus({ preventScroll: true });
+  else if (!key && lastFk) { const el = document.querySelector('[data-fk="' + lastFk + '"]'); if (el && !el.disabled) el.focus({ preventScroll: true }); }
+  render._k = key;
+}
+function tick() {
+  document.querySelectorAll('[data-cd]').forEach((el) => { const tg = +el.dataset.cd; let s = tg - nowSec(); if (s < 0) s += 86400; const d = dur(s, el.dataset.fmt); el.textContent = el.dataset.tpl ? t(el.dataset.tpl, d) : d; });
+  const c = document.querySelector('[data-clock]'); if (c) c.textContent = hm(nowSec());
+  const m = document.querySelector('.menubar'); if (m) m.lastChild.textContent = t('menubar_time', hm(nowSec()));
+}
+document.addEventListener('click', (e) => { const f = e.target.closest && e.target.closest('[data-fk]'); lastFk = f ? f.dataset.fk : null; }, true);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { if (S.flow) { if (S.flow.phase === 'steps') { S.flow = null; render(); } } else if (S.sheet && S.sheet.type !== 'local' && S.sheet.phase !== 'ok') closeSheet(); }
+  if (e.key === 'Tab') {
+    const lay = document.querySelector('.layer, .stepcard, .flow'); if (!lay) return;
+    const root = document.querySelector('.layer') || document.querySelector('.flow');
+    const f = [...root.querySelectorAll('button,input,[tabindex]:not([tabindex="-1"])')].filter((x) => !x.disabled && x.offsetParent !== null); if (!f.length) return;
+    const first = f[0], last = f[f.length - 1];
+    if (!root.contains(document.activeElement)) { first.focus(); e.preventDefault(); }
+    else if (e.shiftKey && document.activeElement === first) { last.focus(); e.preventDefault(); }
+    else if (!e.shiftKey && document.activeElement === last) { first.focus(); e.preventDefault(); }
+  }
+});
+addEventListener('resize', () => { render(); });
+(function boot() {
+  S = fresh(); TOASTEL = h('div', { id: 'toast', role: 'status', 'aria-live': 'polite' });
+  const q = new URLSearchParams(location.search);
+  if (q.get('lang') === 'en') S.lang = 'en'; if (q.get('view') === 'desktop') S.view = 'desktop';
+  document.title = t('brandTitle'); render();
+  const demo = q.get('demo'); if (demo === 'app') { loadFull(); render(); } else if (DEMO_STATES.includes(demo)) applyDemo(demo);
+  if (q.get('tab') && S.screen === 'app') { S.tab = q.get('tab'); render(); }
+  setInterval(tick, 1000);
+  window.__muse = { get S() { return S; }, render, loadFull, applyDemo };
+})();
+</script>
+</body>
+</html>
