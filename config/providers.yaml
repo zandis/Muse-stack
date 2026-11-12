@@ -56,7 +56,7 @@ providers:
       region: us
       commercial_use: allowed
       terms_url: https://aistudio.google.com/docs/terms
-      note: "Free tier: Google uses prompts and responses to improve products and human reviewers may read them. Free tier may not serve EEA/UK/CH end users."
+      note: "Unpaid tier: Google uses prompts and responses to improve products, human reviewers may read them, and the terms say not to submit sensitive, confidential or personal information. Must be 18+. Apps offered to EEA/UK/CH users must use the paid tier. Outputs may not be used to build competing models."
     key_url: https://aistudio.google.com/apikey
     notes: >-
       Google AI Studio free tier. The pricing page marks the models below
@@ -142,7 +142,7 @@ providers:
       region: us
       commercial_use: allowed
       terms_url: https://groq.com/terms-of-use/
-      note: "Not re-checked. Treated as unknown, so the private class skips it."
+      note: "Training and review terms not checked, so the private class skips it. The services agreement bars reselling or leasing access."
     key_url: https://console.groq.com/keys
     notes: >-
       Public models page lists openai/gpt-oss-20b and openai/gpt-oss-120b as
@@ -181,7 +181,7 @@ providers:
       region: us
       commercial_use: prohibited
       terms_url: https://cohere.com/pricing
-      note: "Trial keys are not permitted for production or commercial use."
+      note: "Trial keys are not permitted for production or commercial use (1,000 calls a month). One account only. The 2022 Terms of Use are written for business use and exclude personal or household purposes; read them before relying on a trial key."
     key_url: https://dashboard.cohere.com/api-keys
     notes: >-
       Trial keys are free and, per Cohere's rate-limit docs, capped at 1,000
@@ -236,7 +236,7 @@ providers:
       region: varies
       commercial_use: unknown
       terms_url: https://openrouter.ai/terms
-      note: "Free endpoints follow the upstream host; many log or train on prompts."
+      note: "Some free models store or train on inputs. Extra accounts or keys do not raise limits and are prohibited. No reselling or transferring access."
     key_url: https://openrouter.ai/keys
     extra_headers:
       HTTP-Referer: https://github.com/zandis/muse-stack
