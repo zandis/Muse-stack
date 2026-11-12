@@ -146,6 +146,7 @@ class _Note:
     codes: set[str] = field(default_factory=set)
     decisions: list[ration.Decision] = field(default_factory=list)
     checked: set[str] = field(default_factory=set)  # deployment ids the filter allowed
+    sent: dict[str, dict] = field(default_factory=dict)  # deployment id -> model_info, per attempt
 
 
 def _metadata(data: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -571,6 +572,9 @@ class MuseHook(CustomLogger):
         info = _model_info(kwargs)
         if not info:
             return None  # not a router call (e.g. a health probe); nothing to judge
+        sent = self._note(_call_id(kwargs))
+        if sent is not None and info.get("id"):
+            sent.sent[str(info["id"])] = dict(info)  # after a fallback, request data holds a stale model_info
         try:
             privacy = self.privacy_of(kwargs)
             ok = policy.allowed(info, privacy)
@@ -776,7 +780,11 @@ class MuseHook(CustomLogger):
                 out["x-muse-app"] = app_of(data).name
             note = self._note(_call_id(data), create=False)
             if response is not None:
-                info = (litellm_call_info or {}).get("model_info") or _model_info(data)
+                call_info = litellm_call_info or {}
+                info = call_info.get("model_info") or _model_info(data)
+                answered = call_info.get("model_id") or (getattr(response, "_hidden_params", None) or {}).get("model_id")
+                if note is not None and answered and str(answered) in note.sent:
+                    info = note.sent[str(answered)]
                 if info.get("provider"):
                     out["x-muse-provider"] = str(info["provider"])
                 if info.get("id"):
