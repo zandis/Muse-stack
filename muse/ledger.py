@@ -8,6 +8,12 @@ Why these choices:
 - Only counts, ids, statuses and times are stored. There is no column that
   could hold prompt or response text, and no key values.
 - Every method takes `now` (or uses the injected clock) so tests control time.
+- Schema changes are additive (ALTER TABLE ... ADD COLUMN inside the same
+  IMMEDIATE transaction that creates the tables), so an old file opens, and two
+  processes starting at once serialise on the write lock: the second sees the
+  columns already there and skips them.
+- "Today" for per-app caps and the paid cap is the user's local calendar day
+  (MUSE_TZ, default the system zone), not a provider's quota day.
 """
 
 from __future__ import annotations
@@ -18,12 +24,13 @@ import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
+from datetime import tzinfo
 from typing import Any, Callable, Iterator, Mapping
 
 from muse import paths
 from muse.quota import day_start, month_start
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 RETENTION_SECONDS = 90 * 86400
 PRUNE_EVERY_SECONDS = 86400
 BUSY_TIMEOUT_MS = 5000
@@ -45,7 +52,11 @@ CREATE TABLE IF NOT EXISTS calls (
     tokens_in INTEGER,
     tokens_out INTEGER,
     latency_ms INTEGER,
-    privacy TEXT NOT NULL DEFAULT 'standard'
+    privacy TEXT NOT NULL DEFAULT 'standard',
+    app TEXT,
+    priority TEXT,
+    cost_usd REAL,
+    paid INTEGER
 );
 CREATE INDEX IF NOT EXISTS calls_ts ON calls (ts);
 CREATE INDEX IF NOT EXISTS calls_upstream_ts ON calls (upstream, ts);
@@ -68,6 +79,31 @@ CREATE TABLE IF NOT EXISTS limits (
     seen_at REAL NOT NULL,
     PRIMARY KEY (scope, window, metric)
 );
+CREATE TABLE IF NOT EXISTS rations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts REAL NOT NULL,
+    app TEXT,
+    priority TEXT,
+    alias TEXT,
+    kind TEXT NOT NULL,
+    code TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS rations_ts ON rations (ts);
+"""
+
+# Columns added after schema 1, in order: (name, SQL type). Old files get them by ALTER.
+_ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("app", "TEXT"),
+    ("priority", "TEXT"),
+    ("cost_usd", "REAL"),
+    ("paid", "INTEGER"),
+)
+
+# Indexes on added columns; created after the ALTERs so they exist on old files too.
+_INDEXES = """
+CREATE INDEX IF NOT EXISTS calls_app_ts ON calls (app, ts);
+CREATE INDEX IF NOT EXISTS calls_paid_ts ON calls (ts) WHERE paid=1;
+CREATE INDEX IF NOT EXISTS calls_interactive_ok ON calls (upstream, ts) WHERE priority='interactive' AND ok=1;
 """
 
 _initialised: set[str] = set()
@@ -85,6 +121,7 @@ class Ledger:
     ) -> None:
         self.path = Path(path) if path is not None else paths.ledger_path(environ)
         self.clock = clock
+        self.environ = environ
 
     # ------------------------------------------------------------ plumbing
 
@@ -111,14 +148,28 @@ class Ledger:
         conn.execute("PRAGMA journal_mode=DELETE")
         conn.execute("BEGIN IMMEDIATE")
         try:
+            row = conn.execute(
+                "SELECT value FROM meta WHERE key='schema_version'"
+            ).fetchone() if conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='meta'"
+            ).fetchone() else None
+            if row is not None and int(row["value"]) > SCHEMA_VERSION:
+                raise RuntimeError(f"ledger schema {row['value']} is newer than this code ({SCHEMA_VERSION})")
             for statement in _SCHEMA.split(";"):
                 if statement.strip():
                     conn.execute(statement)
-            row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-            if row is None:
-                conn.execute("INSERT INTO meta (key, value) VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),))
-            elif int(row["value"]) > SCHEMA_VERSION:
-                raise RuntimeError(f"ledger schema {row['value']} is newer than this code ({SCHEMA_VERSION})")
+            have = {r["name"] for r in conn.execute("PRAGMA table_info(calls)")}
+            for name, sql_type in _ADDED_COLUMNS:
+                if name not in have:
+                    conn.execute(f"ALTER TABLE calls ADD COLUMN {name} {sql_type}")
+            for statement in _INDEXES.split(";"):
+                if statement.strip():
+                    conn.execute(statement)
+            conn.execute(
+                "INSERT INTO meta (key, value) VALUES ('schema_version', ?)"
+                " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (str(SCHEMA_VERSION),),
+            )
             conn.execute("COMMIT")
         except BaseException:
             conn.execute("ROLLBACK")
@@ -170,16 +221,23 @@ class Ledger:
         latency_ms: int | None = None,
         privacy: str = "standard",
         now: float | None = None,
+        app: str | None = None,
+        priority: str | None = None,
+        cost_usd: float | None = None,
+        paid: bool | None = None,
     ) -> None:
-        """One upstream attempt. Counts only; never content."""
+        """One upstream attempt. Counts only; never content. cost_usd None = unknown."""
         ts = self._now(now)
         with self._write() as conn:
             conn.execute(
                 "INSERT INTO calls (ts, provider, deployment_id, upstream, alias, ok, status,"
-                " tokens_in, tokens_out, latency_ms, privacy) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                " tokens_in, tokens_out, latency_ms, privacy, app, priority, cost_usd, paid)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     ts, str(provider), str(deployment_id), str(upstream), alias, 1 if ok else 0,
                     _opt_int(status), _opt_int(tokens_in), _opt_int(tokens_out), _opt_int(latency_ms), str(privacy),
+                    None if app is None else str(app), None if priority is None else str(priority),
+                    _opt_float(cost_usd), None if paid is None else (1 if paid else 0),
                 ),
             )
             last = conn.execute("SELECT value FROM meta WHERE key='last_prune'").fetchone()
@@ -247,6 +305,104 @@ class Ledger:
                 out[window] = {"requests": int(row["n"]), "tokens": int(row["t"])}
         return out
 
+    # ------------------------------------------------------------ per-app and paid (local day)
+
+    def _tz(self, tz: tzinfo | None) -> tzinfo:
+        if tz is not None:
+            return tz
+        from muse.ration import resolve_tz
+
+        env = os.environ if self.environ is None else self.environ
+        return resolve_tz(env.get("MUSE_TZ", "").strip())
+
+    def local_day(self, now: float | None = None, tz: tzinfo | None = None) -> tuple[float, float]:
+        """[start, end) of the user's local calendar day (MUSE_TZ) containing `now`."""
+        from muse.ration import local_day_bounds
+
+        return local_day_bounds(self._now(now), self._tz(tz))
+
+    def app_usage(self, app: str, *, now: float | None = None, tz: tzinfo | None = None) -> dict[str, Any]:
+        """Today's successful calls for one app: {requests, tokens, cost_usd, unknown_cost_calls}."""
+        start, end = self.local_day(now, tz)
+        with self._read() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n, COALESCE(SUM(COALESCE(tokens_in,0)+COALESCE(tokens_out,0)),0) AS t,"
+                " COALESCE(SUM(cost_usd),0) AS c, COALESCE(SUM(CASE WHEN paid=1 AND cost_usd IS NULL THEN 1 ELSE 0 END),0) AS u"
+                " FROM calls WHERE app=? AND ok=1 AND ts>=? AND ts<?",
+                (app, start, end),
+            ).fetchone()
+        return {"requests": int(row["n"]), "tokens": int(row["t"]), "cost_usd": float(row["c"]), "unknown_cost_calls": int(row["u"])}
+
+    def usage_by_app(self, *, now: float | None = None, tz: tzinfo | None = None) -> dict[str | None, dict[str, Any]]:
+        """Today's usage for every app that made a call (None = calls from before apps existed).
+
+        {app: {requests, failures, tokens, cost_usd, paid_calls, unknown_cost_calls, last_ts}}
+        """
+        start, end = self.local_day(now, tz)
+        with self._read() as conn:
+            rows = conn.execute(
+                "SELECT app, SUM(ok) AS n, SUM(1-ok) AS f,"
+                " COALESCE(SUM(CASE WHEN ok=1 THEN COALESCE(tokens_in,0)+COALESCE(tokens_out,0) ELSE 0 END),0) AS t,"
+                " COALESCE(SUM(cost_usd),0) AS c, COALESCE(SUM(CASE WHEN paid=1 AND ok=1 THEN 1 ELSE 0 END),0) AS p,"
+                " COALESCE(SUM(CASE WHEN paid=1 AND ok=1 AND cost_usd IS NULL THEN 1 ELSE 0 END),0) AS u, MAX(ts) AS last"
+                " FROM calls WHERE ts>=? AND ts<? GROUP BY app ORDER BY app",
+                (start, end),
+            ).fetchall()
+        return {
+            row["app"]: {
+                "requests": int(row["n"] or 0), "failures": int(row["f"] or 0), "tokens": int(row["t"]),
+                "cost_usd": float(row["c"]), "paid_calls": int(row["p"]), "unknown_cost_calls": int(row["u"]),
+                "last_ts": row["last"],
+            }
+            for row in rows
+        }
+
+    def paid_spend(self, *, now: float | None = None, tz: tzinfo | None = None) -> dict[str, Any]:
+        """Today's paid spend across all apps: {usd, calls, unknown_cost_calls}.
+
+        `usd` sums known costs only; `unknown_cost_calls` are paid calls whose
+        cost could not be computed (shown separately, never guessed).
+        """
+        start, end = self.local_day(now, tz)
+        with self._read() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n, COALESCE(SUM(cost_usd),0) AS c,"
+                " COALESCE(SUM(CASE WHEN cost_usd IS NULL THEN 1 ELSE 0 END),0) AS u"
+                " FROM calls WHERE paid=1 AND ts>=? AND ts<?",
+                (start, end),
+            ).fetchone()
+        return {"usd": float(row["c"]), "calls": int(row["n"]), "unknown_cost_calls": int(row["u"])}
+
+    def last_interactive_success(self, since: float) -> dict[str, float]:
+        """upstream -> time of the latest successful call by an interactive app since `since`."""
+        with self._read() as conn:
+            rows = conn.execute(
+                "SELECT upstream, MAX(ts) AS last FROM calls WHERE priority='interactive' AND ok=1 AND ts>=?"
+                " GROUP BY upstream",
+                (since,),
+            ).fetchall()
+        return {row["upstream"]: float(row["last"]) for row in rows}
+
+    def record_ration(
+        self, *, app: str | None, priority: str | None, alias: str | None, kind: str, code: str, now: float | None = None
+    ) -> None:
+        """One request rationing turned away (defer or refuse). Counts only."""
+        with self._write() as conn:
+            conn.execute(
+                "INSERT INTO rations (ts, app, priority, alias, kind, code) VALUES (?,?,?,?,?,?)",
+                (self._now(now), app, priority, alias, str(kind), str(code)),
+            )
+
+    def ration_counts(self, *, now: float | None = None, tz: tzinfo | None = None) -> dict[tuple[str | None, str, str], int]:
+        """Today's turned-away requests: (app, kind, code) -> count."""
+        start, end = self.local_day(now, tz)
+        with self._read() as conn:
+            rows = conn.execute(
+                "SELECT app, kind, code, COUNT(*) AS n FROM rations WHERE ts>=? AND ts<? GROUP BY app, kind, code",
+                (start, end),
+            ).fetchall()
+        return {(row["app"], row["kind"], row["code"]): int(row["n"]) for row in rows}
+
     # ------------------------------------------------------------ blocks
 
     def set_block(self, scope: str, until: float, kind: str, reason: str, now: float | None = None) -> bool:
@@ -313,6 +469,7 @@ class Ledger:
         ts = self._now(now)
         with self._write() as conn:
             removed = conn.execute("DELETE FROM calls WHERE ts<?", (older_than,)).rowcount
+            conn.execute("DELETE FROM rations WHERE ts<?", (older_than,))
             conn.execute("DELETE FROM limits WHERE seen_at<?", (older_than,))
             conn.execute("DELETE FROM blocks WHERE until<?", (older_than,))
             conn.execute(
@@ -321,6 +478,16 @@ class Ledger:
                 (repr(ts),),
             )
         return removed
+
+
+def _opt_float(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if number == number and number not in (float("inf"), float("-inf")) else None
 
 
 def _opt_int(value: Any) -> int | None:
