@@ -2,6 +2,8 @@
 
 Paste everything below the line into a Claude session that has access to `zandis/Muse-stack`.
 
+> Pass 1 of this prompt was carried out in PR #6 (merged). One instruction below was based on a wrong diagnosis and is corrected in place: the blocker for native Retry-After was the router's `allowed_fails: 2`, not `cooldown_time: 30`.
+
 ---
 
 You are working on the private GitHub repo `zandis/Muse-stack`.
@@ -18,7 +20,7 @@ You are working on the private GitHub repo `zandis/Muse-stack`.
 - Work in small, reviewable commits, each with one purpose (for example: enable native Retry-After; fix one test; add a read-only catalogue-diff helper).
 - After every commit, run the test suite and leave it green.
 - There is a known test bug in `tests/test_trust_receipts.py::test_concurrent_appends_two_processes`: the test closes stdin and then calls `communicate()`, which tries to flush a closed stdin and raises `flush of closed file`. Fix it by passing the passphrase with `communicate(input=...)` (do not close stdin first). Do not weaken the test.
-- Prefer LiteLLM for routing, retries and per-deployment cooldown. In `scripts/render_config.py`, stop hard-coding `cooldown_time: 30` so LiteLLM's native Retry-After can apply. Add a regression test that a 429 with `Retry-After: 60` is not retried on the real path for 60 seconds. If Muse still needs behaviour LiteLLM lacks (daily/monthly quotas, cross-alias blocks), keep that in `muse/quota.py` / `muse/hook.py` and consider an upstream LiteLLM issue or PR. Do not fork LiteLLM.
+- Prefer LiteLLM for routing, retries and per-deployment cooldown. In `scripts/render_config.py`, do not set `allowed_fails` on the router (it switches LiteLLM 1.108.5 to a legacy rule that ignores a single 429) and do not set `cooldown_time` on a deployment (it overrides the header), so LiteLLM's native Retry-After can apply. The router `cooldown_time` is only the no-header fallback. Add a regression test that a 429 with `Retry-After: 60` is not retried on the real path for 60 seconds. If Muse still needs behaviour LiteLLM lacks (daily/monthly quotas, cross-alias blocks), keep that in `muse/quota.py` / `muse/hook.py` and consider an upstream LiteLLM issue or PR. Do not fork LiteLLM.
 - Catalogue facts (`config/providers.yaml`, `config/resources/*.yaml`) must be dated and cited to the provider's own page. You may use https://github.com/mnfst/awesome-free-llm-apis (CC0-1.0) as a *lead list* of names to re-check, then verify on official pages. The older cheahjs/free-llm-api-resources list has been deleted (GitHub 404).
 
 ## Do not do these

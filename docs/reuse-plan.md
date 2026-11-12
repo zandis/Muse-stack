@@ -1,7 +1,9 @@
 # Reuse plan for the personal gateway branch
 
-Branch: `ccr-645e0264-bn082z` (commit `6aefbb8`).
+Branch: `ccr-645e0264-bn082z` (written against commit `6aefbb8`).
 Written 2026-11-13 (Asia/Taipei). This is a plan, not a code change.
+
+**Status after slimming pass 1 (PR #6, merged as `324e11a`):** steps 1 to 4 of the suggested order are done. One diagnosis in the first version of this plan was wrong and is corrected below: the router's `cooldown_time: 30` did not block LiteLLM's native Retry-After; `allowed_fails: 2` did.
 
 The routing pipe should stay [LiteLLM](https://github.com/BerriAI/litellm) (MIT for the open core; the `litellm/enterprise/` tree is commercial). Muse should keep only the thin personal layer LiteLLM does not provide: a dated catalogue, usage ledger, privacy classes, per-app rationing, a daily paid cap, leftover-quota jobs, and a loopback dashboard. It should not try to out-catalogue [FreeLLMAPI](https://github.com/tashfeenahmed/freellmapi) (MIT), and it must stay ToS-clean.
 
@@ -28,7 +30,7 @@ Refresh process (next step, not in this PR):
 1. Start from official pricing / rate-limit pages linked in `source_urls`.
 2. Use [mnfst/awesome-free-llm-apis](https://github.com/mnfst/awesome-free-llm-apis) (CC0-1.0) only as a *lead list* of names to re-check. It is not a fork of the deleted [cheahjs/free-llm-api-resources](https://github.com/cheahjs/free-llm-api-resources) (404 as of 2026-11-13; last public Wayback snapshot on 2026-08-06 had 29,355 stars) and its inclusion rules may be looser.
 3. A periodic job may fetch those official pages and flag a diff. A human (or the operator) accepts the edit. The job never signs up for a service.
-4. When LiteLLM is missing a Retry-After or per-deployment cooldown behaviour we need, open an upstream issue or PR against [BerriAI/litellm](https://github.com/BerriAI/litellm) rather than growing a second router. Our `scripts/render_config.py` still writes `cooldown_time: 30`, which prevents LiteLLM 1.108.5's native Retry-After from applying. Enable the native behaviour first, then keep `muse/quota.py` only for what LiteLLM still does not do (daily/monthly quotas, cross-alias blocks, provider-specific reset clocks).
+4. When LiteLLM is missing a Retry-After or per-deployment cooldown behaviour we need, open an upstream issue or PR against [BerriAI/litellm](https://github.com/BerriAI/litellm) rather than growing a second router. Until PR #6, `scripts/render_config.py` set `allowed_fails: 2` on the router. That switched LiteLLM 1.108.5 to its legacy rule (cool a deployment only after N failures in a minute), so a single 429 did not cool the deployment and its Retry-After was not applied. The router's `cooldown_time` was never the cause: LiteLLM picks a deployment's own `cooldown_time`, then the Retry-After header, then the router `cooldown_time` as the no-header fallback. PR #6 removed `allowed_fails` and made the fallback configurable (`MUSE_COOLDOWN_FALLBACK_S`, default 30). Do not set `allowed_fails` on the router or `cooldown_time` on a deployment; the config check now refuses both. `muse/quota.py` stays for what LiteLLM still does not do (daily/monthly quotas, cross-alias blocks, provider-specific reset clocks).
 
 ## Package boundary
 
@@ -66,7 +68,7 @@ Verdicts are **delete**, **replace with an existing project**, or **keep and str
 | `muse/cli.py` | Keep and strengthen | `muse status` / `connect` / `up` is the product surface. | Do not add commands that sign up for providers or start a public server. |
 | `muse/connect.py` | Keep and strengthen | Guided connect: documented OpenRouter OAuth PKCE on loopback, or a hidden paste into the key store. It already says Muse never fills, clicks, or signs in on a provider site, and never takes a key from argv. | Keep that promise. No auto-registration. No "scan and apply". |
 | `muse/cost.py` | Keep | Daily paid cap must not bill a free-tier Gemini call at list price. LiteLLM's built-in price map is the fallback, not the authority for free tiers. | Keep catalogue `price:` as the cap source when present. |
-| `muse/hook.py` | Keep and strengthen | The LiteLLM callback that enforces privacy, cross-alias blocks, rationing and the paid cap. This is the main reason the `muse` package exists on top of the proxy. | After enabling native Retry-After in `render_config.py`, slim any cooldown logic that now duplicates LiteLLM, but keep cross-alias and daily-quota behaviour. Contribute remaining gaps upstream. |
+| `muse/hook.py` | Keep and strengthen | The LiteLLM callback that enforces privacy, cross-alias blocks, rationing and the paid cap. This is the main reason the `muse` package exists on top of the proxy. | Done in PR #6: native Retry-After is on, and the hook now reports a deployment LiteLLM is cooling as a quota wait, not a privacy refusal. No cooldown logic was removed: LiteLLM cools one deployment in one worker, in memory, and `tests/integration/test_retry_after_e2e.py` shows a second alias of the same upstream is still called. Keep cross-alias and daily-quota behaviour. Contribute the cross-alias gap upstream if the owner wants. |
 | `muse/keys.py` | Keep and strengthen | Keys never go in argv, logs or snapshots. Lookup order (env, keychain, dotenv) is right. | Keep. Never print values. |
 | `muse/ledger.py` | Keep and strengthen | Process-safe SQLite usage ledger with no prompt text. FreeLLMAPI and others have ledgers; this one is wired to Muse rationing and the CLI. | Keep journal_mode compatible with a Docker bind mount. |
 | `muse/local.py` | Keep | Discovers Ollama / LM Studio / llama.cpp on loopback and writes `local.yaml`. Not a replacement for those runtimes. | Keep the "dial loopback only" rule. |
@@ -74,7 +76,7 @@ Verdicts are **delete**, **replace with an existing project**, or **keep and str
 | `muse/presets.py` | Keep | Data-only app presets and documented setup hints. | Keep `verified` / `UNVERIFIED` dates honest. |
 | `muse/probes.py` | Keep and strengthen | Live remaining-quota probes only where the provider documents an endpoint (today: OpenRouter `GET /api/v1/key`). | Add a probe only from official docs. Never scrape a consumer account page. |
 | `muse/queue.py` | Keep and strengthen | Background jobs that run on leftover allowance. This is the hook for later Lean useful-work (see novelty map), not a job for FreeLLMAPI. | Keep prompts out of the usage ledger and erase them when a job finishes. Do not send health/C4 content through this queue. |
-| `muse/quota.py` | Keep and strengthen, then shrink against LiteLLM | Pure 429 / header parsing, daily/monthly quotas, Gemini Pacific midnight, long Retry-After as exhaustion. LiteLLM already cools a *single deployment* when Retry-After is enabled; it does not track daily caps or share a block across aliases. | Enable native Retry-After; keep this module for the rest; send reusable parsing upstream. |
+| `muse/quota.py` | Keep and strengthen (pass 1 found nothing to shrink) | Pure 429 / header parsing, daily/monthly quotas, Gemini Pacific midnight, long Retry-After as exhaustion. LiteLLM already cools a *single deployment* when Retry-After is enabled; it does not track daily caps or share a block across aliases. | Native Retry-After is enabled (PR #6). The overlap with LiteLLM is only the single-deployment, single-worker case; everything else here is still needed and tested. Send reusable parsing upstream. |
 | `muse/ration.py` | Keep and strengthen | Rations free quota and the paid cap across one person's apps (interactive first, no surprise paid fallback). This is not something to replace with a commercial gateway budget. | Keep table-tested pure functions. |
 | `muse/rules.py` | Keep and strengthen | User-editable task routing. | No automatic model picker that bypasses privacy class. |
 | `muse/status.py` | Keep and strengthen | One snapshot for the CLI and the dashboard. | Never include keys or prompt text. |
@@ -95,12 +97,12 @@ Verdicts are **delete**, **replace with an existing project**, or **keep and str
 
 | Path | Verdict | Reason | Next step |
 | --- | --- | --- | --- |
-| `scripts/render_config.py`, `render_and_start.py`, `entrypoint.sh` | Keep and strengthen | Renders the LiteLLM config from the catalogue and env. | Change the hardcoded `cooldown_time: 30` so LiteLLM's native Retry-After wins. Add a regression test: a 429 with `Retry-After: 60` is not retried on the real path for 60s. |
+| `scripts/render_config.py`, `render_and_start.py`, `entrypoint.sh` | Keep and strengthen | Renders the LiteLLM config from the catalogue and env. | Done in PR #6: `allowed_fails` removed (the real blocker), `cooldown_time` kept only as a configurable no-header fallback, and a real-proxy regression test added: a 429 with `Retry-After: 60` is not retried for 60 s (`MUSE_SLOW_TESTS=1` watches the full minute). |
 | `scripts/validate_config.py` | Keep | Guards the catalogue. | Keep failing on secret-shaped values and undated facts. |
 | `scripts/smoke_test.py`, `real_key_check.py` | Keep | Operator checks. | Run only with keys the operator entered locally. |
 | `docker-compose.yml`, `docker-compose.spend.yml` | Keep | Official LiteLLM image plus this package. | Pin a multi-arch tag (Ampere A1 is arm64). Bind the proxy to loopback unless an explicit reverse proxy is added. |
 | `deploy/oracle-a1-setup.sh`, `deploy/oracle-cloud.md` | Keep | Operator notes for the Always Free VM. | Keep secrets off the page. |
-| `tests/` | Keep and strengthen | The safety net for slimming. | Fix `tests/test_trust_receipts.py::test_concurrent_appends_two_processes`: do not close stdin and then call `communicate()`; pass the passphrase with `communicate(input=...)`. Keep the suite green after every slimming commit. |
+| `tests/` | Keep and strengthen | The safety net for slimming. | Done in PR #6: `test_concurrent_appends_two_processes` passes the passphrase with `communicate(input=...)`, in a thread so both processes still append at once. Keep the suite green after every slimming commit. |
 | `docs/muse-plan.md`, `docs/plan-infra-first.md`, `docs/real-key-checklist.md`, `docs/mockups/` | Keep | Product narrative and UX mockups. | Reconcile later with this reuse plan and `docs/plan/novelty-map.md`. Do not delete in the slimming pass. |
 | `docs/reuse-plan.md`, `docs/plan/novelty-map.md`, `docs/reviews/CLAUDE-SLIMMING-PROMPT.md` | Keep | This PR. | Update if a later slimming PR changes a verdict. |
 
@@ -115,7 +117,9 @@ Verdicts are **delete**, **replace with an existing project**, or **keep and str
 
 ## Suggested slimming order
 
-1. Enable LiteLLM native Retry-After in `scripts/render_config.py` and add the zero-retry test.
+Steps 1 to 4 were done in PR #6; step 4 removed nothing, for the reason given in the `muse/hook.py` row.
+
+1. Enable LiteLLM native Retry-After in `scripts/render_config.py` (remove `allowed_fails`) and add the zero-retry test.
 2. Fix `test_concurrent_appends_two_processes`.
 3. Add the catalogue sync *reader* (diff against official pages + mnfst leads); no writers that apply.
 4. Slim hook/quota overlap only after (1) is proven.
