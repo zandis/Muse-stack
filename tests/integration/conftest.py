@@ -88,6 +88,7 @@ class Proxy:
         catalog: Any = None,
         env: dict[str, str] | None = None,
         local_aliases: tuple[str, ...] = ("fast",),
+        post_render: Any = None,
     ) -> None:
         self.workdir = workdir
         self.upstream = upstream
@@ -98,6 +99,7 @@ class Proxy:
         self.catalog_builder = catalog or build_catalog
         self.extra_env = env or {}
         self.local_aliases = local_aliases
+        self.post_render = post_render  # callable(config dict) -> None, e.g. to add model_info the renderer does not emit yet
         self.proc: subprocess.Popen[bytes] | None = None
         self.port = 0
         self.catalog_path = workdir / "providers.yaml"
@@ -105,7 +107,8 @@ class Proxy:
 
     def _env(self) -> dict[str, str]:
         env = {k: v for k, v in os.environ.items() if not k.endswith("_API_KEY") and k != "LITELLM_MASTER_KEY"
-               and not k.startswith(("MUSE_DAILY", "MUSE_ALLOW_PAID", "MUSE_RESERVE", "MUSE_ACTIVE", "MUSE_EXPIRING", "MUSE_TZ"))}
+               and not k.startswith(("MUSE_DAILY", "MUSE_ALLOW_PAID", "MUSE_RESERVE", "MUSE_ACTIVE", "MUSE_EXPIRING", "MUSE_TZ",
+                                     "MUSE_PACE", "MUSE_CACHE", "MUSE_ROUTING"))}
         env.update(KEYS)
         env.update(RATION_KEYS)
         if self.master_key:
@@ -137,6 +140,8 @@ class Proxy:
         self.catalog_path.write_text(yaml.safe_dump(catalog, sort_keys=False))
         config, _ = render_config.render(catalog, self.env)
         assert config["litellm_settings"]["callbacks"] == ["muse.hook.handler"]
+        if self.post_render is not None:
+            self.post_render(config)
         path = self.workdir / "litellm.yaml"
         path.write_text(render_config.dumps(config, []))
         return path
@@ -213,11 +218,13 @@ class Proxy:
         timeout: float = 60,
         key: Any = _MASTER,
         max_tokens: int | None = None,
+        extra: dict[str, Any] | None = None,
     ) -> tuple[int, dict[str, str], Any]:
         """POST a chat completion. `key`: default the master key; an app token; None for no auth."""
         payload: dict[str, Any] = {"model": model, "messages": [{"role": "user", "content": text}]}
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
+        payload.update(extra or {})
         request = self._request("/v1/chat/completions", json.dumps(payload).encode(), {"content-type": "application/json", **(headers or {})}, key)
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:

@@ -1,0 +1,76 @@
+# Muse routing rules: how strong a model each kind of task gets.
+#
+# Rule 2 of the plan (docs/muse-plan.md section 5.4): "Fit the task. Use the
+# weakest allowance that can do the task well." Edit this file to change what
+# each kind of work uses; the proxy re-reads it on the next request, no
+# restart. Check it with `muse rules check`; read it back as sentences with
+# `muse rules` (or `muse rules --lang zh`). A broken file never stops the
+# proxy: it falls back to the built-in rules (the same as this file) and says
+# why once in its log and in `muse rules`.
+#
+# How a request picks a task:
+#   - an app sends the header  x-muse-task: light   (or everyday, heavy, ...)
+#     with any model name, or the model name  auto;
+#   - `muse ask --task light "..."`, `muse queue add --task light ...`;
+#   - model "auto" with no header uses the app's default task (apps:) or
+#     defaults.task.
+# The model is then replaced by the task's alias, and max_output_tokens caps
+# the answer (a lower max_tokens sent by the client is kept).
+#
+# Per task:
+#   alias                   the model alias in config/providers.yaml (required)
+#   mode                    chat (default), embedding or rerank
+#   max_output_tokens       the most an answer may use (chat only)
+#   long_input_alias        a different alias for long inputs ...
+#   long_input_over_tokens  ... when the input is over this many tokens (estimated, on the high side)
+#   handoff                 suggest: for hard questions, Muse first offers to open
+#                           your own ChatGPT, Claude or Gemini app, and never pays
+#                           for these without your approval (rule 6). Default none.
+#   deterministic           true: the answer should not vary, so exact repeats may be
+#                           answered from the cache (MUSE_CACHE=exact) even without
+#                           temperature 0
+#   examples                what this kind of task is, for people reading this file
+
+version: 1
+
+tasks:
+  light:
+    alias: fast
+    max_output_tokens: 300
+    deterministic: true
+    examples: [classify, extract, tag, short rewrite]
+  everyday:
+    alias: cheap
+    max_output_tokens: 1200
+    examples: [chat, summarise, draft, translate]
+  heavy:
+    alias: smart
+    max_output_tokens: 4000
+    long_input_alias: long-context
+    long_input_over_tokens: 60000
+    examples: [long documents, multi-step research, synthesis]
+  frontier:
+    alias: smart
+    handoff: suggest
+    examples: [questions where being wrong is costly]
+  embed:
+    alias: embed
+    mode: embedding
+  rerank:
+    alias: rerank
+    mode: rerank
+
+defaults:
+  task: everyday
+
+# Default task for one app when it names none (the background queue does light work).
+apps:
+  queue:
+    default_task: light
+
+# Words in a task NAME (never in the prompt) that pick a task, e.g.
+# `x-muse-task: classify-emails` -> light. The first match in this order wins.
+hints:
+  light: [classify, extract, tag, label, rewrite]
+  everyday: [summarise, summarize, translate, draft, chat]
+  heavy: [research, synthesis, synthesise, report]

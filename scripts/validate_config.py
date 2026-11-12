@@ -10,6 +10,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT))  # muse.catalog: the v2 schema checks live there (standard library + PyYAML only)
 
 from render_config import (  # noqa: E402
     CUSTOM_AUTH,
@@ -456,6 +457,45 @@ def scenario_auth_and_no_secrets() -> None:
         check(f"\n      {name}:" in compose, f"{name} is not passed through docker-compose.yml")
 
 
+def scenario_catalogue_v2() -> None:
+    """The v2 fields, resource files and subscriptions pass the schema checks in muse/catalog.py."""
+    from muse import catalog
+
+    problems = catalog.validate_catalog()
+    check(not problems, "catalogue v2: " + "; ".join(problems[:5]) + (f" (+{len(problems) - 5} more)" if len(problems) > 5 else ""))
+    loaded = catalog.load_catalog()
+    check({r.kind for r in loaded.resources} == {"storage", "compute", "chain"}, "storage, compute and chain each need an entry")
+    check(all(not r.managed for r in loaded.resources), "other resources are shown, not managed")
+    check(all(s.handoff_only for s in loaded.subscriptions) and loaded.subscriptions, "subscriptions are hand-off only")
+    for provider in loaded.ai_providers():
+        if provider.tier in ("free", "trial"):
+            check(provider.connection and provider.connection.minutes_estimate, f"{provider.id} is suggested, so it needs minutes_estimate")
+
+
+def scenario_oneoff_and_also_env() -> None:
+    """muse_oneoff is a real boolean on every deployment; a provider with also_env needs all its variables."""
+    catalog = load_catalog(CATALOG_PATH)
+    config, _ = render(catalog, env_with(VOYAGE_API_KEY="v", GEMINI_API_KEY="g", MUSE_ALLOW_PAID_FALLBACK="true"))
+    for entry in config["model_list"]:
+        flag = entry["model_info"].get("muse_oneoff")
+        check(isinstance(flag, bool), f"{entry['model_info']['id']}: muse_oneoff must be a boolean, got {flag!r}")
+        check(flag == (entry["model_info"]["provider"] == "voyage"), f"{entry['model_info']['id']}: muse_oneoff {flag}")
+    check(any(e["model_info"]["provider"] == "voyage" for e in config["model_list"]), "voyage did not render")
+    key_only, enabled = render(catalog, env_with(CLOUDFLARE_API_KEY="c"))
+    check("cloudflare" not in enabled and not key_only["model_list"], "cloudflare must stay off without CLOUDFLARE_ACCOUNT_ID")
+    both, enabled = render(catalog, env_with(CLOUDFLARE_API_KEY="c", CLOUDFLARE_ACCOUNT_ID="a" * 32))
+    check(enabled == ["cloudflare"], f"cloudflare should turn on with both variables: {enabled}")
+    text = dumps(both, enabled)
+    check("a" * 32 not in text, "the account id must stay an environment reference")
+    check(ids_for(both, "fast") == ["cloudflare-llama-3-1-8b__fast"], "cloudflare should join fast")
+    cerebras, enabled = render(catalog, env_with(CEREBRAS_API_KEY="x"))
+    check(enabled == ["cerebras"] and "cerebras-gpt-oss-120b__smart" in ids_for(cerebras, "smart"), "cerebras should join smart")
+    for provider in catalog["providers"]:
+        for extra in provider.get("also_env") or []:
+            check(extra in ENV_EXAMPLE.read_text(encoding="utf-8"), f"{extra} missing from .env.example")
+            check(f"\n      {extra}:" in (ROOT / "docker-compose.yml").read_text(encoding="utf-8"), f"{extra} is not passed through docker-compose.yml")
+
+
 def main() -> int:
     steps = [
         scenario_hook_callback,
@@ -472,6 +512,8 @@ def main() -> int:
         scenario_paid_explicit_false,
         scenario_price,
         scenario_auth_and_no_secrets,
+        scenario_catalogue_v2,
+        scenario_oneoff_and_also_env,
     ]
     for step in steps:
         try:

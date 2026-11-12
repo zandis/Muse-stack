@@ -248,6 +248,7 @@ def render_status(snap: Mapping[str, Any], *, color: bool = False, now: datetime
             out.append(_limit_line(lim, now, paint, unicode_ok))
     if any(lim.get("source") != "header" for p in active for lim in (p.get("limits") or []) if lim.get("remaining") is not None):
         out.append(paint("  ~ = estimate (catalogue limit minus what the ledger counted)", "dim"))
+    out.extend(paint(_fit(line, WIDTH), "dim") for line in next_helper_lines(snap))  # catalogue v2
     out.append("")
 
     aliases = [a for a in snap.get("aliases", []) if a.get("total", 0) > 0]
@@ -952,7 +953,9 @@ def cmd_ask(args: argparse.Namespace) -> int:
     privacy = args.privacy or env.get("MUSE_DEFAULT_PRIVACY", "").strip()
     if privacy:
         headers["x-muse-privacy"] = privacy
-    model = args.model or args.alias
+    model = args.model or args.alias or ("auto" if args.task else "fast")
+    if args.task:
+        headers["x-muse-task"] = args.task  # routing rules: the proxy picks the alias (see `muse rules`)
     body = json.dumps({"model": model, "messages": [{"role": "user", "content": args.prompt}]}).encode()
     try:
         status, resp_headers, data = _http("POST", f"{url}/v1/chat/completions", headers, body, timeout=120.0)
@@ -1051,6 +1054,67 @@ def cmd_env(args: argparse.Namespace) -> int:
         if src in ("keychain", "dotenv"):
             print(f"# {keys.MASTER_KEY} is stored in the {src}; `muse env --show-master-key` prints the real export line.")
     return 0
+
+
+# ===== BEGIN catalogue v2: `muse connect`, `muse resources` (own block; logic lives in muse/connect.py) =====
+
+
+def cmd_connect(args: argparse.Namespace) -> int:
+    from muse import connect
+
+    return connect.run_connect(
+        connect.ConnectIO.system(),
+        _env(),
+        provider=args.provider,
+        extra=args.rest,
+        lang=args.lang,
+        no_browser=args.no_browser,
+        paste_code=args.paste_code,
+        test=args.test,
+        open_page=True if args.open else None,
+        timeout_s=float(args.timeout),
+        write_local=not args.no_write,
+        as_json=args.json,
+    )
+
+
+def cmd_resources(args: argparse.Namespace) -> int:
+    from muse import catalog, connect
+
+    return connect.run_resources(connect.ConnectIO.system(), catalog.normalise_lang(args.lang) if args.lang else catalog.default_lang(_env()), as_json=args.json)
+
+
+def next_helper_lines(snap: Mapping[str, Any]) -> list[str]:
+    """The one "Next helper to add: ..." line for `muse status` (nothing for an older snapshot)."""
+    try:
+        from muse import catalog, connect
+
+        line = connect.next_helper_line(snap, catalog.default_lang(os.environ))  # render_status stays pure: no key store reads
+    except Exception:
+        return []
+    return [line] if line else []
+
+
+def register_connect_commands(sub: Any) -> None:
+    c = sub.add_parser("connect", help="add a helper step by step (no argument: what is connected and what to add next)")
+    c.add_argument("provider", nargs="?", help="a helper name, e.g. openrouter, gemini, groq, or local")
+    c.add_argument("rest", nargs="*", help=argparse.SUPPRESS)  # caught so a pasted key is refused, not echoed
+    c.add_argument("--lang", metavar="LANG", help="en or zh-TW (default: MUSE_LANG, else from the system locale)")
+    c.add_argument("--no-browser", action="store_true", help="print the link instead of opening a browser")
+    c.add_argument("--paste-code", action="store_true", help="one-tap flow without a local listener: approve anywhere, paste the code it shows")
+    c.add_argument("--test", action="store_true", help="after saving a key, send ONE key-check request that carries no prompt")
+    c.add_argument("--open", action="store_true", help="open the provider's key page without asking")
+    c.add_argument("--timeout", type=float, default=300.0, metavar="SECONDS", help="how long to wait for the approval (default 300)")
+    c.add_argument("--no-write", action="store_true", help="with `local`: show what was found without writing the catalogue")
+    c.add_argument("--json", action="store_true", help="with no helper name: print the suggestions as JSON")
+    c.set_defaults(func=cmd_connect)
+    r = sub.add_parser("resources", help="storage, compute and chain allowances, and your subscriptions (read-only)")
+    r.add_argument("--lang", metavar="LANG", help="en or zh-TW")
+    r.add_argument("--json", action="store_true")
+    r.set_defaults(func=cmd_resources)
+
+
+# ===== END catalogue v2 =====
 
 
 def cmd_version(args: argparse.Namespace) -> int:
@@ -1340,7 +1404,8 @@ def _deadline(args: argparse.Namespace) -> float | None:
 
 def _announce_added(job: Any) -> None:
     due = f", must finish by {datetime.fromtimestamp(job.deadline).strftime('%Y-%m-%d %H:%M')}" if job.deadline else ""
-    print(f"Queued {job.id} ({job.kind}, alias {job.alias}{', paid allowed' if job.allow_paid else ''}{due}).")
+    route = f"task {job.task}" if job.task else f"alias {job.alias}"
+    print(f"Queued {job.id} ({job.kind}, {route}{', paid allowed' if job.allow_paid else ''}{due}).")
     print(f"  Result file: {job.out_path}")
 
 
@@ -1354,9 +1419,10 @@ def cmd_queue_add(args: argparse.Namespace) -> int:
             raise queue.QueueError("the prompt is empty")
         if len(prompt) > queue.MAX_PROMPT_CHARS:
             raise queue.QueueError(f"the prompt is {len(prompt)} characters; the limit is {queue.MAX_PROMPT_CHARS}")
-        job = q.add(kind="prompt", payload=prompt, alias=args.alias, privacy=_privacy_for(args), out_path=args.out,
+        task, alias = _job_route(args)
+        job = q.add(kind="prompt", payload=prompt, alias=alias, privacy=_privacy_for(args), out_path=args.out,
                     deadline=_deadline(args), allow_paid=args.allow_paid, max_attempts=args.max_attempts,
-                    max_tokens=args.max_tokens, force=args.overwrite)
+                    max_tokens=args.max_tokens, force=args.overwrite, task=task)
     except queue.QueueError as exc:
         _err(f"Error: {exc}")
         return 1
@@ -1381,18 +1447,20 @@ def cmd_queue_add_file(args: argparse.Namespace) -> int:
             jobs = []
             for f in files:
                 out = str(out_dir / (f.name + ".out.txt")) if out_dir else None
-                jobs.append(q.add(kind="file-summary", payload=str(f), instruction=args.do, alias=args.alias, privacy=_privacy_for(args),
+                task, alias = _job_route(args)
+                jobs.append(q.add(kind="file-summary", payload=str(f), instruction=args.do, alias=alias, privacy=_privacy_for(args),
                                   out_path=out, deadline=deadline, allow_paid=args.allow_paid, max_attempts=args.max_attempts,
-                                  max_tokens=args.max_tokens, force=args.overwrite))
+                                  max_tokens=args.max_tokens, force=args.overwrite, task=task))
             print(f"Queued {len(jobs)} jobs from {target}.")
             for note in skipped:
                 print(f"  skipped: {note}")
             print(f"  Results: {out_dir or paths.queue_out_dir(_env())}")
             return 0
         queue.read_text_file(target)  # fail now, not at run time, for an unreadable or oversized file
-        job = q.add(kind="file-summary", payload=str(target), instruction=args.do, alias=args.alias, privacy=_privacy_for(args),
+        task, alias = _job_route(args)
+        job = q.add(kind="file-summary", payload=str(target), instruction=args.do, alias=alias, privacy=_privacy_for(args),
                     out_path=args.out, deadline=deadline, allow_paid=args.allow_paid, max_attempts=args.max_attempts,
-                    max_tokens=args.max_tokens, force=args.overwrite)
+                    max_tokens=args.max_tokens, force=args.overwrite, task=task)
     except queue.QueueError as exc:
         _err(f"Error: {exc}")
         return 1
@@ -1407,9 +1475,10 @@ def cmd_queue_add_batch(args: argparse.Namespace) -> int:
     try:
         text = sys.stdin.read() if args.path == "-" else queue.read_text_file(Path(args.path).expanduser(), limit=queue.MAX_PROMPT_CHARS)
         items = queue.split_batch(text)
-        job = q.add(kind="batch", payload=json.dumps(items), alias=args.alias, privacy=_privacy_for(args), out_path=args.out,
+        task, alias = _job_route(args)
+        job = q.add(kind="batch", payload=json.dumps(items), alias=alias, privacy=_privacy_for(args), out_path=args.out,
                     deadline=_deadline(args), allow_paid=args.allow_paid, max_attempts=args.max_attempts,
-                    max_tokens=args.max_tokens, force=args.overwrite)
+                    max_tokens=args.max_tokens, force=args.overwrite, task=task)
     except queue.QueueError as exc:
         _err(f"Error: {exc}")
         return 1
@@ -1602,7 +1671,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     a = sub.add_parser("ask", help="one chat call through the proxy")
     a.add_argument("prompt")
-    a.add_argument("--alias", default="fast")
+    a.add_argument("--alias", default=None, help="model alias (default fast; with --task, the task's alias)")
+    a.add_argument("--task", metavar="NAME", help="a task from the routing rules (light, everyday, heavy, frontier, ...); see `muse rules`")
     a.add_argument("--privacy", choices=list(_PRIVACY_WORDS))
     a.add_argument("--model", help="a deployment id; overrides --alias")
     a.add_argument("--show-route", action="store_true", help="print which provider answered (stderr)")
@@ -1612,6 +1682,8 @@ def build_parser() -> argparse.ArgumentParser:
     da.add_argument("--port", type=int, default=4180)
     da.add_argument("--no-open", action="store_true")
     da.set_defaults(func=cmd_dash)
+
+    register_connect_commands(sub)  # catalogue v2 block above
 
     e = sub.add_parser("env", help="export lines for an OpenAI-compatible client")
     e.add_argument("--show-master-key", action="store_true", help="print the real key instead of the variable name")
@@ -1665,7 +1737,8 @@ def build_parser() -> argparse.ArgumentParser:
     qsub = qp.add_subparsers(dest="queue_cmd", required=True)
 
     def job_options(sp: argparse.ArgumentParser) -> None:
-        sp.add_argument("--alias", default="cheap")
+        sp.add_argument("--alias", default=None, help="model alias; default: the rules file's task for the queue app")
+        sp.add_argument("--task", metavar="NAME", help="a task from the routing rules; the proxy picks the alias (see `muse rules`)")
         sp.add_argument("--privacy", choices=list(_PRIVACY_WORDS))
         sp.add_argument("--out", metavar="PATH", help="where to write the result (default: ~/.muse/queue-out/ID.txt)")
         sp.add_argument("--by", metavar="DEADLINE", help="give up after this: 2h, 90m, 08:30 or 2026-11-13T08:30")
@@ -1710,7 +1783,72 @@ def build_parser() -> argparse.ArgumentParser:
 
     v = sub.add_parser("version", help="print the version")
     v.set_defaults(func=cmd_version)
+    add_rules_parser(sub)
     return p
+
+
+# ============================================================ routing rules: `muse rules`, --task
+# (rationing work; kept in one block so other command blocks merge cleanly)
+
+
+def _job_route(args: argparse.Namespace) -> tuple[str | None, str]:
+    """(task, alias) for a queued job: --task, else --alias, else the rules file's default for the queue app."""
+    from muse import queue, rules
+
+    if args.task:
+        return args.task.strip().lower(), args.alias or "auto"
+    if args.alias:
+        return None, args.alias
+    task, _ = rules.load_rules(_env()).default_for(queue.app_for(bool(args.allow_paid)))
+    return task, "auto"
+
+
+def cmd_rules(args: argparse.Namespace) -> int:
+    from muse import rules
+
+    env = _env()
+    path = rules.rules_path(env)
+    if args.action == "check":
+        problems = rules.check(path)
+        if problems:
+            for problem in problems:
+                _err(f"problem: {problem}")
+            _err("The proxy keeps using the built-in rules until this is fixed (see `muse rules`).")
+            return 1
+        current = rules.load_rules(env)
+        known = _catalogue_aliases()
+        unknown = sorted({a for t in current.tasks.values() for a in (t.alias, t.long_input_alias) if a} - known) if known else []
+        for alias in unknown:
+            _err(f"warning: alias {alias!r} is not in the provider catalogue; requests for it will fail")
+        print(f"{path}: ok ({len(current.tasks)} tasks)")
+        return 0
+    current = rules.load_rules(env)
+    if args.json:
+        print(json.dumps({**rules.as_dict(current), "path": str(path)}, indent=2, ensure_ascii=False))
+        return 0
+    for line in rules.explain(current, args.lang):
+        print(line)
+    print(("規則檔：" if args.lang.startswith("zh") else "Rules file: ") + str(path))
+    return 1 if current.problems else 0
+
+
+def _catalogue_aliases() -> set[str]:
+    try:
+        data = yaml.safe_load(Path(_env().get("MUSE_CATALOG", "") or paths.CATALOG_PATH).read_text(encoding="utf-8"))
+        return set((data or {}).get("aliases") or {})
+    except (OSError, yaml.YAMLError, AttributeError):
+        return set()
+
+
+def add_rules_parser(sub: Any) -> None:
+    r = sub.add_parser("rules", help="how each kind of task is routed (config/routing.yaml), as sentences")
+    r.add_argument("action", nargs="?", choices=["show", "check"], default="show", help="check: validate the rules file")
+    r.add_argument("--json", action="store_true")
+    r.add_argument("--lang", choices=["en", "zh"], default="en", help="zh: Traditional Chinese")
+    r.set_defaults(func=cmd_rules)
+
+
+# ============================================================ end routing rules
 
 
 def main(argv: list[str] | None = None) -> int:

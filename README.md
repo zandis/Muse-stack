@@ -62,6 +62,24 @@ the 429 formats for Gemini, OpenRouter and Cohere are parsed from community
 reports, not official documentation, and are marked `unconfirmed` in
 `muse/quota.py`.
 
+### Connecting helpers
+
+`muse connect` adds one helper at a time. Muse only guides you: it never fills in, clicks or signs in on a provider's website, and it never takes a key on the command line.
+
+```bash
+muse connect                 # what is connected, then the next helpers ranked by allowance gained per minute
+muse connect openrouter      # one tap: approve on OpenRouter's page and the key comes straight back, nothing to paste
+muse connect gemini          # steps from the catalogue, then a hidden prompt for the key; add --test for ONE key-check request
+muse connect local           # find Ollama / LM Studio models (same discovery as `muse local discover --write`)
+muse resources               # storage, compute and chain allowances, and your subscriptions: shown, not managed
+```
+
+- The one-tap flow is OAuth with PKCE (S256). Muse listens on `127.0.0.1` for one redirect on a random port and a random secret path, checks the `state` and `Host`, and shuts the listener down at once. `--no-browser` prints the link; `--paste-code` skips the listener (approve anywhere, paste the code OpenRouter shows). OpenRouter's documentation allows `http://localhost:<any port>` callbacks, so that form is used; `127.0.0.1` is not mentioned there, so it is not sent.
+- `--test` sends one `GET` that checks the key (a model list or a similar endpoint) with no prompt text. Without `--test` nothing is sent. A helper with no confirmed check endpoint says so and sends nothing.
+- After a key is saved, restart the proxy so it reads it: `muse restart` (Docker), or `muse restart --native --detach` when you started it with `muse up --native --detach`. Start it with `muse up` if it is not running.
+- Language: `--lang en|zh-TW`, else `MUSE_LANG`, else Traditional Chinese when the system locale is Chinese.
+- A suggestion quotes a gain ("adds roughly 50 requests a day") only where `config/providers.yaml` holds a number read on the provider's own page; otherwise it says "allowance not confirmed". Every catalogue fact has a `checked_on` date, a `confidence` and `source_urls`; `scripts/validate_config.py` checks the schema, including `config/resources/*.yaml` (non-AI allowances, `managed: false`) and the hand-off-only subscriptions.
+
 ### Applications, paid cap and queue
 
 Each program that uses the proxy can have its own key, so you can see what each one uses and ration free quota between them.
@@ -217,6 +235,8 @@ Checked on 11 November 2026. Quotas move. When a number is not in the table, the
 | Cohere | `COHERE_API_KEY` | Trial chat, embed, rerank | [Models](https://docs.cohere.com/docs/models): `command-r7b-12-2024` (128k), `command-a-03-2025` (256k), `embed-v5.0-fast` (default 2048 dimensions), `rerank-v4.0-fast` (32k). [Trial keys](https://docs.cohere.com/docs/rate-limits) are 1,000 calls/month, and chat is about 20 RPM. Cohere's current rerank recommendation is `rerank-v5.0-fast`; it is not in LiteLLM 1.108.5's price map, so the proxy calls v4.0-fast. |
 | SiliconFlow | `SILICONFLOW_API_KEY` | International endpoint, after the free direct providers | Base `https://api.siliconflow.com/v1`. LiteLLM 1.108.5 has no `siliconflow/` provider. Chat and embeddings use the `openai/` prefix with that base; rerank uses `hosted_vllm/`, which posts to `https://api.siliconflow.com/v1/rerank`. The models list returned 401 without a key. `BAAI/bge-reranker-v2-m3` is the id in their rerank docs. `BAAI/bge-m3` is the id in their FastGPT guide (1024 dimensions). **`Qwen/Qwen3.5-9B` was not verified.** The pricing page shows the display name Qwen3.5-9B; the `Qwen/` prefix is inferred. New accounts get $1 of credit. The fetched pricing HTML did not list a permanently free set. |
 | Jina | `JINA_API_KEY` | Embeddings and rerank | `jina-embeddings-v3` (1024 dimensions) and `jina-reranker-v2-base-multilingual`. Both names are on jina.ai, and the reranker is in the LiteLLM 1.108.5 map. v5 embeddings and reranker v3 / v3.5 are on the site and are not wired. The current free-token allowance was not re-checked. |
+| Cerebras | `CEREBRAS_API_KEY` | Free-trial chat | [Rate limits](https://inference-docs.cerebras.ai/support/rate-limits), read 12 November 2026: `gpt-oss-120b` and `qwen-3.8-27b` each get 5 requests a minute and 1M tokens a day, replenished continuously. LiteLLM 1.108.5 routes `cerebras/<model>` to `https://api.cerebras.ai/v1`. Training terms for the API were not confirmed. |
+| Cloudflare Workers AI | `CLOUDFLARE_API_KEY` and `CLOUDFLARE_ACCOUNT_ID` | Free-plan chat | [Pricing](https://developers.cloudflare.com/workers-ai/platform/pricing/): 10,000 neurons a day, reset at 00:00 UTC. Cloudflare [says](https://developers.cloudflare.com/workers-ai/platform/data-usage/) it does not train on Workers AI content. Both variables are needed; LiteLLM builds the endpoint from the account id. |
 | Novita | `NOVITA_API_KEY` | Cheap paid chat, opt-in | Live list at `https://api.novita.ai/v3/openai/models`: Llama 3.1 8B at $0.02 / $0.05 per 1M (16k context), `openai/gpt-oss-120b` at $0.05 / $0.25 (131k), `qwen/qwen3.8-flash` at $0.15 / $0.47 (1M). No zero-price chat model worth routing was in that list. |
 | DeepSeek | `DEEPSEEK_API_KEY` | Paid, optional | [Pricing](https://api-docs.deepseek.com/quick_start/pricing): call `deepseek-flash` and `deepseek-v4-pro`. Both are 1M context. `deepseek-chat` and `deepseek-reasoner` are retired. Flash cache-miss input is about $0.15 off-peak / $0.30 peak per 1M tokens. The proxy sets `api_base` to `https://api.deepseek.com/v1` because LiteLLM's own default is the `/beta` FIM host. |
 | Voyage | `VOYAGE_API_KEY` | Paid embed and rerank, opt-in | [Embeddings](https://docs.voyageai.com/docs/embeddings): `voyage-4-lite`, 32k context, 1024 dimensions by default. [Rerankers](https://docs.voyageai.com/docs/reranker): `rerank-3-lite`, 32k. |
@@ -248,7 +268,7 @@ To keep a key in `.env` but stop routing to that provider:
 MUSE_DISABLE_PROVIDERS=groq,novita
 ```
 
-Provider ids are the `id` fields in [config/providers.yaml](config/providers.yaml): `gemini`, `groq`, `cohere`, `openrouter`, `siliconflow`, `jina`, `novita`, `deepseek`, `voyage`, `nvidia_nim`.
+Provider ids are the `id` fields in [config/providers.yaml](config/providers.yaml): `gemini`, `groq`, `cohere`, `openrouter`, `siliconflow`, `jina`, `novita`, `deepseek`, `voyage`, `nvidia_nim`, `cerebras`, `cloudflare`.
 
 ## Speech
 

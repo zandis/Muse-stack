@@ -55,7 +55,7 @@ def old_db(path: Path) -> Path:
 def test_migrates_a_schema_1_file(tmp_path):
     path = old_db(tmp_path / "old.sqlite")
     db = Ledger(path, clock=lambda: NOW)
-    assert db.schema_version() == SCHEMA_VERSION == 2
+    assert db.schema_version() == SCHEMA_VERSION == 3
     old = db.recent(1)[0]
     assert old["tokens_in"] == 10 and old["app"] is None and old["cost_usd"] is None and old["paid"] is None
     assert "gemini:g" in db.active_blocks()

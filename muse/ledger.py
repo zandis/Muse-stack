@@ -14,6 +14,10 @@ Why these choices:
   columns already there and skips them.
 - "Today" for per-app caps and the paid cap is the user's local calendar day
   (MUSE_TZ, default the system zone), not a provider's quota day.
+- A call answered from the exact-repeat cache (muse/hook.py, MUSE_CACHE=exact)
+  is recorded with cached=1, zero cost and zero tokens; it never counts toward
+  provider quotas, burn rates, app caps or "the user is active" (nothing was
+  sent upstream).
 """
 
 from __future__ import annotations
@@ -30,7 +34,7 @@ from typing import Any, Callable, Iterator, Mapping
 from muse import paths
 from muse.quota import day_start, month_start
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 RETENTION_SECONDS = 90 * 86400
 PRUNE_EVERY_SECONDS = 86400
 BUSY_TIMEOUT_MS = 5000
@@ -105,6 +109,7 @@ _ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
     ("priority", "TEXT"),
     ("cost_usd", "REAL"),
     ("paid", "INTEGER"),
+    ("cached", "INTEGER"),  # 1 = answered from the exact-repeat cache: nothing was sent upstream
 )
 
 # Indexes on added columns; created after the ALTERs so they exist on old files too.
@@ -234,6 +239,7 @@ class Ledger:
         cost_usd: float | None = None,
         paid: bool | None = None,
         release_hold: str | None = None,
+        cached: bool = False,
     ) -> None:
         """One upstream attempt. Counts only; never content. cost_usd None = unknown.
 
@@ -245,13 +251,13 @@ class Ledger:
                 conn.execute("DELETE FROM paid_holds WHERE call_id=?", (str(release_hold),))
             conn.execute(
                 "INSERT INTO calls (ts, provider, deployment_id, upstream, alias, ok, status,"
-                " tokens_in, tokens_out, latency_ms, privacy, app, priority, cost_usd, paid)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " tokens_in, tokens_out, latency_ms, privacy, app, priority, cost_usd, paid, cached)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     ts, str(provider), str(deployment_id), str(upstream), alias, 1 if ok else 0,
                     _opt_int(status), _opt_int(tokens_in), _opt_int(tokens_out), _opt_int(latency_ms), str(privacy),
                     None if app is None else str(app), None if priority is None else str(priority),
-                    _opt_float(cost_usd), None if paid is None else (1 if paid else 0),
+                    _opt_float(cost_usd), None if paid is None else (1 if paid else 0), 1 if cached else None,
                 ),
             )
             last = conn.execute("SELECT value FROM meta WHERE key='last_prune'").fetchone()
@@ -301,7 +307,7 @@ class Ledger:
             "day": day_start(ts, day_provider or provider),
             "month": month_start(ts),
         }
-        where, args = ["ok=1"], []
+        where, args = ["ok=1", "cached IS NOT 1"], []
         if provider is not None:
             where.append("provider=?")
             args.append(provider)
@@ -342,7 +348,7 @@ class Ledger:
             row = conn.execute(
                 "SELECT COUNT(*) AS n, COALESCE(SUM(COALESCE(tokens_in,0)+COALESCE(tokens_out,0)),0) AS t,"
                 " COALESCE(SUM(cost_usd),0) AS c, COALESCE(SUM(CASE WHEN paid=1 AND cost_usd IS NULL THEN 1 ELSE 0 END),0) AS u"
-                " FROM calls WHERE app=? AND ok=1 AND ts>=? AND ts<?",
+                " FROM calls WHERE app=? AND ok=1 AND cached IS NOT 1 AND ts>=? AND ts<?",
                 (app, start, end),
             ).fetchone()
         return {"requests": int(row["n"]), "tokens": int(row["t"]), "cost_usd": float(row["c"]), "unknown_cost_calls": int(row["u"])}
@@ -350,12 +356,14 @@ class Ledger:
     def usage_by_app(self, *, now: float | None = None, tz: tzinfo | None = None) -> dict[str | None, dict[str, Any]]:
         """Today's usage for every app that made a call (None = calls from before apps existed).
 
-        {app: {requests, failures, tokens, cost_usd, paid_calls, unknown_cost_calls, last_ts}}
+        {app: {requests, failures, tokens, cost_usd, paid_calls, unknown_cost_calls, last_ts, cached_calls}}
+        (`requests` excludes calls answered from the exact-repeat cache; those are `cached_calls`.)
         """
         start, end = self.local_day(now, tz)
         with self._read() as conn:
             rows = conn.execute(
-                "SELECT app, SUM(ok) AS n, SUM(1-ok) AS f,"
+                "SELECT app, SUM(CASE WHEN ok=1 AND cached IS NOT 1 THEN 1 ELSE 0 END) AS n, SUM(1-ok) AS f,"
+                " SUM(CASE WHEN cached=1 THEN 1 ELSE 0 END) AS k,"
                 " COALESCE(SUM(CASE WHEN ok=1 THEN COALESCE(tokens_in,0)+COALESCE(tokens_out,0) ELSE 0 END),0) AS t,"
                 " COALESCE(SUM(cost_usd),0) AS c, COALESCE(SUM(CASE WHEN paid=1 AND ok=1 THEN 1 ELSE 0 END),0) AS p,"
                 " COALESCE(SUM(CASE WHEN paid=1 AND ok=1 AND cost_usd IS NULL THEN 1 ELSE 0 END),0) AS u, MAX(ts) AS last"
@@ -366,7 +374,7 @@ class Ledger:
             row["app"]: {
                 "requests": int(row["n"] or 0), "failures": int(row["f"] or 0), "tokens": int(row["t"]),
                 "cost_usd": float(row["c"]), "paid_calls": int(row["p"]), "unknown_cost_calls": int(row["u"]),
-                "last_ts": row["last"],
+                "last_ts": row["last"], "cached_calls": int(row["k"] or 0),
             }
             for row in rows
         }
@@ -452,11 +460,36 @@ class Ledger:
         """upstream -> time of the latest successful call by an interactive app since `since`."""
         with self._read() as conn:
             rows = conn.execute(
-                "SELECT upstream, MAX(ts) AS last FROM calls WHERE priority='interactive' AND ok=1 AND ts>=?"
+                "SELECT upstream, MAX(ts) AS last FROM calls WHERE priority='interactive' AND ok=1 AND cached IS NOT 1 AND ts>=?"
                 " GROUP BY upstream",
                 (since,),
             ).fetchall()
         return {row["upstream"]: float(row["last"]) for row in rows}
+
+    def burn(self, scopes: list[str], since: float, *, now: float | None = None) -> dict[str, dict[str, int]]:
+        """Recent use per scope for pacing's burn rate: {scope: {calls, tokens}} since `since`.
+
+        A scope is an upstream (`provider:model`) or `provider:<id>` (every
+        upstream of that provider). Successful, non-cached calls only."""
+        ts = self._now(now)
+        out: dict[str, dict[str, int]] = {}
+        with self._read() as conn:
+            for scope in scopes:
+                column, value = ("provider", scope[len("provider:"):]) if scope.startswith("provider:") else ("upstream", scope)
+                row = conn.execute(
+                    "SELECT COUNT(*) AS n, COALESCE(SUM(COALESCE(tokens_in,0)+COALESCE(tokens_out,0)),0) AS t"
+                    f" FROM calls WHERE {column}=? AND ok=1 AND cached IS NOT 1 AND ts>=? AND ts<=?",
+                    (value, since, ts),
+                ).fetchone()
+                out[scope] = {"calls": int(row["n"]), "tokens": int(row["t"])}
+        return out
+
+    def cached_calls(self, *, now: float | None = None, tz: tzinfo | None = None) -> int:
+        """Today's calls answered from the exact-repeat cache."""
+        start, end = self.local_day(now, tz)
+        with self._read() as conn:
+            row = conn.execute("SELECT COUNT(*) AS n FROM calls WHERE cached=1 AND ts>=? AND ts<?", (start, end)).fetchone()
+        return int(row["n"])
 
     def record_ration(
         self, *, app: str | None, priority: str | None, alias: str | None, kind: str, code: str, now: float | None = None

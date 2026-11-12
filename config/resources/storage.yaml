@@ -1,0 +1,66 @@
+# Storage allowances. Tracked and shown only: Muse does not manage them yet
+# (managed: false). Same shape as the AI catalogue in ../providers.yaml; see the
+# header there for what each field means. Only facts read on the provider's own
+# page on `checked_on` are here. An entry that could not be confirmed is not added.
+version: 1
+kind: storage
+resources:
+  - id: cloudflare-r2
+    name: {en: "Cloudflare R2 storage", zh-TW: "Cloudflare R2 雲端儲存"}
+    provider: Cloudflare
+    summary:
+      en: "Object storage with a free monthly amount of storage and operations. Sending data out of R2 directly is free."
+      zh-TW: "物件儲存空間，每月有免費的容量和操作次數。直接從 R2 傳出資料不收費。"
+    managed: false
+    kind_of_allowance: [monthly]
+    allowance:
+      - {window: month, limit: 10, unit: gb_month, scope: storage, headline: true}
+      - {window: month, limit: 1000000, unit: class_a_operations, scope: "writes and lists"}
+      - {window: month, limit: 10000000, unit: class_b_operations, scope: "reads"}
+    reset: {rule: unknown}
+    read_remaining:
+      method: unknown
+      note: "The pricing page says all included usage is on a monthly basis. It does not say when the month starts or how to read what is left."
+    connection:
+      method: none
+      key_url: https://dash.cloudflare.com/
+      card_required: unknown
+      phone_required: unknown
+      usable_on_phone: unknown
+      how:
+        en: "Needs a Cloudflare account. Muse does not connect to it yet."
+        zh-TW: "需要一個 Cloudflare 帳號。Muse 目前還不會連接它。"
+    terms_flags: {one_account_per_person: unknown, aggregation_or_reselling: unknown, automation_of_console: unknown, hosted_in: unknown}
+    checked_on: "2026-11-12"
+    confidence: M
+    source_urls:
+      - https://developers.cloudflare.com/r2/pricing/
+
+  - id: google-drive
+    name: {en: "Google account storage (Drive, Gmail, Photos)", zh-TW: "Google 帳號儲存空間（雲端硬碟、Gmail、相簿）"}
+    provider: Google
+    summary:
+      en: "Every Google Account comes with up to 15 GB at no charge, shared across Drive, Gmail and Photos."
+      zh-TW: "每個 Google 帳號免費附帶最多 15 GB，由雲端硬碟、Gmail 和相簿共用。"
+    managed: false
+    kind_of_allowance: []
+    allowance:
+      - {window: total, limit: 15, unit: gb, scope: "shared by Drive, Gmail and Photos", headline: true}
+    reset: {rule: none}
+    read_remaining:
+      method: unknown
+      note: "Google's page does not say how to read what is left."
+    connection:
+      method: none
+      key_url: https://drive.google.com/
+      card_required: unknown
+      phone_required: unknown
+      usable_on_phone: unknown
+      how:
+        en: "Uses your own Google Account. Muse does not connect to it yet."
+        zh-TW: "使用你自己的 Google 帳號。Muse 目前還不會連接它。"
+    terms_flags: {one_account_per_person: unknown, aggregation_or_reselling: unknown, automation_of_console: unknown, hosted_in: unknown}
+    checked_on: "2026-11-12"
+    confidence: M
+    source_urls:
+      - https://support.google.com/drive/answer/2375123

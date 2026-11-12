@@ -1,0 +1,65 @@
+# Compute and hosting allowances. Tracked and shown only (managed: false). See
+# storage.yaml for the rules.
+version: 1
+kind: compute
+resources:
+  - id: huggingface-zerogpu
+    name: {en: "Hugging Face ZeroGPU", zh-TW: "Hugging Face ZeroGPU 免費 GPU"}
+    provider: Hugging Face
+    summary:
+      en: "Free GPU time for running ZeroGPU Spaces. A free account gets 5 minutes a day; visitors who are not signed in get 2."
+      zh-TW: "用來執行 ZeroGPU Spaces 的免費 GPU 時間。免費帳號每天 5 分鐘；沒登入的訪客是 2 分鐘。"
+    managed: false
+    kind_of_allowance: [daily]
+    allowance:
+      - {window: day, limit: 5, unit: gpu_minutes, scope: "free account", headline: true}
+      - {window: day, limit: 2, unit: gpu_minutes, scope: "not signed in"}
+    reset:
+      rule: rolling
+      note: {en: "Refills 24 hours after your first GPU use, not at a fixed clock time.", zh-TW: "從你第一次使用 GPU 起算 24 小時後補滿，不是固定的時刻。"}
+    read_remaining:
+      method: unknown
+      note: "The docs say remaining quota affects queue priority. They do not say how to read it."
+    connection:
+      method: none
+      key_url: https://huggingface.co/
+      card_required: unknown
+      phone_required: unknown
+      usable_on_phone: unknown
+      how:
+        en: "Needs a free Hugging Face account. Muse does not connect to it yet."
+        zh-TW: "需要一個免費的 Hugging Face 帳號。Muse 目前還不會連接它。"
+    terms_flags: {one_account_per_person: unknown, aggregation_or_reselling: unknown, automation_of_console: unknown, hosted_in: unknown}
+    checked_on: "2026-11-12"
+    confidence: H
+    source_urls:
+      - https://huggingface.co/docs/hub/spaces-zerogpu
+
+  - id: cloudflare-workers
+    name: {en: "Cloudflare Workers (free plan)", zh-TW: "Cloudflare Workers（免費方案）"}
+    provider: Cloudflare
+    summary:
+      en: "Run small programs at the edge. The free plan allows 100,000 requests a day, with 10 ms of CPU time per request."
+      zh-TW: "在邊緣節點執行小程式。免費方案每天可處理 100,000 個請求，每個請求的 CPU 時間是 10 毫秒。"
+    managed: false
+    kind_of_allowance: [daily]
+    allowance:
+      - {window: day, limit: 100000, unit: requests, scope: "Workers, free plan", headline: true}
+    reset: {rule: utc_day}
+    read_remaining:
+      method: unknown
+      note: "The limits page says the daily count resets at midnight UTC. It does not say how to read what is left."
+    connection:
+      method: none
+      key_url: https://dash.cloudflare.com/
+      card_required: unknown
+      phone_required: unknown
+      usable_on_phone: unknown
+      how:
+        en: "Needs a Cloudflare account. Muse does not connect to it yet."
+        zh-TW: "需要一個 Cloudflare 帳號。Muse 目前還不會連接它。"
+    terms_flags: {one_account_per_person: unknown, aggregation_or_reselling: unknown, automation_of_console: unknown, hosted_in: unknown}
+    checked_on: "2026-11-12"
+    confidence: H
+    source_urls:
+      - https://developers.cloudflare.com/workers/platform/limits/

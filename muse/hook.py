@@ -11,10 +11,19 @@ is /opt/muse in the container).
 Hooks used, with the 1.108.5 signatures (litellm/integrations/custom_logger.py):
 - async_pre_call_hook: validate x-muse-privacy (unknown -> 400), resolve the class
   (the app's default_privacy replaces MUSE_DEFAULT_PRIVACY when the header is absent).
+  Then the routing rules (muse/rules.py, rule 2): a request with `x-muse-task`, or
+  for the model `auto`, has `data["model"]` REPLACED by the task's alias here. The
+  1.108.5 proxy (proxy/common_request_processing.py) runs this hook after its own
+  alias maps and before route_request, which reads data["model"], so the router
+  only ever sees a real alias; `auto` needs no entry in the rendered config. The
+  task's max_output_tokens is applied as a ceiling; an unknown task is a 400.
 - async_filter_deployments: apply the privacy class, drop blocked upstreams, then
   ration (muse/ration.py). Runs for every model group the router tries,
   fallbacks and order levels included, so a fallback can never reach something
-  rationing refuses.
+  rationing refuses. It sees every order level (LiteLLM's order filter runs
+  after it), so the "spend what expires soonest" hint (ration.prefer) only
+  narrows the level LiteLLM is about to pick from, only when decisive, and
+  never to nothing; other levels, retries and fallbacks are untouched.
 - async_pre_call_deployment_hook: second privacy check on the chosen deployment
   (a request that names a deployment id skips async_filter_deployments), rationing
   for such direct requests, and the atomic paid-cap hold (Ledger.try_hold_paid).
@@ -22,7 +31,13 @@ Hooks used, with the 1.108.5 signatures (litellm/integrations/custom_logger.py):
   and fallbacks too), unlike async_log_failure_event which fires once per request.
 - async_log_success_event: record the call (app, priority, cost, paid) and limits.
 - async_post_call_response_headers_hook: x-muse-provider / -deployment / -privacy /
-  -app, x-muse-cost-usd, x-muse-ration and Retry-After on a rationing refusal.
+  -app, x-muse-cost-usd, x-muse-ration and Retry-After on a rationing refusal,
+  x-muse-task (the task applied), x-muse-handoff: suggest (rule 6), x-muse-cache.
+
+Request headers read: x-muse-privacy, x-muse-task, x-muse-allow-oneoff: true (the
+user approved spending one-off trial credits), x-muse-allow-paid: true (the user
+chose "pay" for a frontier task). A rationing refusal's message ends with
+` | options=...` (ration.options_trailer): the choices available right now.
 
 The application comes from muse/auth.py through `metadata.user_api_key_metadata`
 (the proxy strips caller-supplied `user_api_key_*` keys, so it cannot be forged
@@ -53,14 +68,21 @@ from litellm.exceptions import GuardrailRaisedException, RateLimitError
 from litellm.integrations.custom_logger import CustomLogger
 
 from muse import apps as apps_mod
+from muse import cache as cache_mod
 from muse import cost as cost_mod
 from muse import quota
 from muse import ration
+from muse import rules as rules_mod
 from muse.ledger import Ledger
 
 log = logging.getLogger("muse.hook")
 
 PRIVACY_HEADER = "x-muse-privacy"
+TASK_HEADER = "x-muse-task"
+ONEOFF_HEADER = "x-muse-allow-oneoff"
+ALLOW_PAID_HEADER = "x-muse-allow-paid"
+AUTO_MODEL = "auto"
+CACHE_PROVIDER = "cache"  # provider/upstream recorded for an answer served from the exact-repeat cache
 TRUTHY = {"1", "true", "on", "yes"}
 MARK = "[muse]"
 NOTE_TTL_SECONDS = 600
@@ -147,6 +169,12 @@ class _Note:
     decisions: list[ration.Decision] = field(default_factory=list)
     checked: set[str] = field(default_factory=set)  # deployment ids the filter allowed
     sent: dict[str, dict] = field(default_factory=dict)  # deployment id -> model_info, per attempt
+    details: list[str] = field(default_factory=list)  # one line per rule that acted (no content)
+    handoff: bool = False  # suggest the hand-off on this response
+    cache: str | None = None  # hit | miss | bypass, decided once per request
+    cache_key: str | None = None
+    cache_privacy: str | None = None
+    cache_value: str | None = None  # the answer pinned at lookup, so a later expiry cannot route it upstream unrationed
 
 
 def _metadata(data: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -258,6 +286,35 @@ def _estimate_tokens(data: Mapping[str, Any]) -> tuple[int, int]:
     return chars // 3 + 1, out or DEFAULT_OUTPUT_ESTIMATE
 
 
+def _truthy_header(data: Mapping[str, Any] | None, name: str) -> bool:
+    return str(_headers(data).get(name, "") or "").strip().lower() in TRUTHY
+
+
+def _call_mode(call_type: Any) -> str | None:
+    """chat | embedding | rerank for a LiteLLM call type; None when it cannot be told."""
+    text = str(getattr(call_type, "value", call_type) or "").lower()
+    if "embedding" in text:
+        return "embedding"
+    if "rerank" in text:
+        return "rerank"
+    if "completion" in text or "responses" in text or "messages" in text:
+        return "chat"
+    return None
+
+
+def apply_ceiling(data: dict[str, Any], ceiling: int) -> None:
+    """Cap the answer length: a lower limit the client set is kept, a higher one is lowered."""
+    present = False
+    for key in ("max_tokens", "max_completion_tokens", "max_output_tokens"):
+        value = data.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            present = True
+            if value > ceiling:
+                data[key] = ceiling
+    if not present:
+        data["max_tokens"] = ceiling
+
+
 def _model_info(data: Mapping[str, Any] | None) -> dict[str, Any]:
     if not isinstance(data, Mapping):
         return {}
@@ -308,6 +365,7 @@ class MuseHook(CustomLogger):
         self._notes: OrderedDict[str, _Note] = OrderedDict()
         self._notes_lock = threading.Lock()
         self._warned: set[str] = set()
+        self._cache: cache_mod.ExactCache | None = None
 
     # ------------------------------------------------------------ helpers
 
@@ -370,6 +428,47 @@ class MuseHook(CustomLogger):
                 log.warning("muse hook: %s", warning)
         return settings
 
+    def rules(self) -> rules_mod.Rules:
+        """The routing rules in force; a broken file is reported once per problem, then defaults are used."""
+        current = rules_mod.load_rules(self.env)
+        for problem in current.problems:
+            if problem not in self._warned:
+                self._warned.add(problem)
+                log.error("muse hook: routing rules not used, built-in rules in force: %s", problem)
+        return current
+
+    @property
+    def cache(self) -> cache_mod.ExactCache:
+        settings = cache_mod.CacheSettings.from_env(self.env)
+        if self._cache is None or self._cache.settings != settings:
+            self._cache = cache_mod.ExactCache(settings, self.environ)
+        return self._cache
+
+    async def _cache_lookup(self, alias: str, data: Mapping[str, Any] | None, privacy: str) -> str | None:
+        """The cached answer for this request, decided once per request (see muse/cache.py)."""
+        if not cache_mod.CacheSettings.from_env(self.env).enabled or not isinstance(data, Mapping):
+            return None
+        note = self._note(_call_id(data))
+        if note is None:
+            return None
+        if note.cache is not None:
+            return note.cache_value if note.cache == "hit" else None
+        ok, _why = cache_mod.cacheable(data, deterministic=bool(_metadata(data).get("muse_deterministic")))
+        if not ok:
+            note.cache = "bypass"
+            return None
+        key = cache_mod.cache_key(alias, data, privacy, self._default_class(data))
+        try:
+            value = await self._run(self.cache.get, key, privacy, self.clock())
+        except Exception as exc:
+            self._fault("cache_get", exc)
+            note.cache = "bypass"
+            return None
+        note.cache, note.cache_key, note.cache_privacy, note.cache_value = ("hit" if value is not None else "miss"), key, privacy, value
+        if value is not None:
+            note.details.append("cache: exact repeat answered from the cache")
+        return value
+
     def _note(self, call_id: str | None, create: bool = True) -> _Note | None:
         if not call_id:
             return None
@@ -408,9 +507,11 @@ class MuseHook(CustomLogger):
                 state.paid_spend_usd = None  # the paid gate closes
         if app.priority == "background" and settings.active_window_s > 0:
             state.last_interactive = await self._run(db.last_interactive_success, now - settings.active_window_s)
-        if ration.reserve_fraction(app.priority, settings) > 0:
-            pairs = [(_upstream(i), i) for i in infos]
-            pairs = [(pair, i) for pair, i in pairs if pair is not None]
+        # Limits for every app: the reserve and pacing read them for normal and
+        # background apps, the ordering hint (ration.prefer) for every app.
+        pairs = [(_upstream(i), i) for i in infos]
+        pairs = [(pair, i) for pair, i in pairs if pair is not None]
+        if pairs:
             scopes = sorted({p[1] for p, _ in pairs} | {f"provider:{p[0]}" for p, _ in pairs})
             observed = await self._run(db.limits_many, scopes)
             usage_by_provider: dict[str, Any] = {}
@@ -421,6 +522,9 @@ class MuseHook(CustomLogger):
                 rows = [*observed.get(upstream, []), *observed.get(f"provider:{provider}", [])]
                 limits[upstream] = ration.known_limits(info, rows, usage_by_provider.get(provider, {}), now)
             state.limits = limits
+            if len(limits) >= 2 and any(limits.values()):
+                burn_scopes = sorted({lim.scope or upstream for upstream, items in limits.items() for lim in items})
+                state.burn = await self._run(db.burn, burn_scopes, now - settings.burn_window_s, now=now)
         return state
 
     async def _apply_ration(
@@ -431,14 +535,23 @@ class MuseHook(CustomLogger):
         prior: list[ration.Removed],
         *,
         direct: bool,
+        messages: list | None = None,
+        prefer: bool = False,
     ) -> ration.Outcome:
-        """Rules 1-6 for one group. Errors degrade to no rationing, minus paid deployments."""
+        """The rules for one group, then the ordering hint. Errors degrade to no
+        rationing, minus paid and one-off deployments."""
         now = self.clock()
         app = app_of(data)
+        settings = ration.Settings()
+        state: ration.State | None = None
+        handoff_task = bool(_metadata(data).get("muse_handoff"))
+        allow_oneoff = _truthy_header(data, ONEOFF_HEADER)
+        handoff_hold = handoff_task and not _truthy_header(data, ALLOW_PAID_HEADER)
         try:
             settings = self.settings()
             state = await self._ration_state(app, deployments, settings, now)
-            outcome = ration.ration(ration.AppPolicy.of(app), deployments, state, settings, now, direct=direct, prior=prior)
+            outcome = ration.ration(ration.AppPolicy.of(app), deployments, state, settings, now, direct=direct, prior=prior,
+                                    allow_oneoff=allow_oneoff, handoff_hold=handoff_hold)
         except Exception as exc:
             self._fault("ration", exc)
             kept = ration.fail_closed(deployments)
@@ -450,14 +563,64 @@ class MuseHook(CustomLogger):
             decision = None if kept else ration.decide(ration.AppPolicy.of(app), [*prior, *removed], now, ration.Settings())
             outcome = ration.Outcome(kept, removed, decision)
         note = self._note(_call_id(data))
+        if outcome.kept and prefer and state is not None:
+            try:
+                target = data.get("_target_order") if isinstance(data, Mapping) else None
+                narrowed, reason = ration.prefer(outcome.kept, state, settings, now, target_order=target,
+                                                 tried=list(note.sent) if note is not None else ())
+                if reason is not None:
+                    outcome.kept = narrowed
+                    if note is not None:
+                        note.codes.add(ration.PACE_PREFER)
+                        note.details.append(reason)
+            except Exception as exc:
+                self._fault("prefer", exc)
+        if outcome.decision is not None:
+            handoff = handoff_task or self._strong(model, data)
+            estimates = self._pay_estimates(deployments, outcome.removed, data, messages)
+            outcome.decision = ration.with_options(outcome.decision, [*prior, *outcome.removed], handoff=handoff,
+                                                   pay_estimates=estimates)
+            if note is not None and handoff:
+                note.handoff = True
         if note is not None:
             note.codes.update(r.code for r in outcome.removed)
             note.checked.update(str((d.get("model_info") or {}).get("id", "")) for d in outcome.kept)
+            note.details.extend(f"{r.code}: {r.upstream or r.deployment_id}: {r.detail}" for r in outcome.removed[:20])
             if outcome.decision is not None:
                 note.decisions.append(outcome.decision)
         if outcome.decision is not None:
             await self._record_ration(app, model, outcome.decision, now)
         return outcome
+
+    def _strong(self, model: str, data: Mapping[str, Any] | None) -> bool:
+        """Whether a refusal for this group means the strong allowance is unavailable (offer the hand-off)."""
+        group = _metadata(data).get("model_group") or (data.get("model") if isinstance(data, Mapping) else None) or model
+        try:
+            return str(group) in self.rules().handoff_aliases or str(model) in self.rules().handoff_aliases
+        except Exception as exc:
+            self._fault("rules", exc)
+            return False
+
+    def _pay_estimates(self, deployments: list[dict], removed: list[ration.Removed], data: Mapping[str, Any] | None,
+                       messages: list | None) -> dict[str, float]:
+        """Estimated USD per paid deployment held for the hand-off: the same estimate the paid hold uses."""
+        held = {r.deployment_id for r in removed if r.code == ration.HANDOFF_FIRST}
+        if not held or not isinstance(data, Mapping):
+            return {}
+        view = dict(data)
+        if messages is not None and not view.get("messages"):
+            view["messages"] = messages
+        tin, tout = _estimate_tokens(view)
+        out: dict[str, float] = {}
+        for dep in deployments:
+            info = dep.get("model_info") or {}
+            dep_id = str(info.get("id", ""))
+            price = ration.price_of(info)
+            if dep_id in held and price is not None:
+                est = cost_mod.from_price(price, tin, tout)
+                if est is not None:
+                    out[dep_id] = float(est)
+        return out
 
     async def _record_ration(self, app: apps_mod.App, model: str, decision: ration.Decision, now: float) -> None:
         try:
@@ -502,7 +665,36 @@ class MuseHook(CustomLogger):
         metadata["muse_priority"] = app.priority
         if findings:
             metadata["muse_privacy_findings"] = sorted({f.kind for f in findings})  # kinds only, never text
+        self._apply_task(data, call_type, app, metadata)
         return data
+
+    def _apply_task(self, data: dict, call_type: Any, app: apps_mod.App, metadata: dict) -> None:
+        """Rule 2: replace the model with the task's alias and cap the answer length."""
+        header = str(_headers(data).get(TASK_HEADER, "") or "").strip()
+        if not header and data.get("model") != AUTO_MODEL:
+            return
+        current = self.rules()
+        tokens_in, _ = _estimate_tokens(data)
+        try:
+            route = current.resolve(header or None, app=app.name, input_tokens_estimate=tokens_in)
+        except rules_mod.UnknownTask as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{MARK} invalid {TASK_HEADER}: unknown task '{exc.name}'. Valid tasks: {', '.join(exc.valid)}.",
+            ) from None
+        mode = _call_mode(call_type)
+        if mode is not None and mode != route.mode:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{MARK} task '{route.task}' is a {route.mode} task, but this is a {mode} request.",
+            )
+        data["model"] = route.alias
+        if route.mode == "chat" and route.max_output_tokens:
+            apply_ceiling(data, route.max_output_tokens)
+        metadata["muse_task"] = route.task
+        metadata["muse_handoff"] = route.handoff
+        metadata["muse_deterministic"] = route.deterministic
+        metadata["muse_task_reason"] = route.reason
 
     # ------------------------------------------------------------ routing
 
@@ -534,6 +726,16 @@ class MuseHook(CustomLogger):
                 + "). Not falling back to other providers."
             )
 
+        # An exact repeat needs no allowance: answer it from the cache (deployment hook).
+        try:
+            view = dict(request_kwargs or {})
+            if messages is not None and not view.get("messages"):
+                view["messages"] = messages
+            if await self._cache_lookup(model, view, privacy) is not None:
+                return allowed
+        except Exception as exc:
+            self._fault("cache", exc)
+
         # Then quota blocks. Errors here degrade to LiteLLM's own behaviour.
         kept: list[dict] = list(allowed)
         prior: list[ration.Removed] = []
@@ -558,15 +760,20 @@ class MuseHook(CustomLogger):
                                                 float(block["until"]), f"blocked by a provider quota until {quota.iso(block['until'])}"))
             if not kept:
                 soonest = min(hit, key=lambda b: b["until"])
+                handoff = bool(_metadata(request_kwargs).get("muse_handoff")) or self._strong(model, request_kwargs)
+                note = self._note(_call_id(request_kwargs))
+                if note is not None and handoff:
+                    note.handoff = True
                 raise MuseBlockedError(
                     f"every '{privacy}'-allowed deployment of '{model}' is blocked by a provider quota; "
-                    f"soonest reset {quota.iso(soonest['until'])} ({soonest['kind']}: {soonest['reason']})",
+                    f"soonest reset {quota.iso(soonest['until'])} ({soonest['kind']}: {soonest['reason']}) | "
+                    + ration.options_trailer(float(soonest["until"]), handoff, None),
                     model=model,
                 )
 
         # Then rationing between apps (muse/ration.py).
         direct = len(kept) == 1 and str((kept[0].get("model_info") or {}).get("id", "")) == model
-        outcome = await self._apply_ration(model, kept, request_kwargs, prior, direct=direct)
+        outcome = await self._apply_ration(model, kept, request_kwargs, prior, direct=direct, messages=messages, prefer=not direct)
         if outcome.kept:
             return outcome.kept
         decision = outcome.decision or ration.Decision(ration.REFUSE, "unknown", f"{MARK} rationing left nothing for '{model}'", None)
@@ -597,10 +804,21 @@ class MuseHook(CustomLogger):
                 f"deployment '{info.get('id')}' may not receive a '{privacy}' request: {policy.explain(info, privacy)}"
             )
 
-        # Rationing for requests that named a deployment id (the filter did not run).
+        # An exact repeat: answer from the cache, nothing is sent and nothing is held.
         call_id = _call_id(kwargs)
-        note = self._note(call_id, create=False)
         dep_id = str(info.get("id", ""))
+        try:
+            alias = _metadata(kwargs).get("model_group") or dep_id
+            cached = await self._cache_lookup(str(alias), kwargs, privacy)
+        except Exception as exc:
+            self._fault("cache", exc)
+            cached = None
+        if cached is not None:
+            kwargs["mock_response"] = cache_mod.mock_response(cached, str(kwargs.get("model") or ""))
+            return kwargs
+
+        # Rationing for requests that named a deployment id (the filter did not run).
+        note = self._note(call_id, create=False)
         if note is None or dep_id not in note.checked:
             outcome = await self._apply_ration(dep_id, [{"model_info": info}], kwargs, [], direct=True)
             if not outcome.kept:
@@ -720,6 +938,10 @@ class MuseHook(CustomLogger):
 
     async def async_log_success_event(self, kwargs: dict, response_obj: Any, start_time: Any, end_time: Any) -> None:
         try:
+            note = self._note(_call_id(kwargs), create=False)
+            if note is not None and note.cache == "hit":
+                await self._record_cached(kwargs)
+                return
             info = _model_info(kwargs)
             pair = _upstream(info)
             if pair is None:
@@ -743,6 +965,14 @@ class MuseHook(CustomLogger):
             except Exception as exc:
                 self._fault("cost", exc)
                 cost_usd, paid = None, ration.is_paid(info)
+            if note is not None and note.cache == "miss" and note.cache_key and note.cache_privacy:
+                # Stored before the ledger row, so "the call is recorded" also means "a repeat can hit".
+                text = cache_mod.answer_text(response_obj)
+                if text is not None:
+                    try:
+                        await self._run(self.cache.put, note.cache_key, note.cache_privacy, text, now)
+                    except Exception as exc:
+                        self._fault("cache_put", exc)
             await self._run(
                 self.ledger.record_call,
                 provider=provider,
@@ -771,6 +1001,19 @@ class MuseHook(CustomLogger):
         except Exception as exc:
             self._fault("success_event", exc)
 
+    async def _record_cached(self, kwargs: Mapping[str, Any]) -> None:
+        """A call answered from the cache: zero cost, zero tokens, marked cached (never counts toward quotas or caps)."""
+        slo = kwargs.get("standard_logging_object") or {}
+        metadata = (kwargs.get("litellm_params") or {}).get("metadata") or {}
+        app = app_of(kwargs)
+        await self._run(
+            self.ledger.record_call,
+            provider=CACHE_PROVIDER, deployment_id=CACHE_PROVIDER, upstream=CACHE_PROVIDER,
+            alias=slo.get("model_group") or metadata.get("model_group"), ok=True, status=200, tokens_in=0, tokens_out=0,
+            latency_ms=0, privacy=self._privacy_for_record(kwargs.get("litellm_params") or kwargs), now=self.clock(),
+            app=app.name, priority=app.priority, cost_usd=0.0, paid=False, release_hold=_call_id(kwargs), cached=True,
+        )
+
     async def async_post_call_response_headers_hook(
         self,
         data: dict,
@@ -788,7 +1031,19 @@ class MuseHook(CustomLogger):
             if _auth_policy(data) is not None:
                 out["x-muse-app"] = app_of(data).name
             note = self._note(_call_id(data), create=False)
-            if response is not None:
+            metadata = _metadata(data)
+            if metadata.get("muse_task"):
+                out["x-muse-task"] = str(metadata["muse_task"])
+            if metadata.get("muse_handoff") or (note is not None and note.handoff):
+                out["x-muse-handoff"] = "suggest"
+            if note is not None and note.cache in ("hit", "miss"):
+                out["x-muse-cache"] = note.cache
+            if response is not None and note is not None and note.cache == "hit":
+                out["x-muse-provider"] = CACHE_PROVIDER
+                out["x-muse-cost-usd"] = f"{0.0:.6f}"
+                if note.codes:
+                    out["x-muse-ration"] = ",".join(sorted(note.codes))
+            elif response is not None:
                 call_info = litellm_call_info or {}
                 info = call_info.get("model_info") or _model_info(data)
                 answered = call_info.get("model_id") or (getattr(response, "_hidden_params", None) or {}).get("model_id")

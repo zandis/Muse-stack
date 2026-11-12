@@ -10,6 +10,9 @@ erased from the database.
 
 Who decides what: the proxy does all rationing (muse/ration.py). This runner
 only sends through the proxy as a *background* app and does what the answer says.
+A job may carry a routing task (`muse queue add --task light`, or the default the
+rules file gives the `queue` app); it is sent as `x-muse-task` and the proxy picks
+the alias and caps the answer length (muse/rules.py).
 
 Runner policy (same text as README, kept exact because the tests pin it):
 
@@ -113,7 +116,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   deadline REAL,
   allow_paid INTEGER NOT NULL DEFAULT 0,
   progress INTEGER NOT NULL DEFAULT 0,  -- batch: items finished
-  partial TEXT                           -- batch: JSON list of finished outputs (content; erased with payload)
+  partial TEXT,                          -- batch: JSON list of finished outputs (content; erased with payload)
+  task TEXT                              -- routing task (config/routing.yaml), sent as x-muse-task; NULL = none
 );
 CREATE INDEX IF NOT EXISTS jobs_due ON jobs (status, next_attempt_at);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -122,7 +126,7 @@ CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 PUBLIC_COLUMNS = (
     "id, created_at, kind, alias, privacy, out_path, status, attempts, deferrals, next_attempt_at, last_reason,"
     " started_at, finished_at, provider, deployment, cost_usd, tokens_in, tokens_out, max_attempts, max_tokens,"
-    " deadline, allow_paid, progress"
+    " deadline, allow_paid, progress, task"
 )
 
 
@@ -220,6 +224,7 @@ class Job:
     allow_paid: bool
     progress: int
     partial: str | None
+    task: str | None = None
     started_at: float | None = None
     finished_at: float | None = None
     provider: str | None = None
@@ -239,7 +244,7 @@ class Job:
             "provider": self.provider, "deployment": self.deployment, "cost_usd": self.cost_usd,
             "tokens_in": self.tokens_in, "tokens_out": self.tokens_out, "max_attempts": self.max_attempts,
             "max_tokens": self.max_tokens, "deadline": iso(self.deadline), "allow_paid": self.allow_paid,
-            "progress": self.progress,
+            "progress": self.progress, "task": self.task,
         }
 
 
@@ -274,6 +279,12 @@ class Queue:
             conn.execute("PRAGMA journal_mode=DELETE")
             conn.execute("PRAGMA secure_delete=ON")  # an erased prompt must not linger in free pages
             conn.executescript(SCHEMA)
+            if "task" not in {r["name"] for r in conn.execute("PRAGMA table_info(jobs)")}:
+                try:  # a queue.sqlite from before routing tasks; additive, like the ledger
+                    conn.execute("ALTER TABLE jobs ADD COLUMN task TEXT")
+                except sqlite3.OperationalError as exc:
+                    if "duplicate column" not in str(exc).lower():
+                        raise
             if write:
                 conn.execute("BEGIN IMMEDIATE")
             try:
@@ -294,9 +305,12 @@ class Queue:
         self, *, kind: str, payload: str, alias: str = "cheap", privacy: str | None = None, out_path: str | None = None,
         instruction: str | None = None, deadline: float | None = None, allow_paid: bool = False,
         max_attempts: int = DEFAULT_MAX_ATTEMPTS, max_tokens: int = DEFAULT_MAX_TOKENS, force: bool = False,
+        task: str | None = None,
     ) -> Job:
         if kind not in KINDS:
             raise QueueError(f"kind must be one of {', '.join(KINDS)}")
+        if task is not None and not re.fullmatch(r"[a-z0-9][a-z0-9 _-]{0,63}", task):
+            raise QueueError("task must be a task name from the routing rules, such as light or everyday")
         if not alias or not re.fullmatch(r"[A-Za-z0-9._:/-]{1,80}", alias):
             raise QueueError("alias must be a model alias such as cheap or fast")
         if privacy is not None and privacy not in apps.PRIVACY_CLASSES:
@@ -317,8 +331,9 @@ class Queue:
                     raise QueueError(f"job {clash['id']} already writes to {out}")
             conn.execute(
                 "INSERT INTO jobs (id, created_at, kind, alias, privacy, payload, instruction, out_path, status, next_attempt_at,"
-                " max_attempts, max_tokens, deadline, allow_paid) VALUES (?,?,?,?,?,?,?,?, 'queued', ?,?,?,?,?)",
-                (job_id, now, kind, alias, privacy, payload, instruction, out, now, max_attempts, max_tokens, deadline, int(allow_paid)),
+                " max_attempts, max_tokens, deadline, allow_paid, task) VALUES (?,?,?,?,?,?,?,?, 'queued', ?,?,?,?,?,?)",
+                (job_id, now, kind, alias, privacy, payload, instruction, out, now, max_attempts, max_tokens, deadline, int(allow_paid),
+                 task),
             )
         return self.get(job_id)
 
@@ -847,6 +862,8 @@ class Runner:
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {self.token_for(job.allow_paid)}"}
         if job.privacy:
             headers["x-muse-privacy"] = job.privacy
+        if job.task:
+            headers["x-muse-task"] = job.task  # the proxy replaces the model with the task's alias
         return self.post(f"{self.url}/v1/chat/completions", headers, json.dumps(body).encode(), REQUEST_TIMEOUT_S)
 
     def finish(self, job: Job, outputs: list[str], provider: Any, deployment: Any, cost: float | None, tin: int, tout: int) -> str:

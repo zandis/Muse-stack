@@ -16,6 +16,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Mapping
 
+from muse import catalog as catalog_mod
 from muse import paths, quota
 from muse import queue as queue_mod
 from muse.ledger import Ledger
@@ -172,9 +173,12 @@ def build_snapshot(
             configured[provider["id"]] = bool(str(env.get(str(provider.get("base_env")), "")).strip())
         else:
             name = str(provider["env"])
-            configured[provider["id"]] = _key_configured(name, env)
-            if configured[provider["id"]] and not str(env.get(name, "")).strip():
-                render_env[name] = PLACEHOLDER
+            needed = [name, *[str(extra) for extra in provider.get("also_env") or []]]
+            configured[provider["id"]] = all(_key_configured(n, env) for n in needed)
+            if configured[provider["id"]]:
+                for n in needed:
+                    if not str(env.get(n, "")).strip():
+                        render_env[n] = PLACEHOLDER
     try:
         rendered, enabled_ids = render_config.render(catalog, render_env)
     except (SystemExit, Exception):
@@ -259,6 +263,7 @@ def build_snapshot(
         usage = db.usage(provider=pid, now=ts) or {w: {"requests": 0, "tokens": 0} for w in ("minute", "day", "month")}
         providers.append(
             ProviderStatus(
+                **catalog_mod.provider_meta(catalog_mod.provider_from_dict(provider)),  # type: ignore[typeddict-item]
                 id=pid,
                 kind="local" if local else "cloud",
                 tier=str(provider.get("tier", "unknown")),
@@ -336,7 +341,28 @@ def build_snapshot(
         paid=build_paid(env, ts, db),
         queue=_queue_stats(env, ts),
         paused=queue_mod.is_paused(env),
+        **_catalogue_v2(env, catalog, configured),  # type: ignore[typeddict-item]
     )
+
+
+def _catalogue_v2(env: Mapping[str, str], catalog: Mapping[str, Any], configured: Mapping[str, bool]) -> dict[str, Any]:
+    """Ranked next helpers, other allowances and subscriptions. Facts from the catalogue only; never fails the snapshot."""
+    resources_dir = Path(env["MUSE_RESOURCES_DIR"]) if env.get("MUSE_RESOURCES_DIR") else None
+    try:
+        provs = tuple(catalog_mod.provider_from_dict(p) for p in catalog.get("providers", []) if isinstance(p, Mapping) and p.get("id"))
+        connected = {pid for pid, ok in configured.items() if ok}
+        suggestions = [s.to_dict() for s in catalog_mod.suggest_next(connected, env, providers=provs)]
+    except Exception:
+        suggestions = []
+    try:
+        resources = [catalog_mod.resource_to_dict(r) for r in catalog_mod.load_resources(resources_dir)]
+    except Exception:
+        resources = []
+    try:
+        subscriptions = [catalog_mod.subscription_to_dict(s) for s in catalog_mod.load_subscriptions(resources_dir)]
+    except Exception:
+        subscriptions = []
+    return {"suggestions": suggestions, "resources": resources, "subscriptions": subscriptions}
 
 
 def _queue_stats(env: Mapping[str, str], ts: float) -> Any:

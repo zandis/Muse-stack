@@ -33,7 +33,20 @@ Rules, applied in this order to the deployments left after privacy and blocks:
                   MUSE_EXPIRING_MONTH_S. Minute windows never count.
   6. unknown      where remaining is unknown (Gemini reports nothing) rules 4-5
                   cannot apply; rule 3 still does. No numbers are guessed.
-Interactive apps are never deferred by rules 3-5.
+  7. pacing       a background app also waits while a day or month allowance is
+                  behind its straight line from full (last reset) to empty (next
+                  reset): surplus = remaining/limit - (1 - elapsed/window) must be
+                  >= MUSE_PACE_MARGIN. Waived with the reserve by rule 5.
+  8. hand-off     a task marked `handoff: suggest` (frontier) keeps paid
+                  deployments back until the request says x-muse-allow-paid: true,
+                  so the user is offered "wait / open my own app / pay" first.
+  9. one-off      trial credits marked one-off (model_info.muse_oneoff) are kept
+                  back unless the request says x-muse-allow-oneoff: true.
+Interactive apps are never deferred by rules 3-5 or 7.
+
+After the rules, `prefer` narrows one LiteLLM order level to the upstreams
+whose allowance will reset with the most left over ("spend what expires
+soonest"), only when that is decisive (see Settings.prefer_gap).
 """
 
 from __future__ import annotations
@@ -61,6 +74,15 @@ PAID_SPEND_UNKNOWN = "paid-spend-unknown"
 YIELD = "yield"
 RESERVE = "reserve"
 BLOCKED = "blocked"
+PACE = "pace"
+PACE_PREFER = "pace:prefer"  # not a removal: the ordering hint chose among survivors
+ONEOFF_HELD = "oneoff-held"
+HANDOFF_FIRST = "handoff-first"
+
+# Window lengths used when only a reset time is known (headers). A provider's
+# calendar windows are computed exactly from muse.quota instead (window_bounds).
+NOMINAL_WINDOW_S = {"minute": 60, "day": 86400, "month": 30 * 86400}
+PACED_WINDOWS = frozenset({"day", "month"})
 
 DEFER = "defer"
 REFUSE = "refuse"
@@ -81,6 +103,10 @@ class Settings:
     expiring_month_s: float = 86400.0
     local_yields: bool = True
     tz_name: str = ""
+    pace_margin: float = 0.0
+    prefer_gap: float = 0.10
+    burn_window_s: float = 3600.0
+    burn_min_calls: int = 3
     warnings: tuple[str, ...] = field(default=(), compare=False)
 
     @property
@@ -119,6 +145,10 @@ class Settings:
             expiring_month_s=number("MUSE_EXPIRING_MONTH_S", 86400.0, 0, 31 * 86400),
             local_yields=local_yields,
             tz_name=str(env.get("MUSE_TZ", "") or "").strip(),
+            pace_margin=number("MUSE_PACE_MARGIN", 0.0, -1, 1),
+            prefer_gap=number("MUSE_PACE_PREFER_GAP", 0.10, 0, 2),
+            burn_window_s=number("MUSE_PACE_BURN_WINDOW_S", 3600.0, 60, 86400),
+            burn_min_calls=int(number("MUSE_PACE_BURN_MIN_CALLS", 3, 1, 100000)),
             warnings=tuple(warnings),
         )
 
@@ -215,6 +245,8 @@ class Limit:
     remaining: int
     reset_at: float | None
     source: str  # header | declared
+    window_start: float | None = None  # the previous reset; None = window length unknown (no pacing)
+    scope: str = ""  # ledger scope it was counted in (upstream or provider:<id>); "" = the upstream
 
 
 @dataclass(slots=True)
@@ -227,6 +259,7 @@ class State:
     paid_spend_usd: Decimal | None = Decimal("0")
     last_interactive: Mapping[str, float] = field(default_factory=dict)  # upstream -> ts
     day_end: float = 0.0  # next local midnight
+    burn: Mapping[str, Mapping[str, int]] = field(default_factory=dict)  # scope -> {calls, tokens} in the burn window
 
 
 @dataclass(frozen=True, slots=True)
@@ -353,7 +386,10 @@ def known_limits(
     `provider:<id>`) win; for windows without one, the catalogue `quota:`
     (rendered as model_info.muse_quota) minus successful calls in the ledger.
     Where neither exists the remaining amount is unknown and nothing is returned.
+    Each limit carries its window start (previous reset) when the window length
+    is known, which is what pacing needs.
     """
+    provider_id = str(info.get("provider") or "")
     best: dict[tuple[str, str], Limit] = {}
     for row in observed:
         if not _fresh(row, now):
@@ -362,16 +398,373 @@ def known_limits(
         if not isinstance(lim, int) or not isinstance(rem, int) or lim <= 0:
             continue
         key = (str(row.get("window")), str(row.get("metric")))
-        cand = Limit(key[0], key[1], lim, max(0, rem), row.get("reset_at"), "header")
+        reset_at = row.get("reset_at")
+        bounds = window_bounds(key[0], provider_id, now, reset_at=reset_at, observed=True)
+        cand = Limit(key[0], key[1], lim, max(0, rem), reset_at, "header",
+                     bounds[0] if bounds else None, str(row.get("scope") or ""))
         if key not in best or cand.remaining / cand.limit < best[key].remaining / best[key].limit:
             best[key] = cand
-    provider_id = str(info.get("provider") or "")
     for window, metric, limit in declared_quota(info.get("muse_quota")):
         if (window, metric) in best:
             continue
         used = int((provider_usage.get(window) or {}).get(metric, 0))
-        best[(window, metric)] = Limit(window, metric, limit, max(0, limit - used), window_reset(window, provider_id, now), "declared")
+        bounds = window_bounds(window, provider_id, now)
+        best[(window, metric)] = Limit(window, metric, limit, max(0, limit - used), window_reset(window, provider_id, now),
+                                       "declared", bounds[0] if bounds else None, f"provider:{provider_id}" if provider_id else "")
     return [best[key] for key in sorted(best)]
+
+
+# ---------------------------------------------------------------- pacing (rule 4)
+
+
+def previous_midnight_pacific(now: float) -> float:
+    """Start of the Pacific calendar day containing `now` (Gemini's last reset).
+
+    Exact on DST switch days (23 or 25 hours long): it is the reset before
+    quota.next_midnight_pacific(now), found by stepping back 26 h, which is
+    inside the previous local day whatever its length.
+    """
+    return quota.next_midnight_pacific(quota.next_midnight_pacific(now) - 26 * 3600)
+
+
+def window_bounds(
+    window: str, provider_id: str, now: float, *, reset_at: float | None = None, observed: bool = False
+) -> tuple[float, float] | None:
+    """(previous reset, next reset) of the window containing `now`, or None if unknown.
+
+    Declared (catalogue) windows follow the provider's rule in muse.quota:
+    minute = the UTC minute, day = midnight Pacific for Gemini and UTC midnight
+    otherwise, month = UTC calendar month. Observed windows (headers) know only
+    the next reset, so the start is reset - the window's nominal length (a
+    rolling window), except a month window whose reset is a UTC month start,
+    which is that calendar month. An observed reset further away than one
+    window, or in the past, means the header does not describe this window:
+    unknown.
+    """
+    if not observed:
+        if window == "minute":
+            start = now - (now % 60)
+            return start, start + 60
+        if window == "day":
+            if provider_id == "gemini":
+                return previous_midnight_pacific(now), quota.next_midnight_pacific(now)
+            nxt = quota.next_midnight_utc(now)
+            return nxt - 86400, nxt
+        if window == "month":
+            return quota.month_start(now), quota.next_month_utc(now)
+        return None
+    length = NOMINAL_WINDOW_S.get(window)
+    if length is None or reset_at is None:
+        return None
+    reset_at = float(reset_at)
+    if not math.isfinite(reset_at) or reset_at < now:
+        return None
+    if window == "month" and quota.month_start(reset_at) == reset_at:
+        start = quota.month_start(reset_at - 1)
+        return (start, reset_at) if start <= now else None
+    if reset_at - now > length:
+        return None
+    return reset_at - length, reset_at
+
+
+@dataclass(frozen=True, slots=True)
+class Pace:
+    """Where one allowance stands against its straight line. Fractions are of the limit.
+
+    surplus = remaining_fraction - expected_remaining_fraction; > 0 means under
+    the line (use is behind schedule). projected_leftover is the fraction left at
+    reset if the recent burn rate continues (None when the rate is unknown).
+    """
+
+    applies: bool
+    reason: str
+    remaining_fraction: float
+    expected_remaining_fraction: float | None = None
+    surplus: float | None = None
+    projected_leftover: float | None = None
+    window_start: float | None = None
+    reset_at: float | None = None
+
+
+def burn_rate(units: float | None, calls: int | None, window_s: float, min_calls: int) -> float | None:
+    """Units per second over the burn window; None (unknown) with fewer than `min_calls` calls.
+
+    One or two calls are not a rate, so below the minimum the ordering hint
+    falls back to the surplus instead of guessing.
+    """
+    if units is None or calls is None or window_s <= 0 or calls < max(1, min_calls):
+        return None
+    return max(0.0, float(units)) / window_s
+
+
+def pace_position(limit: Limit, now: float, rate: float | None = None) -> Pace:
+    """The pacing line for one limit at `now`. Pure; see Pace for the definitions.
+
+    expected_remaining_fraction(now) = 1 - clamp((now - start) / (reset - start), 0, 1)
+    surplus = remaining / limit - expected_remaining_fraction(now)
+    projected_leftover = clamp((remaining - rate * (reset - now)) / limit, 0, 1)
+    Minute windows are rate limits, not allowances, and a snapshot of one is stale
+    within seconds, so they are never paced.
+    """
+    rf = min(1.0, max(0.0, limit.remaining / limit.limit)) if limit.limit > 0 else 0.0
+    if limit.window not in PACED_WINDOWS:
+        return Pace(False, f"{limit.window} windows are rate limits, not allowances; pacing does not apply", rf)
+    if limit.window_start is None or limit.reset_at is None or limit.reset_at <= limit.window_start:
+        return Pace(False, f"the {limit.window} window's length is unknown; pacing does not apply (reserve rule only)", rf)
+    span = limit.reset_at - limit.window_start
+    elapsed = min(1.0, max(0.0, (now - limit.window_start) / span))
+    expected = 1.0 - elapsed
+    leftover = None
+    if rate is not None:
+        leftover = min(1.0, max(0.0, (limit.remaining - rate * max(0.0, limit.reset_at - now)) / limit.limit))
+    return Pace(True, "", rf, expected, rf - expected, leftover, limit.window_start, limit.reset_at)
+
+
+def pace_release_at(limit: Limit, margin: float, settings: Settings, now: float) -> float:
+    """When a held background app may next use this limit if nobody spends it:
+    the line catches up (start + (1 - remaining_fraction + margin) * span), or the
+    expiring horizon opens, whichever is first; never before `now` + 1 s."""
+    assert limit.window_start is not None and limit.reset_at is not None
+    span = limit.reset_at - limit.window_start
+    rf = min(1.0, max(0.0, limit.remaining / limit.limit))
+    caught_up = limit.window_start + (1.0 - rf + margin) * span
+    horizon = settings.expiring_day_s if limit.window == "day" else settings.expiring_month_s
+    return max(now + 1.0, min(caught_up, limit.reset_at - horizon, limit.reset_at))
+
+
+def pace_holds(limit: Limit, settings: Settings, now: float) -> bool:
+    """True if background use must wait for this limit: pacing applies and surplus < margin."""
+    pos = pace_position(limit, now)
+    return pos.applies and pos.surplus is not None and pos.surplus < settings.pace_margin - 1e-12
+
+
+def limit_rate(limit: Limit, upstream: str, burn: Mapping[str, Mapping[str, int]], settings: Settings) -> float | None:
+    """Recent burn rate for the scope a limit is counted in (requests: calls; tokens: tokens)."""
+    row = burn.get(limit.scope or upstream)
+    if not row:
+        return None
+    units = row.get("calls") if limit.metric == "requests" else row.get("tokens")
+    return burn_rate(units, row.get("calls"), settings.burn_window_s, settings.burn_min_calls)
+
+
+def pace_view(
+    limits_by_upstream: Mapping[str, Sequence[Limit]],
+    now: float,
+    *,
+    burn: Mapping[str, Mapping[str, int]] | None = None,
+    settings: Settings | None = None,
+) -> list[dict[str, Any]]:
+    """Rows for a status screen to draw the pacing line. Pure.
+
+    One row per (upstream, window, metric) with a known limit, and one row with
+    source "unknown" for an upstream with none. Keys:
+      upstream, window, metric, limit, remaining, reset_at, window_start (epoch s or None),
+      expected_remaining (units, None if pacing does not apply), surplus (fraction or None),
+      projected_leftover (fraction or None), source (observed | declared | unknown),
+      paced (bool), reason (why not paced, else "").
+    """
+    settings = settings or Settings()
+    burn = burn or {}
+    rows: list[dict[str, Any]] = []
+    for upstream in sorted(limits_by_upstream):
+        limits = list(limits_by_upstream[upstream])
+        if not limits:
+            rows.append({"upstream": upstream, "window": None, "metric": None, "limit": None, "remaining": None,
+                         "reset_at": None, "window_start": None, "expected_remaining": None, "surplus": None,
+                         "projected_leftover": None, "source": "unknown", "paced": False,
+                         "reason": "the provider reports nothing and the catalogue declares no quota"})
+            continue
+        for lim in limits:
+            pos = pace_position(lim, now, limit_rate(lim, upstream, burn, settings))
+            rows.append({
+                "upstream": upstream, "window": lim.window, "metric": lim.metric, "limit": lim.limit,
+                "remaining": lim.remaining, "reset_at": lim.reset_at, "window_start": lim.window_start,
+                "expected_remaining": None if pos.expected_remaining_fraction is None else pos.expected_remaining_fraction * lim.limit,
+                "surplus": pos.surplus, "projected_leftover": pos.projected_leftover,
+                "source": "observed" if lim.source == "header" else lim.source, "paced": pos.applies, "reason": pos.reason,
+            })
+    return rows
+
+
+@dataclass(frozen=True, slots=True)
+class Rank:
+    """How much one upstream's allowance is worth spending now (higher = spend first)."""
+
+    upstream: str
+    klass: str  # surplus | unknown | deficit
+    surplus: float | None
+    leftover: float | None
+    detail: str
+
+
+def rank_upstream(upstream: str, limits: Sequence[Limit], now: float, burn: Mapping[str, Mapping[str, int]],
+                  settings: Settings) -> Rank:
+    """Rank by the binding paced limit (the one with the smallest surplus).
+
+    surplus >= 0 -> class surplus; < 0 -> deficit; no paced limit -> unknown.
+    """
+    best: tuple[Pace, Limit] | None = None
+    for lim in limits:
+        pos = pace_position(lim, now, limit_rate(lim, upstream, burn, settings))
+        if pos.applies and (best is None or (pos.surplus or 0.0) < (best[0].surplus or 0.0)):
+            best = (pos, lim)
+    if best is None:
+        return Rank(upstream, "unknown", None, None, f"{upstream}: remaining or window unknown")
+    pos, lim = best
+    klass = "surplus" if (pos.surplus or 0.0) >= 0 else "deficit"
+    detail = f"{upstream}: {lim.remaining}/{lim.limit} {lim.metric} per {lim.window}, surplus {pos.surplus:+.2f}"
+    if pos.projected_leftover is not None:
+        detail += f", leftover at reset {pos.projected_leftover:.2f}"
+    return Rank(upstream, klass, pos.surplus, pos.projected_leftover, detail)
+
+
+def deployment_order(deployment: Mapping[str, Any]) -> int | None:
+    """LiteLLM's `order` for a deployment (litellm_params.order), None when unset."""
+    params = deployment.get("litellm_params") if isinstance(deployment, Mapping) else None
+    value = params.get("order") if isinstance(params, Mapping) else None
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def rank_values(ranks: Sequence[Rank]) -> list[float]:
+    """Comparable values: unknown = 0 (on the line), deficit = its surplus (< 0),
+    surplus = projected leftover when every known rank has one, else the surplus."""
+    known = [r for r in ranks if r.klass != "unknown"]
+    use_leftover = bool(known) and all(r.leftover is not None for r in known)
+    out = []
+    for r in ranks:
+        if r.klass == "unknown":
+            out.append(0.0)
+        elif r.klass == "deficit":
+            out.append(float(r.surplus or 0.0))
+        else:
+            out.append(float(r.leftover if use_leftover else (r.surplus or 0.0)))
+    return out
+
+
+def prefer(
+    deployments: Sequence[dict],
+    state: State,
+    settings: Settings,
+    now: float,
+    *,
+    target_order: int | None = None,
+    tried: Iterable[str] = (),
+) -> tuple[list[dict], str | None]:
+    """Rule 4's ordering hint: narrow the order level LiteLLM will pick from to the
+    upstreams whose allowance will reset with the most left over. Pure.
+
+    The level is `target_order` (LiteLLM's order fallback) or the lowest order
+    present, as litellm.utils.get_order_filtered_deployments picks it. Other
+    levels are returned untouched, so LiteLLM's order and alias fallbacks work
+    as before. Decisive means: some deployment's value is more than
+    settings.prefer_gap below the best one's (see rank_values); only those are
+    dropped, so near-equals are still load-balanced. Never narrows when fewer
+    than two upstreams share the level, or when a deployment of the level was
+    already tried for this request (a retry is LiteLLM's failover, not a
+    preference). Returns (deployments, reason or None).
+    """
+    deployments = list(deployments)
+    orders = [deployment_order(d) for d in deployments]
+    present = [o for o in orders if o is not None]
+    level = target_order if target_order is not None and target_order in present else (min(present) if present else None)
+    members = [d for d, o in zip(deployments, orders) if o == level]
+    upstreams = sorted({upstream_of(_info(d)) for d in members})
+    if len(upstreams) < 2:
+        return deployments, None
+    tried_ids = set(tried)
+    if any(str(_info(d).get("id", "")) in tried_ids for d in members):
+        return deployments, None
+    ranks = [rank_upstream(u, state.limits.get(u, ()), now, state.burn, settings) for u in upstreams]
+    values = dict(zip(upstreams, rank_values(ranks)))
+    top = max(values.values())
+    keep = {u for u, v in values.items() if top - v <= settings.prefer_gap + 1e-12}
+    if keep == set(upstreams):
+        return deployments, None
+    chosen = [r for r in ranks if r.upstream in keep]
+    dropped = [r for r in ranks if r.upstream not in keep]
+    reason = (f"{PACE_PREFER}: prefer {', '.join(r.detail for r in chosen)} over "
+              f"{', '.join(r.detail for r in dropped)} (gap > {settings.prefer_gap:.2f})")
+    out = [d for d, o in zip(deployments, orders) if o != level or upstream_of(_info(d)) in keep]
+    return out, reason
+
+
+# ---------------------------------------------------------------- options for the user (rule 6)
+
+
+def options_trailer(wait_at: float | None, handoff: bool, pay_usd: float | None) -> str:
+    """The machine-readable choices a bot turns into the three-choice card.
+
+    Grammar: `options=` then a comma-separated list in this fixed order, only
+    the choices available now: `wait:<ISO-8601 UTC, ...Z>` (the soonest reset),
+    `handoff` (open the user's own subscription app), `pay:<USD, 6 decimals>`
+    (estimated cost). `options=none` when nothing is available.
+    """
+    items = []
+    if wait_at is not None:
+        items.append(f"wait:{quota.iso(wait_at)}")
+    if handoff:
+        items.append("handoff")
+    if pay_usd is not None:
+        items.append(f"pay:{pay_usd:.6f}")
+    return "options=" + (",".join(items) if items else "none")
+
+
+def parse_options(message: str) -> dict[str, Any]:
+    """Inverse of options_trailer for a message that ends with ` | options=...` (bots, tests)."""
+    _, sep, tail = str(message).rpartition(" | options=")
+    if not sep:
+        return {}
+    out: dict[str, Any] = {}
+    for item in tail.strip().split(","):
+        name, _, value = item.partition(":")
+        if name == "wait":
+            out["wait"] = value
+        elif name == "pay":
+            out["pay"] = float(value)
+        elif name == "handoff":
+            out["handoff"] = True
+    return out
+
+
+def available_options(
+    decision: Decision,
+    removed: Sequence[Removed],
+    *,
+    handoff: bool,
+    pay_estimates: Mapping[str, float],
+) -> tuple[float | None, bool, float | None]:
+    """(wait_at, handoff, pay_usd) that are really available now. Pure.
+
+    wait: the soonest retry among temporary removals (a reset, a yield, pacing),
+    or the app's own cap reset; none for a permanent refusal. pay: the cheapest
+    estimate among paid deployments held only for the hand-off (they passed the
+    paid gate: the app may pay, the cap has room, the price is known).
+    """
+    waits = [r.retry_at for r in removed if r.kind == DEFER and r.retry_at is not None]
+    if decision.code in (APP_REQUESTS, APP_TOKENS) and decision.retry_at is not None:
+        waits.append(decision.retry_at)
+    pays = [pay_estimates[r.deployment_id] for r in removed if r.code == HANDOFF_FIRST and r.deployment_id in pay_estimates]
+    return (min(waits) if waits else None), bool(handoff), (min(pays) if pays else None)
+
+
+def with_options(decision: Decision, removed: Sequence[Removed], *, handoff: bool,
+                 pay_estimates: Mapping[str, float]) -> Decision:
+    """The decision with ` | options=...` appended to its message (once)."""
+    if " | options=" in decision.message:
+        return decision
+    wait_at, ho, pay = available_options(decision, removed, handoff=handoff, pay_estimates=pay_estimates)
+    return Decision(decision.kind, decision.code, f"{decision.message} | {options_trailer(wait_at, ho, pay)}",
+                    decision.retry_at, decision.status)
+
+
+def is_oneoff(info: Mapping[str, Any]) -> bool:
+    """Rule 7: a trial deployment whose credits never renew (catalogue marks the provider one-off)."""
+    return tier_of(info) == "trial" and info.get("muse_oneoff") is True
 
 
 def expiring(limit: Limit, settings: Settings, now: float) -> bool:
@@ -450,10 +843,15 @@ def ration(
     *,
     direct: bool = False,
     prior: Sequence[Removed] = (),
+    allow_oneoff: bool = False,
+    handoff_hold: bool = False,
 ) -> Outcome:
-    """Apply rules 1-6. `prior` are earlier removals (provider blocks) that
+    """Apply the rules. `prior` are earlier removals (provider blocks) that
     count toward the final decision. `direct` marks a request that named the
-    deployment itself, which may use a paid deployment without a price."""
+    deployment itself, which may use a paid deployment without a price.
+    `allow_oneoff`: the request carries the user's approval to spend one-off
+    trial credits. `handoff_hold`: a frontier task without approval to pay, so
+    paid deployments are offered (options trailer), not used."""
     deployments = list(deployments)
     removed: list[Removed] = []
     cap = app_cap(app, state)
@@ -466,6 +864,7 @@ def ration(
 
     kept: list[dict] = []
     fraction = reserve_fraction(app.priority, settings)
+    paced = app.priority == "background"
     for dep in deployments:
         info = _info(dep)
         dep_id, upstream = str(info.get("id", "")), upstream_of(info)
@@ -487,12 +886,19 @@ def ration(
                                        f"yielding to the active app; retry in {max(1, math.ceil(retry - now))} s"))
                 continue
 
-        if fraction > 0:
+        if fraction > 0 or paced:
             hit: Limit | None = None
+            behind: Limit | None = None
             for limit in state.limits.get(upstream, ()):
-                if breaches_reserve(limit, fraction) and not expiring(limit, settings, now):
+                if expiring(limit, settings, now):
+                    continue  # about to reset: reserve and pacing are both waived
+                if fraction > 0 and breaches_reserve(limit, fraction):
                     if hit is None or (limit.reset_at or math.inf) > (hit.reset_at or math.inf):
                         hit = limit  # the latest reset is when it is really free again
+                elif paced and pace_holds(limit, settings, now):
+                    release = pace_release_at(limit, settings.pace_margin, settings, now)
+                    if behind is None or release > pace_release_at(behind, settings.pace_margin, settings, now):
+                        behind = limit
             if hit is not None:
                 retry = hit.reset_at if hit.reset_at is not None else now + WINDOW_SECONDS.get(hit.window, 60)
                 removed.append(Removed(
@@ -501,20 +907,53 @@ def ration(
                     f"resets at {_when(retry)}",
                 ))
                 continue
+            if behind is not None:
+                pos = pace_position(behind, now)
+                retry = pace_release_at(behind, settings.pace_margin, settings, now)
+                removed.append(Removed(
+                    dep_id, upstream, PACE, DEFER, retry,
+                    f"pacing: this {behind.window}'s allowance is ahead of schedule ({behind.remaining}/{behind.limit} "
+                    f"{behind.metric} left, {pos.expected_remaining_fraction * behind.limit:.0f} expected by now); "
+                    f"background work resumes at {_when(retry)}",
+                ))
+                continue
+
+        if handoff_hold and is_paid(info):
+            removed.append(Removed(dep_id, upstream, HANDOFF_FIRST, REFUSE, None,
+                                   "a frontier task: the hand-off to your own subscription app is offered before spending"))
+            continue
+
+        if not allow_oneoff and is_oneoff(info):
+            removed.append(Removed(dep_id, upstream, ONEOFF_HELD, REFUSE, None,
+                                   "one-off trial credits are held until you approve using them"))
+            continue
         kept.append(dep)
 
     decision = None if kept else decide(app, [*prior, *removed], now, settings)
     return Outcome(kept, removed, decision)
 
 
+HANDOFF_MESSAGE = ("[muse] this is a frontier task and no free allowance that fits it can answer now; "
+                   "choose: wait, open it in your own subscription app, or approve spending (x-muse-allow-paid: true)")
+ONEOFF_MESSAGE = ("[muse] only one-off trial credits could answer this now; they are held until you approve using them "
+                  "(x-muse-allow-oneoff: true)")
+
+
 def decide(app: AppPolicy, removed: Sequence[Removed], now: float, settings: Settings) -> Decision | None:
-    """One clear answer when nothing is left: defer to the soonest retry if any
-    removal is temporary, else refuse with the most relevant reason."""
+    """One clear answer when nothing is left. A removal the user can lift right now
+    by approving (hand-off hold, one-off hold) is a refusal that needs a choice,
+    not a deferral; its retry is the soonest temporary removal, if any. Otherwise
+    defer to the soonest retry if any removal is temporary, else refuse with the
+    most relevant reason."""
     if not removed:
         return None
+    defers = [r for r in removed if r.kind == DEFER and r.retry_at is not None]
+    soonest = min((r.retry_at for r in defers if r.retry_at is not None), default=None)
+    for code, message in ((HANDOFF_FIRST, HANDOFF_MESSAGE), (ONEOFF_HELD, ONEOFF_MESSAGE)):
+        if any(r.code == code for r in removed):
+            return Decision(REFUSE, code, message, soonest, 429)
     order = [PAID_CAP, PAID_SPEND_UNKNOWN, PAID_NOT_ALLOWED, PAID_UNKNOWN_COST]
     refusals = sorted((r for r in removed if r.kind == REFUSE), key=lambda r: order.index(r.code) if r.code in order else len(order))
-    defers = [r for r in removed if r.kind == DEFER and r.retry_at is not None]
     if defers:
         first = min(defers, key=lambda r: r.retry_at or math.inf)
         if first.code == YIELD:
@@ -533,5 +972,5 @@ def decide(app: AppPolicy, removed: Sequence[Removed], now: float, settings: Set
 
 
 def fail_closed(deployments: Sequence[dict]) -> list[dict]:
-    """What to keep when rationing itself failed: everything but paid deployments."""
-    return [dep for dep in deployments if not is_paid(_info(dep))]
+    """What to keep when rationing itself failed: everything but paid and one-off deployments."""
+    return [dep for dep in deployments if not is_paid(_info(dep)) and not is_oneoff(_info(dep))]

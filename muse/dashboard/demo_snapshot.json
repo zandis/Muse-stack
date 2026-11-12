@@ -9,6 +9,20 @@
  "providers": [
   {
    "id": "gemini",
+   "name": "Gemini",
+   "connection_method": "paste_key",
+   "minutes_estimate": 4,
+   "good_for": [
+    "everyday",
+    "quick_answers",
+    "long_documents",
+    "embeddings"
+   ],
+   "kind_of_allowance": [
+    "daily"
+   ],
+   "checked_on": "2026-11-12",
+   "confidence": "M",
    "kind": "cloud",
    "tier": "free",
    "key_env": "GEMINI_API_KEY",
@@ -164,6 +178,18 @@
   },
   {
    "id": "groq",
+   "name": "Groq",
+   "connection_method": "paste_key",
+   "minutes_estimate": 4,
+   "good_for": [
+    "everyday",
+    "quick_answers"
+   ],
+   "kind_of_allowance": [
+    "daily"
+   ],
+   "checked_on": "2026-11-12",
+   "confidence": "M",
    "kind": "cloud",
    "tier": "free",
    "key_env": "GROQ_API_KEY",
@@ -260,6 +286,13 @@
   },
   {
    "id": "ollama",
+   "name": "Ollama",
+   "connection_method": "none",
+   "minutes_estimate": null,
+   "good_for": [],
+   "kind_of_allowance": [],
+   "checked_on": null,
+   "confidence": null,
    "kind": "local",
    "tier": "local",
    "key_env": null,
@@ -336,6 +369,18 @@
   },
   {
    "id": "siliconflow",
+   "name": "SiliconFlow",
+   "connection_method": "paste_key",
+   "minutes_estimate": null,
+   "good_for": [
+    "everyday",
+    "quick_answers",
+    "embeddings",
+    "reranking"
+   ],
+   "kind_of_allowance": [],
+   "checked_on": "2026-11-12",
+   "confidence": "L",
    "kind": "cloud",
    "tier": "metered",
    "key_env": "SILICONFLOW_API_KEY",
@@ -421,6 +466,16 @@
   },
   {
    "id": "deepseek",
+   "name": "DeepSeek",
+   "connection_method": "paste_key",
+   "minutes_estimate": null,
+   "good_for": [
+    "everyday",
+    "long_documents"
+   ],
+   "kind_of_allowance": [],
+   "checked_on": "2026-11-12",
+   "confidence": "L",
    "kind": "cloud",
    "tier": "paid",
    "key_env": "DEEPSEEK_API_KEY",
@@ -486,6 +541,19 @@
   },
   {
    "id": "openrouter",
+   "name": "OpenRouter",
+   "connection_method": "oauth_pkce",
+   "minutes_estimate": 1,
+   "good_for": [
+    "everyday",
+    "quick_answers",
+    "long_documents"
+   ],
+   "kind_of_allowance": [
+    "daily"
+   ],
+   "checked_on": "2026-11-12",
+   "confidence": "H",
    "kind": "cloud",
    "tier": "free",
    "key_env": "OPENROUTER_API_KEY",
@@ -595,6 +663,21 @@
   },
   {
    "id": "cohere",
+   "name": "Cohere",
+   "connection_method": "paste_key",
+   "minutes_estimate": 4,
+   "good_for": [
+    "everyday",
+    "quick_answers",
+    "long_documents",
+    "embeddings",
+    "reranking"
+   ],
+   "kind_of_allowance": [
+    "monthly"
+   ],
+   "checked_on": "2026-11-12",
+   "confidence": "M",
    "kind": "cloud",
    "tier": "trial",
    "key_env": "COHERE_API_KEY",
@@ -702,6 +785,13 @@
   },
   {
    "id": "lmstudio",
+   "name": "LM Studio",
+   "connection_method": "none",
+   "minutes_estimate": null,
+   "good_for": [],
+   "kind_of_allowance": [],
+   "checked_on": null,
+   "confidence": null,
    "kind": "local",
    "tier": "local",
    "key_env": null,
@@ -737,6 +827,16 @@
   },
   {
    "id": "jina",
+   "name": "Jina",
+   "connection_method": "paste_key",
+   "minutes_estimate": 4,
+   "good_for": [
+    "embeddings",
+    "reranking"
+   ],
+   "kind_of_allowance": [],
+   "checked_on": "2026-11-12",
+   "confidence": "L",
    "kind": "cloud",
    "tier": "trial",
    "key_env": "JINA_API_KEY",
@@ -799,6 +899,17 @@
   },
   {
    "id": "novita",
+   "name": "Novita",
+   "connection_method": "paste_key",
+   "minutes_estimate": null,
+   "good_for": [
+    "everyday",
+    "quick_answers",
+    "long_documents"
+   ],
+   "kind_of_allowance": [],
+   "checked_on": "2026-11-12",
+   "confidence": "L",
    "kind": "cloud",
    "tier": "paid",
    "key_env": "NOVITA_API_KEY",
@@ -862,7 +973,159 @@
    ]
   },
   {
+   "name": "Cerebras",
+   "connection_method": "paste_key",
+   "minutes_estimate": 4,
+   "good_for": [
+    "everyday",
+    "quick_answers"
+   ],
+   "kind_of_allowance": [
+    "daily"
+   ],
+   "checked_on": "2026-11-12",
+   "confidence": "M",
+   "id": "cerebras",
+   "kind": "cloud",
+   "tier": "free",
+   "key_env": "CEREBRAS_API_KEY",
+   "configured": false,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "unknown",
+    "human_review": "unknown",
+    "region": "unknown",
+    "commercial_use": "unknown",
+    "terms_url": "https://www.cerebras.ai/terms-of-service",
+    "note": "Training and review terms for the API were not confirmed, so the private class skips it. The website terms say Cerebras's right to monitor content does not give it the right to train on it; the pricing page footnote says the free offer is not intended for production use."
+   },
+   "state": "no_key",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "month": {
+     "requests": 0,
+     "tokens": 0
+    }
+   },
+   "limits": [],
+   "deployments": [
+    {
+     "id": "cerebras-gpt-oss-120b",
+     "model": "cerebras/gpt-oss-120b",
+     "mode": "chat",
+     "aliases": [],
+     "state": "no_key",
+     "blocked_until": null,
+     "last_status": null,
+     "last_used_at": null,
+     "success_rate_24h": null
+    },
+    {
+     "id": "cerebras-qwen-3-8-27b",
+     "model": "cerebras/qwen-3.8-27b",
+     "mode": "chat",
+     "aliases": [],
+     "state": "no_key",
+     "blocked_until": null,
+     "last_status": null,
+     "last_used_at": null,
+     "success_rate_24h": null
+    }
+   ]
+  },
+  {
+   "name": "Cloudflare Workers AI",
+   "connection_method": "paste_key",
+   "minutes_estimate": 8,
+   "good_for": [
+    "everyday",
+    "quick_answers"
+   ],
+   "kind_of_allowance": [
+    "daily"
+   ],
+   "checked_on": "2026-11-12",
+   "confidence": "M",
+   "id": "cloudflare",
+   "kind": "cloud",
+   "tier": "free",
+   "key_env": "CLOUDFLARE_API_KEY",
+   "configured": false,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "no",
+    "human_review": "unknown",
+    "region": "unknown",
+    "commercial_use": "unknown",
+    "terms_url": "https://developers.cloudflare.com/workers-ai/platform/data-usage/",
+    "note": "Cloudflare says it does not use Customer Content processed by Workers AI to train models, and does not keep inputs or outputs of plain inference requests. Human review is not addressed, so the private class still skips it."
+   },
+   "state": "no_key",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "month": {
+     "requests": 0,
+     "tokens": 0
+    }
+   },
+   "limits": [],
+   "deployments": [
+    {
+     "id": "cloudflare-llama-3-1-8b",
+     "model": "cloudflare/@cf/meta/llama-3.1-8b-instruct-fp8",
+     "mode": "chat",
+     "aliases": [],
+     "state": "no_key",
+     "blocked_until": null,
+     "last_status": null,
+     "last_used_at": null,
+     "success_rate_24h": null
+    },
+    {
+     "id": "cloudflare-llama-3-3-70b",
+     "model": "cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "mode": "chat",
+     "aliases": [],
+     "state": "no_key",
+     "blocked_until": null,
+     "last_status": null,
+     "last_used_at": null,
+     "success_rate_24h": null
+    }
+   ]
+  },
+  {
    "id": "nvidia_nim",
+   "name": "NVIDIA NIM",
+   "connection_method": "paste_key",
+   "minutes_estimate": null,
+   "good_for": [
+    "everyday",
+    "quick_answers",
+    "long_documents",
+    "embeddings"
+   ],
+   "kind_of_allowance": [],
+   "checked_on": "2026-11-12",
+   "confidence": "L",
    "kind": "cloud",
    "tier": "paid",
    "key_env": "NVIDIA_NIM_API_KEY",
@@ -913,6 +1176,18 @@
   },
   {
    "id": "voyage",
+   "name": "Voyage",
+   "connection_method": "paste_key",
+   "minutes_estimate": null,
+   "good_for": [
+    "embeddings",
+    "reranking"
+   ],
+   "kind_of_allowance": [
+    "one_off"
+   ],
+   "checked_on": "2026-11-12",
+   "confidence": "L",
    "kind": "cloud",
    "tier": "paid",
    "key_env": "VOYAGE_API_KEY",
@@ -1318,5 +1593,496 @@
   "oldest_queued_at": "2026-11-12T11:40:00Z",
   "hold_until": null
  },
- "paused": false
+ "paused": false,
+ "suggestions": [
+  {
+   "id": "cerebras",
+   "name": "Cerebras",
+   "rank": 1,
+   "method": "paste_key",
+   "minutes_estimate": 4,
+   "steps": 3,
+   "card_required": "unknown",
+   "phone_required": "unknown",
+   "gain": {
+    "window": "day",
+    "limit": 1000000,
+    "unit": "tokens"
+   },
+   "text": {
+    "en": {
+     "gain": "adds roughly 1,000,000 tokens a day",
+     "meta": "about 4 min, 3 steps",
+     "friction": "card or phone may be needed (not confirmed)"
+    },
+    "zh-TW": {
+     "gain": "每天多約 1,000,000 個 token",
+     "meta": "約 4 分鐘，3 個步驟",
+     "friction": "可能需要信用卡或手機號碼（尚未確認）"
+    }
+   }
+  },
+  {
+   "id": "cloudflare",
+   "name": "Cloudflare Workers AI",
+   "rank": 2,
+   "method": "paste_key",
+   "minutes_estimate": 8,
+   "steps": 4,
+   "card_required": "unknown",
+   "phone_required": "unknown",
+   "gain": {
+    "window": "day",
+    "limit": 10000,
+    "unit": "neurons"
+   },
+   "text": {
+    "en": {
+     "gain": "adds roughly 10,000 neurons a day",
+     "meta": "about 8 min, 4 steps",
+     "friction": "card or phone may be needed (not confirmed)"
+    },
+    "zh-TW": {
+     "gain": "每天多約 10,000 個 neurons",
+     "meta": "約 8 分鐘，4 個步驟",
+     "friction": "可能需要信用卡或手機號碼（尚未確認）"
+    }
+   }
+  },
+  {
+   "id": "jina",
+   "name": "Jina",
+   "rank": 3,
+   "method": "paste_key",
+   "minutes_estimate": 4,
+   "steps": 2,
+   "card_required": "unknown",
+   "phone_required": "unknown",
+   "gain": null,
+   "text": {
+    "en": {
+     "gain": "allowance not confirmed",
+     "meta": "about 4 min, 2 steps",
+     "friction": "card or phone may be needed (not confirmed)"
+    },
+    "zh-TW": {
+     "gain": "額度尚未確認",
+     "meta": "約 4 分鐘，2 個步驟",
+     "friction": "可能需要信用卡或手機號碼（尚未確認）"
+    }
+   }
+  },
+  {
+   "id": "local",
+   "name": "AI on this computer",
+   "rank": 4,
+   "method": "local",
+   "minutes_estimate": null,
+   "steps": 0,
+   "card_required": "no",
+   "phone_required": "no",
+   "gain": null,
+   "text": {
+    "en": {
+     "gain": "no daily limit; runs on this computer",
+     "meta": "needs Ollama, LM Studio or another local runtime",
+     "friction": null
+    },
+    "zh-TW": {
+     "gain": "沒有每日上限，在這台電腦上執行",
+     "meta": "需要先裝 Ollama、LM Studio 或其他本機執行環境",
+     "friction": null
+    }
+   }
+  }
+ ],
+ "resources": [
+  {
+   "id": "cloudflare-r2",
+   "kind": "storage",
+   "name": {
+    "en": "Cloudflare R2 storage",
+    "zh-TW": "Cloudflare R2 雲端儲存"
+   },
+   "provider": "Cloudflare",
+   "summary": {
+    "en": "Object storage with a free monthly amount of storage and operations. Sending data out of R2 directly is free.",
+    "zh-TW": "物件儲存空間，每月有免費的容量和操作次數。直接從 R2 傳出資料不收費。"
+   },
+   "managed": false,
+   "kind_of_allowance": [
+    "monthly"
+   ],
+   "allowance": [
+    {
+     "window": "month",
+     "limit": 10,
+     "unit": "gb_month",
+     "scope": "storage",
+     "condition": null,
+     "headline": true,
+     "text": {
+      "en": "10 GB-month a month",
+      "zh-TW": "每月 10 GB-月"
+     }
+    },
+    {
+     "window": "month",
+     "limit": 1000000,
+     "unit": "class_a_operations",
+     "scope": "writes and lists",
+     "condition": null,
+     "headline": false,
+     "text": {
+      "en": "1,000,000 class A operations a month",
+      "zh-TW": "每月 1,000,000 A 類操作"
+     }
+    },
+    {
+     "window": "month",
+     "limit": 10000000,
+     "unit": "class_b_operations",
+     "scope": "reads",
+     "condition": null,
+     "headline": false,
+     "text": {
+      "en": "10,000,000 class B operations a month",
+      "zh-TW": "每月 10,000,000 B 類操作"
+     }
+    }
+   ],
+   "headline": {
+    "window": "month",
+    "limit": 10,
+    "unit": "gb_month",
+    "scope": "storage",
+    "condition": null,
+    "headline": true,
+    "text": {
+     "en": "10 GB-month a month",
+     "zh-TW": "每月 10 GB-月"
+    }
+   },
+   "reset": {
+    "rule": "unknown",
+    "text": {
+     "en": "refill time not confirmed",
+     "zh-TW": "補滿時間尚未確認"
+    }
+   },
+   "how": {
+    "en": "Needs a Cloudflare account. Muse does not connect to it yet.",
+    "zh-TW": "需要一個 Cloudflare 帳號。Muse 目前還不會連接它。"
+   },
+   "key_url": "https://dash.cloudflare.com/",
+   "checked_on": "2026-11-12",
+   "confidence": "M",
+   "source_urls": [
+    "https://developers.cloudflare.com/r2/pricing/"
+   ]
+  },
+  {
+   "id": "google-drive",
+   "kind": "storage",
+   "name": {
+    "en": "Google account storage (Drive, Gmail, Photos)",
+    "zh-TW": "Google 帳號儲存空間（雲端硬碟、Gmail、相簿）"
+   },
+   "provider": "Google",
+   "summary": {
+    "en": "Every Google Account comes with up to 15 GB at no charge, shared across Drive, Gmail and Photos.",
+    "zh-TW": "每個 Google 帳號免費附帶最多 15 GB，由雲端硬碟、Gmail 和相簿共用。"
+   },
+   "managed": false,
+   "kind_of_allowance": [],
+   "allowance": [
+    {
+     "window": "total",
+     "limit": 15,
+     "unit": "gb",
+     "scope": "shared by Drive, Gmail and Photos",
+     "condition": null,
+     "headline": true,
+     "text": {
+      "en": "15 GB in total",
+      "zh-TW": "總共 15 GB"
+     }
+    }
+   ],
+   "headline": {
+    "window": "total",
+    "limit": 15,
+    "unit": "gb",
+    "scope": "shared by Drive, Gmail and Photos",
+    "condition": null,
+    "headline": true,
+    "text": {
+     "en": "15 GB in total",
+     "zh-TW": "總共 15 GB"
+    }
+   },
+   "reset": {
+    "rule": "none",
+    "text": {
+     "en": "does not refill",
+     "zh-TW": "不會補充"
+    }
+   },
+   "how": {
+    "en": "Uses your own Google Account. Muse does not connect to it yet.",
+    "zh-TW": "使用你自己的 Google 帳號。Muse 目前還不會連接它。"
+   },
+   "key_url": "https://drive.google.com/",
+   "checked_on": "2026-11-12",
+   "confidence": "M",
+   "source_urls": [
+    "https://support.google.com/drive/answer/2375123"
+   ]
+  },
+  {
+   "id": "huggingface-zerogpu",
+   "kind": "compute",
+   "name": {
+    "en": "Hugging Face ZeroGPU",
+    "zh-TW": "Hugging Face ZeroGPU 免費 GPU"
+   },
+   "provider": "Hugging Face",
+   "summary": {
+    "en": "Free GPU time for running ZeroGPU Spaces. A free account gets 5 minutes a day; visitors who are not signed in get 2.",
+    "zh-TW": "用來執行 ZeroGPU Spaces 的免費 GPU 時間。免費帳號每天 5 分鐘；沒登入的訪客是 2 分鐘。"
+   },
+   "managed": false,
+   "kind_of_allowance": [
+    "daily"
+   ],
+   "allowance": [
+    {
+     "window": "day",
+     "limit": 5,
+     "unit": "gpu_minutes",
+     "scope": "free account",
+     "condition": null,
+     "headline": true,
+     "text": {
+      "en": "5 GPU minutes a day",
+      "zh-TW": "每天 5 GPU 分鐘"
+     }
+    },
+    {
+     "window": "day",
+     "limit": 2,
+     "unit": "gpu_minutes",
+     "scope": "not signed in",
+     "condition": null,
+     "headline": false,
+     "text": {
+      "en": "2 GPU minutes a day",
+      "zh-TW": "每天 2 GPU 分鐘"
+     }
+    }
+   ],
+   "headline": {
+    "window": "day",
+    "limit": 5,
+    "unit": "gpu_minutes",
+    "scope": "free account",
+    "condition": null,
+    "headline": true,
+    "text": {
+     "en": "5 GPU minutes a day",
+     "zh-TW": "每天 5 GPU 分鐘"
+    }
+   },
+   "reset": {
+    "rule": "rolling",
+    "text": {
+     "en": "Refills 24 hours after your first GPU use, not at a fixed clock time.",
+     "zh-TW": "從你第一次使用 GPU 起算 24 小時後補滿，不是固定的時刻。"
+    }
+   },
+   "how": {
+    "en": "Needs a free Hugging Face account. Muse does not connect to it yet.",
+    "zh-TW": "需要一個免費的 Hugging Face 帳號。Muse 目前還不會連接它。"
+   },
+   "key_url": "https://huggingface.co/",
+   "checked_on": "2026-11-12",
+   "confidence": "H",
+   "source_urls": [
+    "https://huggingface.co/docs/hub/spaces-zerogpu"
+   ]
+  },
+  {
+   "id": "cloudflare-workers",
+   "kind": "compute",
+   "name": {
+    "en": "Cloudflare Workers (free plan)",
+    "zh-TW": "Cloudflare Workers（免費方案）"
+   },
+   "provider": "Cloudflare",
+   "summary": {
+    "en": "Run small programs at the edge. The free plan allows 100,000 requests a day, with 10 ms of CPU time per request.",
+    "zh-TW": "在邊緣節點執行小程式。免費方案每天可處理 100,000 個請求，每個請求的 CPU 時間是 10 毫秒。"
+   },
+   "managed": false,
+   "kind_of_allowance": [
+    "daily"
+   ],
+   "allowance": [
+    {
+     "window": "day",
+     "limit": 100000,
+     "unit": "requests",
+     "scope": "Workers, free plan",
+     "condition": null,
+     "headline": true,
+     "text": {
+      "en": "100,000 requests a day",
+      "zh-TW": "每天 100,000 次請求"
+     }
+    }
+   ],
+   "headline": {
+    "window": "day",
+    "limit": 100000,
+    "unit": "requests",
+    "scope": "Workers, free plan",
+    "condition": null,
+    "headline": true,
+    "text": {
+     "en": "100,000 requests a day",
+     "zh-TW": "每天 100,000 次請求"
+    }
+   },
+   "reset": {
+    "rule": "utc_day",
+    "text": {
+     "en": "refills at 00:00 UTC",
+     "zh-TW": "在 UTC 00:00 補滿"
+    }
+   },
+   "how": {
+    "en": "Needs a Cloudflare account. Muse does not connect to it yet.",
+    "zh-TW": "需要一個 Cloudflare 帳號。Muse 目前還不會連接它。"
+   },
+   "key_url": "https://dash.cloudflare.com/",
+   "checked_on": "2026-11-12",
+   "confidence": "H",
+   "source_urls": [
+    "https://developers.cloudflare.com/workers/platform/limits/"
+   ]
+  },
+  {
+   "id": "coinbase-x402-facilitator",
+   "kind": "chain",
+   "name": {
+    "en": "Coinbase x402 payment facilitator",
+    "zh-TW": "Coinbase x402 付款中介（facilitator）"
+   },
+   "provider": "Coinbase Developer Platform",
+   "summary": {
+    "en": "The first 1,000 onchain facilitator transactions each month are free, then 0.001 US dollars each. Checking a payment is always free.",
+    "zh-TW": "每個月前 1,000 筆鏈上 facilitator 交易免費，之後每筆 0.001 美元。驗證付款一律免費。"
+   },
+   "managed": false,
+   "kind_of_allowance": [
+    "monthly"
+   ],
+   "allowance": [
+    {
+     "window": "month",
+     "limit": 1000,
+     "unit": "transactions",
+     "scope": "onchain facilitator settlements",
+     "condition": null,
+     "headline": true,
+     "text": {
+      "en": "1,000 transactions a month",
+      "zh-TW": "每月 1,000 筆交易"
+     }
+    }
+   ],
+   "headline": {
+    "window": "month",
+    "limit": 1000,
+    "unit": "transactions",
+    "scope": "onchain facilitator settlements",
+    "condition": null,
+    "headline": true,
+    "text": {
+     "en": "1,000 transactions a month",
+     "zh-TW": "每月 1,000 筆交易"
+    }
+   },
+   "reset": {
+    "rule": "unknown",
+    "text": {
+     "en": "refill time not confirmed",
+     "zh-TW": "補滿時間尚未確認"
+    }
+   },
+   "how": {
+    "en": "The facilitator signs in with a CDP API key ID and secret. Muse does not connect to it yet.",
+    "zh-TW": "facilitator 以 CDP 的 API 金鑰 ID 和密鑰登入。Muse 目前還不會連接它。"
+   },
+   "key_url": "https://docs.cdp.coinbase.com/x402/core-concepts/facilitator",
+   "checked_on": "2026-11-12",
+   "confidence": "M",
+   "source_urls": [
+    "https://docs.cdp.coinbase.com/x402/core-concepts/facilitator"
+   ]
+  }
+ ],
+ "subscriptions": [
+  {
+   "id": "chatgpt",
+   "name": "ChatGPT",
+   "handoff_only": true,
+   "description": {
+    "en": "Your own ChatGPT account. Muse opens it; you ask there.",
+    "zh-TW": "你自己的 ChatGPT 帳號。Muse 幫你打開，你在那裡提問。"
+   },
+   "web_url": "https://chatgpt.com/",
+   "app_url": null,
+   "prefill": {
+    "web": "unknown",
+    "app": null
+   },
+   "checked_on": "2026-11-12",
+   "confidence": "L"
+  },
+  {
+   "id": "claude",
+   "name": "Claude",
+   "handoff_only": true,
+   "description": {
+    "en": "Your own Claude account. Muse opens it; you ask there.",
+    "zh-TW": "你自己的 Claude 帳號。Muse 幫你打開，你在那裡提問。"
+   },
+   "web_url": "https://claude.ai/new",
+   "app_url": "claude://claude.ai/new",
+   "prefill": {
+    "web": "unknown",
+    "app": "documented"
+   },
+   "checked_on": "2026-11-12",
+   "confidence": "M"
+  },
+  {
+   "id": "gemini",
+   "name": "Gemini app",
+   "handoff_only": true,
+   "description": {
+    "en": "Your own Google account's Gemini app. Muse opens it; you ask there.",
+    "zh-TW": "你自己的 Google 帳號裡的 Gemini App。Muse 幫你打開，你在那裡提問。"
+   },
+   "web_url": "https://gemini.google.com/app",
+   "app_url": null,
+   "prefill": {
+    "web": "unknown",
+    "app": null
+   },
+   "checked_on": "2026-11-12",
+   "confidence": "L"
+  }
+ ]
 }

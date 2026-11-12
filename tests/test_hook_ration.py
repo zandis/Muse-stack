@@ -173,7 +173,12 @@ def test_reserve_from_declared_quota(h, db):
     for i in range(8):
         db.record_call(provider="freea", deployment_id="a", upstream="freea:a", ok=True, now=NOW - 100 - i)
     assert filt(h, [a, B], req(BATCH)) == [B]  # 2 of 10 left
-    assert filt(h, [a, B], req(SCRIPT)) == [a, B]  # 2 - 1 = 1 = 10 %
+    # The reserve lets a normal app use A (2 - 1 = 1 = 10 %), but A is far behind its
+    # pacing line at 07:00 UTC (0.20 left vs 0.71 expected), so the ordering hint
+    # prefers B, whose remaining is unknown (ration.prefer). With the hint off, both stay.
+    assert filt(h, [a, B], req(SCRIPT)) == [B]
+    h.environ["MUSE_PACE_PREFER_GAP"] = "2"
+    assert filt(h, [a, B], req(SCRIPT)) == [a, B]
 
 
 def test_app_default_privacy(h):

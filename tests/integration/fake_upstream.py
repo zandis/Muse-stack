@@ -44,6 +44,7 @@ class Logged:
     model: str
     status: int
     ts: float
+    max_tokens: int | None = None  # what the proxy sent: max_tokens or max_completion_tokens
 
 
 @dataclass
@@ -108,7 +109,8 @@ class FakeUpstream:
                     behaviour = upstream.behaviours.get(model, upstream.default)
                 status, payload, headers = upstream._respond(behaviour, model, self.path)
                 with upstream._lock:
-                    upstream.log.append(Logged(self.path, model, status, time.time()))
+                    sent_max = body.get("max_tokens", body.get("max_completion_tokens"))
+                    upstream.log.append(Logged(self.path, model, status, time.time(), sent_max if isinstance(sent_max, int) else None))
                 if behaviour == "slow_ok":
                     time.sleep(upstream.slow_seconds)
                 self._send(status, payload, headers)

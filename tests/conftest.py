@@ -19,4 +19,6 @@ def _isolated_muse_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: p
     home = tmp_path_factory.mktemp("muse-home")
     monkeypatch.setenv("MUSE_HOME", str(home))
     monkeypatch.delenv("MUSE_LOCAL_CATALOG", raising=False)
+    for name in ("MUSE_ROUTING", "MUSE_CACHE", "MUSE_CACHE_TTL_S", "MUSE_CACHE_MAX_ENTRIES"):
+        monkeypatch.delenv(name, raising=False)
     return home

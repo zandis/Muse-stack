@@ -55,6 +55,14 @@ class DeploymentStatus(TypedDict):
 
 class ProviderStatus(TypedDict):
     id: str
+    # Catalogue v2 facts (config/providers.yaml). All dated by checked_on; None / [] = not confirmed.
+    name: str
+    connection_method: str  # oauth_pkce | paste_key | none
+    minutes_estimate: int | None  # Muse's own estimate of the sign-up time, not measured
+    good_for: list[str]
+    kind_of_allowance: list[str]
+    checked_on: str | None  # YYYY-MM-DD
+    confidence: str | None  # H | M | L
     kind: Literal["cloud", "local"]
     tier: str
     key_env: str | None  # env var name; None for local providers
@@ -140,6 +148,87 @@ class QueueStatus(TypedDict):
     hold_until: str | None  # the queue app hit a cap; nothing runs before this
 
 
+class SuggestionGain(TypedDict):
+    window: str  # day | month | total
+    limit: int
+    unit: str
+
+
+class SuggestionText(TypedDict):
+    gain: str  # "adds roughly 50 requests a day", or "allowance not confirmed"
+    meta: str  # "about 4 min, 3 steps"
+    friction: str | None  # card or phone, in plain words; None when neither is a concern
+
+
+class Suggestion(TypedDict):
+    """A helper worth adding next. `gain` is None unless the catalogue holds a verified number."""
+
+    id: str  # a provider id, or "local"
+    name: str
+    rank: int  # 1 = best next step
+    method: str  # oauth_pkce | paste_key | local
+    minutes_estimate: int | None
+    steps: int
+    card_required: str  # yes | no | unknown
+    phone_required: str
+    gain: SuggestionGain | None
+    text: dict[str, SuggestionText]  # keyed by language: en, zh-TW
+
+
+class AllowanceItem(TypedDict):
+    window: str  # minute | day | month | total
+    limit: int
+    unit: str
+    scope: str | None
+    condition: str | None
+    headline: bool
+    text: dict[str, str]  # keyed by language
+
+
+class ResourceReset(TypedDict):
+    rule: str
+    text: dict[str, str]
+
+
+class ResourceItem(TypedDict):
+    """A storage, compute or chain allowance. Shown only: Muse does not manage it."""
+
+    id: str
+    kind: str  # storage | compute | chain
+    name: dict[str, str]
+    provider: str
+    summary: dict[str, str]
+    managed: bool  # always False for now
+    kind_of_allowance: list[str]
+    allowance: list[AllowanceItem]
+    headline: AllowanceItem | None
+    reset: ResourceReset
+    how: dict[str, str] | None  # how it would be connected, in words
+    key_url: str | None
+    checked_on: str | None
+    confidence: str | None
+    source_urls: list[str]
+
+
+class SubscriptionPrefill(TypedDict):
+    web: str  # documented | unknown
+    app: str | None
+
+
+class SubscriptionItem(TypedDict):
+    """A consumer subscription. Hand-off only: a link, never a login, token or quota."""
+
+    id: str
+    name: str
+    handoff_only: bool
+    description: dict[str, str]
+    web_url: str | None
+    app_url: str | None
+    prefill: SubscriptionPrefill
+    checked_on: str | None
+    confidence: str | None
+
+
 class Snapshot(TypedDict):
     generated_at: str
     home: str
@@ -154,3 +243,7 @@ class Snapshot(TypedDict):
     paid: Paid
     queue: QueueStatus
     paused: bool  # the queue is paused (`muse pause`); the proxy is not
+    # Added with catalogue v2: ranked next helpers, and the allowances Muse shows but does not manage.
+    suggestions: list[Suggestion]
+    resources: list[ResourceItem]
+    subscriptions: list[SubscriptionItem]

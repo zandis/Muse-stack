@@ -112,7 +112,10 @@ def _enabled(provider: Mapping[str, Any], environ: Mapping[str, str], disabled: 
     if provider_id in disabled:
         return False
     gate = provider["base_env"] if is_local(provider) else provider["env"]
-    return bool(environ.get(str(gate), "").strip())
+    if not environ.get(str(gate), "").strip():
+        return False
+    # Some providers need more than a key (Cloudflare also needs the account id).
+    return all(environ.get(str(extra), "").strip() for extra in (provider.get("also_env") or []))
 
 
 def local_catalog_path(environ: Mapping[str, str]) -> Path:
@@ -251,6 +254,9 @@ def _model_info(provider: Mapping[str, Any], deployment: Mapping[str, Any], depl
         "muse_trains": _tri(policy.get("trains_on_inputs")),
         "muse_human_review": _tri(policy.get("human_review")),
         "muse_region": str(policy.get("region", "unknown")),
+        # Catalogue v2: trial credits that never renew. muse/ration.py holds these
+        # back for jobs that need them. Always a real boolean.
+        "muse_oneoff": provider.get("one_off", False) is True,
     }
     price = _price(deployment)
     if price is not None:

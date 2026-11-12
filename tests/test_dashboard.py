@@ -213,10 +213,12 @@ const { chromium } = require('playwright');
   await p.goto(`http://127.0.0.1:${port}/`);
   await p.waitForSelector('.card');
   await p.waitForTimeout(500);
+  await p.evaluate(() => document.querySelectorAll('details').forEach(d => { d.open = true; }));
   const out = await p.evaluate(() => ({
     imgs: document.querySelectorAll('#app img, #alerts img, #chips img').length,
     text: document.body.innerText,
     h: document.documentElement.scrollWidth - innerWidth,
+    jsLinks: document.querySelectorAll('a[href^="javascript"], a[href^="data"], a[href^="claude"]').length,
   }));
   console.log(JSON.stringify({fired, ...out}));
   await b.close();
@@ -240,6 +242,26 @@ def test_untrusted_strings_render_literally(tmp_path):
     snap["recent"][0]["deployment"] = evil
     snap["recent"][0]["provider"] = evil
     snap["home"] = evil
+    # strings that come from the catalogue (a bot proposes them, a person approves): same rules
+    snap["providers"][0]["name"] = evil
+    snap["providers"][0]["checked_on"] = evil
+    sg = snap["suggestions"][0]
+    sg["name"], sg["id"] = evil, evil
+    for lang in sg["text"]:
+        sg["text"][lang] = {"gain": evil, "meta": evil, "friction": evil}
+    rs = snap["resources"][0]
+    rs["name"] = {"en": evil, "zh-TW": evil}
+    rs["summary"] = {"en": evil, "zh-TW": evil}
+    rs["how"] = {"en": evil, "zh-TW": evil}
+    rs["provider"] = evil
+    rs["key_url"] = "javascript:window.__pwned()"
+    rs["headline"]["text"] = {"en": evil, "zh-TW": evil}
+    rs["reset"]["text"] = {"en": evil, "zh-TW": evil}
+    sb = snap["subscriptions"][0]
+    sb["name"] = evil
+    sb["description"] = {"en": evil, "zh-TW": evil}
+    sb["web_url"] = "javascript:window.__pwned()"
+    sb["app_url"] = "claude://claude.ai/new"
     s = _start(lambda: snap)
     script = tmp_path / "xss.js"
     script.write_text(NODE_TEST)
@@ -256,5 +278,79 @@ def test_untrusted_strings_render_literally(tmp_path):
     out = json.loads(r.stdout.strip().splitlines()[-1])
     assert out["fired"] is False
     assert out["imgs"] == 0
-    assert evil in out["text"]  # rendered as literal text
+    assert out["jsLinks"] == 0  # a javascript: link from the catalogue is not turned into a link
+    assert out["text"].count(evil) >= 8  # provider, suggestion, resource and subscription strings all render as literal text
     assert out["h"] <= 0
+
+
+SECTIONS_TEST = r"""
+const { chromium } = require('playwright');
+(async () => {
+  const port = process.argv[2];
+  const b = await chromium.launch();
+  const res = {};
+  for (const lang of ['en', 'zh-TW']) {
+    const p = await b.newPage({viewport: {width: 390, height: 844}});
+    const reqs = [];
+    p.on('request', r => { if (!r.url().startsWith('http://127.0.0.1:' + port) && !r.url().startsWith('data:')) reqs.push(r.url()); });
+    await p.goto(`http://127.0.0.1:${port}/?demo=1&lang=${lang}`);
+    await p.waitForSelector('#add-helper');
+    const first = await p.evaluate(() => ({
+      rows: document.querySelectorAll('#add-helper .addrow').length,
+      firstRank: document.querySelector('#add-helper .addrow .rank').textContent,
+      best: document.querySelectorAll('#add-helper .best').length,
+      title: document.querySelector('#h-add').childNodes[0].textContent,
+      otherOpen: document.querySelector('#other-allowances details').open,
+      subs: document.querySelectorAll('#subscriptions .mini').length,
+      subLinks: [...document.querySelectorAll('#subscriptions a')].map(a => a.getAttribute('href')),
+      connect: [...document.querySelectorAll('.card code')].some(c => c.textContent.startsWith('muse connect ')),
+      h: document.documentElement.scrollWidth - innerWidth,
+      lang: document.documentElement.lang,
+    }));
+    await p.click('#other-allowances summary');
+    first.otherItems = await p.evaluate(() => document.querySelectorAll('#other-allowances .mini').length);
+    first.otherText = await p.evaluate(() => document.querySelector('#other-allowances').innerText);
+    first.reqs = reqs;
+    res[lang] = first;
+    await p.close();
+  }
+  console.log(JSON.stringify(res));
+  await b.close();
+})();
+"""
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node not available")
+def test_catalogue_sections_render_and_stay_offline(tmp_path):
+    s = _start()
+    script = tmp_path / "sections.js"
+    script.write_text(SECTIONS_TEST)
+    try:
+        r = subprocess.run(["node", str(script), str(s.server_address[1])], capture_output=True, text=True, timeout=90,
+                           env={**__import__("os").environ, "NODE_PATH": subprocess.run(
+                               ["npm", "root", "-g"], capture_output=True, text=True).stdout.strip()})
+    finally:
+        s.shutdown()
+        s.server_close()
+    if r.returncode != 0 and "Cannot find module" in r.stderr:
+        pytest.skip("playwright for node not available")
+    assert r.returncode == 0, r.stderr
+    out = json.loads(r.stdout.strip().splitlines()[-1])
+    en, zh = out["en"], out["zh-TW"]
+    assert en["rows"] == zh["rows"] == len(DEMO["suggestions"]) and en["firstRank"] == "1" and en["best"] == 1
+    assert en["title"] == "Add a helper" and zh["title"] == "新增幫手" and zh["lang"] == "zh-Hant"
+    assert en["otherOpen"] is False  # collapsed until asked
+    assert en["otherItems"] == len(DEMO["resources"]) and "shown, not managed yet" in en["otherText"].lower() and "僅顯示，尚未管理" in zh["otherText"]
+    assert en["subs"] == 3 and all(u.startswith("https://") for u in en["subLinks"])
+    assert en["connect"] is True
+    assert en["h"] <= 0 and zh["h"] <= 0
+    assert en["reqs"] == [] and zh["reqs"] == []  # nothing leaves the page
+
+
+def test_demo_has_no_unconfirmed_numbers_in_gain():
+    """The demo is what people screenshot: a gain is only quoted where the catalogue has a verified number."""
+    for s in DEMO["suggestions"]:
+        if s["gain"] is None:
+            assert s["text"]["en"]["gain"] in ("allowance not confirmed", "no daily limit; runs on this computer")
+    assert [s["rank"] for s in DEMO["suggestions"]] == list(range(1, len(DEMO["suggestions"]) + 1))
+    assert all(r["managed"] is False for r in DEMO["resources"]) and all(s["handoff_only"] for s in DEMO["subscriptions"])

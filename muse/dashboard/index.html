@@ -67,6 +67,7 @@ button.chip,button.badge{cursor:help}
 main{padding-bottom:24px}
 section{margin-top:26px}
 h2{font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin-bottom:10px;display:flex;gap:8px;align-items:baseline}
+h2{flex-wrap:wrap}
 h2 .count{font-weight:500;letter-spacing:0}
 .group+.group{margin-top:20px}
 .group h3{font-size:.9rem;font-weight:650;margin-bottom:8px;display:flex;align-items:center;gap:7px}
@@ -186,6 +187,35 @@ tr.concern{background:color-mix(in srgb,var(--bad) 10%,transparent);box-shadow:i
 .steps li b{display:block}
 .steps .cmd{margin-top:4px}
 
+/* add a helper, other allowances, subscriptions */
+.addlist{list-style:none;margin:0;padding:0;display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr))}
+.addrow{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;gap:12px;min-width:0}
+.addrow.first{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.rank{flex:none;width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--bg);font-weight:700;font-size:.8125rem;display:grid;place-items:center}
+.addrow .body{flex:1;min-width:0;display:grid;gap:6px}
+.addrow .nm-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.addrow .nm{font-weight:700;font-size:1rem}
+.best{display:inline-flex;gap:4px;align-items:center;font-size:.72rem;font-weight:650;text-transform:uppercase;letter-spacing:.05em;color:var(--ok);border:1px solid currentColor;border-radius:5px;padding:0 6px}
+.meta{color:var(--muted);font-size:.8125rem}
+.gain{font-size:.875rem;font-weight:600}
+.gain.unk{color:var(--muted);font-weight:400}
+.conn{display:flex;gap:6px;align-items:center;font-size:.8125rem;color:var(--ink)}
+.conn svg{color:var(--accent)}
+.fine{color:var(--muted);font-size:.75rem}
+details.other{background:var(--surface);border:1px solid var(--line);border-radius:10px}
+details.other>summary{cursor:pointer;list-style:none;padding:11px 14px;font-weight:650;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+details.other>summary::-webkit-details-marker{display:none}
+details.other>summary::after{content:"\25B8";margin-left:auto;color:var(--muted);transition:transform .15s}
+details.other[open]>summary::after{transform:rotate(90deg)}
+details.other .inner{padding:0 14px 12px;display:grid;gap:10px}
+.minis{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.mini{display:grid;gap:3px;border-top:1px solid var(--line);padding-top:10px;min-width:0}
+.mini .m-head{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.mini .m-name{font-weight:650}
+.mini .m-line{font-size:.875rem}
+.mini a{font-size:.8125rem}
+.kindhead{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-top:4px}
+.sublist{display:grid;gap:0}
 footer{border-top:1px solid var(--line);padding:16px 0 28px;color:var(--muted);font-size:.8125rem}
 footer p+p{margin-top:4px}
 footer code{font-family:var(--mono);font-size:.78rem}
@@ -256,6 +286,9 @@ var ICONS = {
   coin:[['circle',{cx:12,cy:12,r:9}],['path',{d:'M14.5 9.2c-.5-.8-1.4-1.2-2.5-1.2-1.4 0-2.5.7-2.5 1.8s1 1.6 2.5 2 2.5.8 2.5 2-1.1 1.8-2.5 1.8c-1.1 0-2-.4-2.5-1.2M12 6.5V8m0 8v1.5'}]],
   list:[['path',{d:'M8 6h12M8 12h12M8 18h12'}],['path',{d:'M4 6h.01M4 12h.01M4 18h.01'}]],
   pause:[['path',{d:'M9 5v14M15 5v14'}]],
+  plus:[['path',{d:'M12 5v14M5 12h14'}]],
+  external:[['path',{d:'M14 4h6v6'}],['path',{d:'M20 4l-9 9'}],['path',{d:'M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5'}]],
+  box:[['path',{d:'M3 8l9-5 9 5v8l-9 5-9-5z'}],['path',{d:'M3 8l9 5 9-5M12 13v8'}]],
   apps:[['rect',{x:4,y:4,width:6,height:6,rx:1.5}],['rect',{x:14,y:4,width:6,height:6,rx:1.5}],['rect',{x:4,y:14,width:6,height:6,rx:1.5}],['rect',{x:14,y:14,width:6,height:6,rx:1.5}]]
 };
 function icon(name, extra) {
@@ -293,6 +326,44 @@ function safeUrl(u) {
   try { var x = new URL(String(u)); return (x.protocol === 'https:' || x.protocol === 'http:') ? x.href : null; }
   catch (e) { return null; }
 }
+
+/* ---------- language: only the catalogue-driven sections are translated; the data carries both languages ---------- */
+var LANG = (function () {
+  var q = new URLSearchParams(location.search).get('lang'), l = String(q || navigator.language || 'en').toLowerCase();
+  return l.indexOf('zh') === 0 ? 'zh-TW' : 'en';
+})();
+document.documentElement.lang = LANG === 'zh-TW' ? 'zh-Hant' : 'en';
+var UI = {
+  en: {
+    add_title: 'Add a helper', add_sub: 'Ranked by how much you gain per minute of setup. Best first.', add_best: 'Best next step',
+    add_none: 'You have connected every helper available.', add_run: 'Connect it with:',
+    oa_title: 'Other allowances', oa_flag: '(shown, not managed yet)', oa_sub: 'Shown only. Muse cannot manage these for you yet.', oa_tag: 'Shown, not managed yet',
+    oa_storage: 'Storage', oa_compute: 'Compute and hosting', oa_chain: 'Blockchain and transactions',
+    sub_title: 'Your subscriptions', sub_flag: '(hand-off only)', sub_sub: 'Muse never signs in to these. It only opens them with your question.', sub_tag: 'Hand-off only', sub_open: 'Open',
+    conn_oauth: 'One tap', conn_key: 'Paste a key', min: 'about {0} min', steps: '{0} steps',
+    good: 'Good for', checked: 'Catalogue checked {0}', conf: 'confidence {0}',
+    have_key: 'Already have a key? Store it with:', connect_with: 'Connect it with:',
+    good_everyday: 'Everyday', good_long_documents: 'Long documents', good_quick_answers: 'Quick answers', good_embeddings: 'Searching your files', good_reranking: 'Sorting search results'
+  },
+  'zh-TW': {
+    add_title: '新增幫手', add_sub: '依「每分鐘設定換到多少額度」排序，最划算的在最上面。', add_best: '最划算',
+    add_none: '你已經接上所有可接的幫手了。', add_run: '用這個指令連接：',
+    oa_title: '其他額度', oa_flag: '（僅顯示，尚未管理）', oa_sub: '只顯示，Muse 還不能代你管理。', oa_tag: '僅顯示，尚未管理',
+    oa_storage: '儲存空間', oa_compute: '運算與主機', oa_chain: '區塊鏈與交易',
+    sub_title: '你的訂閱', sub_flag: '（只能交接）', sub_sub: 'Muse 不會登入這些帳號，只會帶著你的問題幫你打開它們。', sub_tag: '只能交接', sub_open: '打開',
+    conn_oauth: '點一下就好', conn_key: '貼上金鑰', min: '約 {0} 分鐘', steps: '{0} 個步驟',
+    good: '適合', checked: '目錄核對日期 {0}', conf: '把握程度 {0}',
+    have_key: '已經有金鑰了？用這個指令存起來：', connect_with: '用這個指令連接：',
+    good_everyday: '日常使用', good_long_documents: '長篇文件', good_quick_answers: '快速回答', good_embeddings: '搜尋你的檔案', good_reranking: '整理搜尋結果'
+  }
+};
+function T(k) {
+  var s = (UI[LANG] && UI[LANG][k]) || UI.en[k] || k;
+  for (var i = 1; i < arguments.length; i++) s = s.replace('{' + (i - 1) + '}', String(arguments[i]));
+  return s;
+}
+/* a {en, zh-TW} object from the snapshot, as text in the viewer's language */
+function loc(o) { return (o && typeof o === 'object') ? str(o[LANG] || o.en || '', 400) : str(o, 400); }
 
 /* ---------- formatting ---------- */
 var NF = new Intl.NumberFormat();
@@ -561,6 +632,12 @@ function providerCard(p) {
     if (p.kind === 'local' || !p.key_env) {
       card.appendChild(h('p', {class: 'hint'}, 'Not detected on this machine. Start it, then run:'));
       card.appendChild(cmdBlock('muse local discover'));
+    } else if (p.connection_method === 'oauth_pkce' || p.connection_method === 'paste_key') {
+      var cl = connLine(p);
+      if (cl) card.appendChild(cl);
+      card.appendChild(h('p', {class: 'hint', text: T('connect_with')}));
+      card.appendChild(cmdBlock('muse connect ' + str(p.id, 40)));
+      card.appendChild(h('p', {class: 'hint'}, T('have_key') + ' ', h('code', {text: 'muse keys set ' + str(p.key_env, 60)})));
     } else {
       card.appendChild(h('p', {class: 'hint', text: 'No API key yet. Store one with:'}));
       card.appendChild(cmdBlock('muse keys set ' + p.key_env));
@@ -587,6 +664,8 @@ function providerCard(p) {
     card.appendChild(h('p', {class: 'hint'}, p.kind === 'local' ? ['No models found yet. Run ', h('code', {text: 'muse local discover'}), '.'] : 'No models configured.'));
   }
   if (g === 'unknown') card.appendChild(h('p', {class: 'hint', text: 'Configured, but no calls yet, so its state is not known.'}));
+  var gf = goodForLine(p);
+  if (gf) card.appendChild(gf);
   return card;
 }
 
@@ -729,6 +808,89 @@ function queueCard(q, paused) {
   else if (!waiting && !running) { card.appendChild(h('p', {class: 'hint', text: 'Jobs here use free allowance that would otherwise go unused, and wait whenever you are busy. Add one:'}));
     card.appendChild(cmdBlock('muse queue add "summarise my notes" --alias cheap')); }
   return card;
+}
+
+/* ---------- catalogue v2: how to connect, add a helper, other allowances, subscriptions ---------- */
+function connLine(p) {
+  var m = p.connection_method, mins = p.minutes_estimate, bits = [];
+  if (m === 'oauth_pkce') bits.push(T('conn_oauth'));
+  else if (m === 'paste_key') bits.push(T('conn_key'));
+  else return null;
+  if (typeof mins === 'number' && mins > 0) bits.push(T('min', mins));
+  return h('p', {class: 'conn'}, icon('clock'), h('span', {text: bits.join(' \u00b7 ')}));
+}
+function goodForLine(p) {
+  var gf = Array.isArray(p.good_for) ? p.good_for : [];
+  var labels = gf.map(function (k) { return T('good_' + k); }).filter(function (x) { return x && x.indexOf('good_') !== 0; });
+  var facts = [];
+  if (labels.length) facts.push(T('good') + ': ' + labels.join(', '));
+  if (p.checked_on) facts.push(T('checked', str(p.checked_on, 12)) + (p.confidence ? ' (' + T('conf', str(p.confidence, 2)) + ')' : ''));
+  return facts.length ? h('p', {class: 'fine', text: facts.join(' \u00b7 ')}) : null;
+}
+function addRow(s, first) {
+  var tx = (s.text && (s.text[LANG] || s.text.en)) || {};
+  var meta = tx.meta ? [str(tx.meta, 120)] : [];
+  var unk = !s.gain;
+  return h('li', {class: 'addrow' + (first ? ' first' : '')},
+    h('span', {class: 'rank', 'aria-hidden': 'true', text: String(s.rank)}),
+    h('div', {class: 'body'},
+      h('div', {class: 'nm-row'}, h('span', {class: 'nm', text: str(s.name, 80)}),
+        first ? h('span', {class: 'best'}, icon('check'), T('add_best')) : null),
+      h('div', {class: 'meta', text: meta.join(' \u00b7 ')}),
+      h('div', {class: 'gain' + (unk ? ' unk' : ''), text: str(tx.gain, 160)}),
+      tx.friction ? h('div', {class: 'fine', text: str(tx.friction, 160)}) : null,
+      s.method === 'local' ? cmdBlock('muse connect local') : cmdBlock('muse connect ' + str(s.id, 40))));
+}
+function addHelperSection(list) {
+  var rows = list.filter(function (s) { return s && typeof s === 'object'; });
+  return h('section', {id: 'add-helper', 'aria-labelledby': 'h-add'},
+    h('h2', {id: 'h-add'}, T('add_title'), h('span', {class: 'count', text: T('add_sub')})),
+    rows.length ? h('ol', {class: 'addlist'}, rows.map(function (s, i) { return addRow(s, i === 0); }))
+      : h('div', {class: 'panel'}, h('div', {class: 'empty', text: T('add_none')})));
+}
+function otherItem(r) {
+  var hl = r.headline, head = hl && hl.text ? loc(hl.text) : '';
+  var reset = r.reset && r.reset.text ? loc(r.reset.text) : '';
+  var how = r.how ? loc(r.how) : '';
+  var url = safeUrl(r.key_url);
+  return h('li', {class: 'mini'},
+    h('div', {class: 'm-head'}, h('span', {class: 'm-name', text: loc(r.name)}), h('span', {class: 'tag', text: T('oa_tag')})),
+    h('div', {class: 'm-line', text: [head, reset].filter(Boolean).join(' \u00b7 ')}),
+    r.summary ? h('div', {class: 'meta', text: loc(r.summary)}) : null,
+    how ? h('div', {class: 'meta', text: how}) : null,
+    h('div', {class: 'fine', text: [r.checked_on ? T('checked', str(r.checked_on, 12)) : '', r.confidence ? T('conf', str(r.confidence, 2)) : ''].filter(Boolean).join(' \u00b7 ')}),
+    url ? h('a', {href: url, target: '_blank', rel: 'noopener noreferrer'}, str(r.provider, 60), ' \u2197', h('span', {class: 'sr', text: ' (opens in a new tab)'})) : null);
+}
+var otherOpen = false;
+function otherSection(list) {
+  var rows = list.filter(function (r) { return r && typeof r === 'object'; });
+  if (!rows.length) return null;
+  var kinds = ['storage', 'compute', 'chain'], inner = [h('p', {class: 'meta', text: T('oa_sub')})];
+  kinds.forEach(function (k) {
+    var g = rows.filter(function (r) { return r.kind === k; });
+    if (!g.length) return;
+    inner.push(h('div', {class: 'kindhead', text: T('oa_' + k)}), h('ul', {class: 'minis'}, g.map(otherItem)));
+  });
+  var det = h('details', {class: 'other', open: otherOpen},
+    h('summary', {'data-fk': 'other'}, icon('box'), T('oa_title'), h('span', {class: 'meta', text: T('oa_flag')})),
+    h('div', {class: 'inner'}, inner));
+  det.addEventListener('toggle', function () { otherOpen = det.open; });
+  return h('section', {id: 'other-allowances', 'aria-label': T('oa_title')}, det);
+}
+function subItem(s) {
+  var url = safeUrl(s.web_url);
+  return h('li', {class: 'mini'},
+    h('div', {class: 'm-head'}, h('span', {class: 'm-name', text: str(s.name, 60)}), h('span', {class: 'tag', text: T('sub_tag')})),
+    h('div', {class: 'm-line', text: loc(s.description)}),
+    url ? h('a', {href: url, target: '_blank', rel: 'noopener noreferrer'}, T('sub_open') + ' ' + str(s.name, 60), ' \u2197', h('span', {class: 'sr', text: ' (opens in a new tab)'})) : null);
+}
+function subscriptionsSection(list) {
+  var rows = list.filter(function (s) { return s && typeof s === 'object'; });
+  if (!rows.length) return null;
+  return h('section', {id: 'subscriptions', 'aria-labelledby': 'h-subs'},
+    h('h2', {id: 'h-subs'}, T('sub_title'), h('span', {class: 'count', text: T('sub_flag')})),
+    h('div', {class: 'panel', style: 'padding:12px 14px'}, h('p', {class: 'meta', text: T('sub_sub')}),
+      h('ul', {class: 'minis', style: 'margin-top:10px'}, rows.map(subItem))));
 }
 
 /* ---------- render ---------- */
@@ -895,6 +1057,13 @@ function renderBody() {
   sections.push(h('section', {id: 'providers', 'aria-labelledby': 'h-prov'},
     h('h2', {id: 'h-prov', text: 'Providers'}),
     pg.length ? pg : h('div', {class: 'panel'}, h('div', {class: 'empty'}, h('strong', {text: 'No providers'}), 'The snapshot lists no providers.'))));
+
+  /* catalogue v2: what to add next, allowances outside AI, subscriptions */
+  if (Array.isArray(snap.suggestions)) sections.push(addHelperSection(snap.suggestions));
+  var oa = otherSection(Array.isArray(snap.resources) ? snap.resources : []);
+  if (oa) sections.push(oa);
+  var ss = subscriptionsSection(Array.isArray(snap.subscriptions) ? snap.subscriptions : []);
+  if (ss) sections.push(ss);
 
   /* recent calls */
   var recentBody;

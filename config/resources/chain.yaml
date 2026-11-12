@@ -1,0 +1,33 @@
+# Blockchain and transaction allowances. Tracked and shown only (managed: false).
+# See storage.yaml for the rules. Muse v1 moves no real money.
+version: 1
+kind: chain
+resources:
+  - id: coinbase-x402-facilitator
+    name: {en: "Coinbase x402 payment facilitator", zh-TW: "Coinbase x402 付款中介（facilitator）"}
+    provider: Coinbase Developer Platform
+    summary:
+      en: "The first 1,000 onchain facilitator transactions each month are free, then 0.001 US dollars each. Checking a payment is always free."
+      zh-TW: "每個月前 1,000 筆鏈上 facilitator 交易免費，之後每筆 0.001 美元。驗證付款一律免費。"
+    managed: false
+    kind_of_allowance: [monthly]
+    allowance:
+      - {window: month, limit: 1000, unit: transactions, scope: "onchain facilitator settlements", headline: true}
+    reset: {rule: unknown}
+    read_remaining:
+      method: unknown
+      note: "The page says 'each month'. It does not say whether that is the calendar month, or how to read what is left."
+    connection:
+      method: none
+      key_url: https://docs.cdp.coinbase.com/x402/core-concepts/facilitator
+      card_required: unknown
+      phone_required: unknown
+      usable_on_phone: unknown
+      how:
+        en: "The facilitator signs in with a CDP API key ID and secret. Muse does not connect to it yet."
+        zh-TW: "facilitator 以 CDP 的 API 金鑰 ID 和密鑰登入。Muse 目前還不會連接它。"
+    terms_flags: {one_account_per_person: unknown, aggregation_or_reselling: unknown, automation_of_console: unknown, hosted_in: unknown}
+    checked_on: "2026-11-12"
+    confidence: M
+    source_urls:
+      - https://docs.cdp.coinbase.com/x402/core-concepts/facilitator

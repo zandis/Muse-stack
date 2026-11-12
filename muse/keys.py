@@ -69,6 +69,9 @@ def _load_known() -> dict[str, dict[str, str | None]]:
             env = provider.get("env")
             if env:
                 known[str(env)] = {"provider": str(provider["id"]), "key_url": str(provider.get("key_url", ""))}
+            # Catalogue v2: extra settings a provider needs (Cloudflare's account id).
+            for extra in provider.get("also_env") or []:
+                known.setdefault(str(extra), {"provider": str(provider["id"]), "key_url": str(provider.get("key_url", ""))})
     except (OSError, yaml.YAMLError, AttributeError, KeyError, TypeError):
         pass  # a broken catalogue must not stop `muse keys set`; extras still work
     for name, (provider, url) in _EXTRA_KEYS.items():
@@ -111,6 +114,12 @@ def shape_hint(name: str, value: str) -> str | None:
     if name == MASTER_KEY and value.lower() in WEAK_MASTER_KEYS:
         return "That is a well-known weak master key. Use `muse up` to generate a strong one."
     return None
+
+
+def expected_prefix(name: str) -> str | None:
+    """What the provider's keys are known to start with, or None when no shape is known."""
+    shape = _SHAPES.get(name)
+    return shape[0] if shape else None
 
 
 def generate_master_key() -> str:
