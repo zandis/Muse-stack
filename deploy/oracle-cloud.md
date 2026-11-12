@@ -17,6 +17,21 @@ Prompts that reach this VM have already left Taiwan, and from here they go to wh
 
 Oracle's default security list leaves port 22 open more widely than you want. Restrict SSH to your own IP. Do not add port 4000 to the security list. The compose file binds the proxy to `127.0.0.1`. Put Caddy or nginx on the VM for HTTPS and proxy to `127.0.0.1:4000`, and only then open 443. Set `LITELLM_MASTER_KEY` before that.
 
+## Scripted setup
+
+`deploy/oracle-a1-setup.sh` does the steps below in one run, on loopback only:
+Docker (or `--native` for a venv with no Docker), a `.env` with mode 600 and a
+generated master key, the proxy on `127.0.0.1:4000`, the `muse` CLI, and the
+dashboard on `127.0.0.1:4180` as a user service. It opens no port and never
+prints a key. It has not been tested on a real Oracle VM; read it first.
+
+The repository is private, so the VM needs its own read-only access to clone
+it: create a key on the VM (`ssh-keygen -t ed25519`) and add the public half
+under the repository's Settings, Deploy keys, without write access.
+
+Always Free note: Oracle may reclaim an instance it considers idle. Check the
+current rule in Oracle's Always Free documentation.
+
 ## Boot
 
 ```bash

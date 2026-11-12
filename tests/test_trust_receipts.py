@@ -292,7 +292,11 @@ def test_concurrent_appends_two_processes(vault: LocalVault, tmp_path: Path) -> 
     lg = LocalReceiptLog(vault)
     for _ in range(40):
         lg.append("bot", "vault.read", detail="parent")
-    _, err = proc.communicate(timeout=60)
+    # stdin is already closed above, so do not call communicate(): on Python
+    # 3.12 it tries to flush the closed pipe and raises ValueError.
+    proc.wait(timeout=60)
+    assert proc.stderr is not None
+    err = proc.stderr.read()
     assert proc.returncode == 0, err.decode()[-2000:]
     v = lg.verify()
     assert v.ok and v.count == 80
