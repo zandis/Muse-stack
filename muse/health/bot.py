@@ -64,7 +64,6 @@ from muse.health.contracts import (
 )
 from muse.health.llm import RequestTooLarge, UnverifiedRoute
 from muse.health.safety import (
-    SafetyVerdict,
     detect_locale,
     emergency_message,
     looks_like_injection,

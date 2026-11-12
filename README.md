@@ -62,6 +62,61 @@ the 429 formats for Gemini, OpenRouter and Cohere are parsed from community
 reports, not official documentation, and are marked `unconfirmed` in
 `muse/quota.py`.
 
+## Health assistant
+
+A health-management assistant built on the gateway: the user's own records in
+an encrypted vault, a bot that works only under mandates the user granted, a
+signed receipt for every action, and health content sent only to models the
+issuing organisation runs itself. Spec (Traditional Chinese):
+`docs/health-bot-spec.md`. It is not a doctor and gives no diagnosis or
+treatment advice.
+
+```bash
+pip install -e ".[health]"          # add ".[pdf]" for PDF text import
+muse health app                     # http://127.0.0.1:4190, tenant demo-hospital
+MUSE_TENANT=company muse health app # the company-issued settings
+muse health import archive.bin      # move a vault exported from another install
+```
+
+A tenant (`config/tenants/*.yaml`) is whoever issues the app: a hospital
+during a pilot, the company later. It sets the name, the consent text and the
+privacy classes health content may use. A user moves between them by exporting
+the vault (still encrypted) and importing it with the same passphrase.
+
+What was verified (981 tests, including a real LiteLLM proxy against fake
+providers, and a manual end-to-end run of the app over HTTP):
+
+- With an on-premises model available, a question about a record is answered
+  by that model and the cloud provider receives nothing.
+- With no on-premises model, the assistant says so and sends the record
+  nowhere. It never retries at a weaker privacy class.
+- If the gateway's privacy hook is not loaded, the client detects it with a
+  content-free probe and sends nothing.
+- Record text, titles, medication names and the passphrase do not appear in
+  the vault file, the exported archive, the receipts, the proxy log, the usage
+  ledger or the app's log.
+- Reminders, medications, appointments, the timeline, the records-request
+  letter draft and the visit question list work with no model at all.
+- Writes proposed by the assistant are saved only after the user confirms.
+- An altered or truncated archive, or a wrong passphrase, imports nothing.
+
+What was not verified, and known limits:
+
+- No real model has answered a question. Every model in the tests is scripted,
+  so the quality and medical correctness of explanations are untested.
+- The safety rules (urgent symptoms, declining medical advice, filtering model
+  output) were written and tested by engineers on their own examples. They
+  have known misses and false alarms and no clinical validation.
+- A lost passphrase cannot be recovered.
+- The app is a local web page, not a mobile app. The passphrase crosses
+  loopback HTTP; another user or malware on the same machine is out of scope.
+- Rolling the whole vault file back to an older copy is not detectable.
+- PDF import was tested with a stand-in library; there is no OCR. My Health
+  Bank exports go through the generic table importer because no public format
+  specification was found.
+- The crisis-line numbers and the records-request letter wording need review
+  by the hospital and by counsel before any pilot.
+
 ## Do not send patient data through this
 
 Free and trial tiers are not a place for clinical records.

@@ -122,4 +122,4 @@ app 伺服器 ── 保險庫（加密 SQLite）
 
 ## 10. 驗證狀態
 
-見 README 的「Health bot」一節；該節只列實際跑過的測試與沒有驗證的項目。
+見 README 的「Health assistant」一節；該節只列實際跑過的測試與沒有驗證的項目。
