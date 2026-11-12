@@ -4,8 +4,15 @@
 #
 #   docker compose -f docker-compose.yml -f docker-compose.phase0.yml up -d
 #
-# The service refuses to start if MUSE_X402_NETWORK is a mainnet identifier
-# or if MUSE_X402_FACILITATOR is anything other than "mock".
+# The service refuses to start unless MUSE_X402_NETWORK is on the Base
+# Sepolia allow-list (eip155:84532, case-insensitive), or if
+# MUSE_X402_FACILITATOR is anything other than "mock".
+#
+# The in-container bind is 0.0.0.0, so LITELLM_MASTER_KEY is required
+# (the process refuses to start without a master key on a non-loopback
+# bind). The published host port is 127.0.0.1 by default (MUSE_BIND).
+# Lean in "real" mode should be run under gVisor, Firecracker, or
+# bubblewrap; this compose file does not add that jail.
 
 services:
   phase0:

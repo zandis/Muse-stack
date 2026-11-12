@@ -1,7 +1,7 @@
 [project]
 name = "muse-stack"
 version = "0.1.0"
-description = "Muse Stack phase 0: routed LLMs, x402 mock settlement, useful work, data-vault skeleton."
+description = "Muse Stack phase 0: routed LLMs, x402 mock settlement, useful work, registry skeleton."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

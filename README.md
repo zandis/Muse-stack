@@ -8,16 +8,16 @@ The first host is a small Linux box with Docker. The later host is an Oracle Clo
 
 This branch, stacked on the LiteLLM gateway, adds the rest of the phase 0 skeleton described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md):
 
-1. **Routing additions.** A circuit breaker that honours `Retry-After`, fallback chains for Muse-side calls, and `GET /v1/providers/health` (and `/usage`, `/keys`) on a small service at `127.0.0.1:4100`. Members still add keys via `.env`; values are never committed or returned.
-2. **Results settlement.** An [x402](https://docs.cdp.coinbase.com/x402/core-concepts/how-it-works)-style HTTP 402 stub that sells a verified result for USDC on **Base Sepolia**, with a **mock verifier only**. It refuses to start on a mainnet network and never moves funds.
-3. **Useful work.** A job runner that takes a Lean problem (bundled samples, or a local `formal-conjectures` checkout), asks routed aliases for a proof, verifies it (CI mocks Lean; see [docs/LEAN.md](docs/LEAN.md)), and records a result hash.
-4. **Data-market contract skeleton.** Solidity interfaces and a `DataVaultRegistry` for per-person vaults (hash, consent, tier, hospital EIP-712 provenance). Foundry tests only; **no deployment**.
+1. **Routing additions.** LiteLLM 1.108.5 already honours `Retry-After` (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)). Phase 0 adds a Muse-side circuit breaker for useful-work jobs, a thin LiteLLM callback only for quota-exhausted state and cross-alias cooldown, fallback chains, and `GET /v1/providers/health` (and `/usage`, `/keys`) on a small service at `127.0.0.1:4100`. The service refuses to start without a master key unless it is bound to loopback. Members still add keys via `.env`; values are never committed or returned.
+2. **Results settlement.** An [x402](https://docs.cdp.coinbase.com/x402/core-concepts/how-it-works)-style HTTP 402 stub that sells a *real* verified result for USDC on **Base Sepolia**, with a **mock verifier only**. It starts only on a case-insensitive Base Sepolia allow-list, binds payments to a quote (nonce = SHA-256 of the quote id), rejects replays and expired quotes, ignores unsigned `amount` / `payTo`, and never moves funds. Mock Lean results are never sold. Job APIs never return a proof.
+3. **Useful work.** A job runner that takes a Lean problem (bundled samples, or a local `formal-conjectures` checkout), asks routed aliases for a proof, and verifies it against the *trusted* statement (see [docs/LEAN.md](docs/LEAN.md)). Mock mode never emits `verified`. Real Lean runs in a sandbox (no provider keys, no network, rlimits, timeout; bubblewrap when available; gVisor / Firecracker documented for production).
+4. **Registry contract skeleton.** Solidity interfaces and a `DataVaultRegistry` — a *registry* of hashes and consent, not a data vault (hash, consent, tier, hospital EIP-712 provenance with a deadline, signature hash, issuer allow-list). Foundry tests only; **no deployment**. Per-patient cohort linkage on-chain is out of scope (see [contracts/README.md](contracts/README.md)).
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
 python -m pytest tests -q
-python -m muse    # http://127.0.0.1:4100  (mock LLM, mock Lean, no provider keys)
+LITELLM_MASTER_KEY=sk-dev python -m muse    # http://127.0.0.1:4100  (mock LLM, mock Lean; master key required off loopback)
 ```
 
 The LiteLLM proxy on port 4000 is unchanged; the phase 0 service is a sibling, not a replacement. There is no billing integration and no mainnet path.
