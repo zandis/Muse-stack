@@ -2,11 +2,12 @@ from muse.gateway.circuit_breaker import CircuitBreaker, CircuitState
 from muse.gateway.clock import FakeClock
 from muse.gateway.fallback import CallFailed, FallbackChain, FallbackExhausted
 from muse.gateway.router import GatewayRouter
+from muse.gateway.upstream import UpstreamIndex
 
 
 def test_first_success_wins():
     clock = FakeClock(0)
-    breaker = CircuitBreaker(clock=clock)
+    breaker = CircuitBreaker(clock=clock, jitter_ratio=0)
     chain = FallbackChain(breaker, ["gemini", "groq"])
     calls = []
 
@@ -23,7 +24,7 @@ def test_first_success_wins():
 
 def test_skips_open_circuit_and_tries_next():
     clock = FakeClock(0)
-    breaker = CircuitBreaker(clock=clock)
+    breaker = CircuitBreaker(clock=clock, jitter_ratio=0)
     breaker.on_response("gemini", 429, "30")
     chain = FallbackChain(breaker, ["gemini", "groq"])
 
@@ -40,7 +41,7 @@ def test_skips_open_circuit_and_tries_next():
 
 def test_429_trips_breaker_and_continues():
     clock = FakeClock(0)
-    breaker = CircuitBreaker(clock=clock, default_cooldown_seconds=30)
+    breaker = CircuitBreaker(clock=clock, default_cooldown_seconds=30, jitter_ratio=0)
     chain = FallbackChain(breaker, ["gemini", "groq"])
 
     def call(provider: str) -> str:
@@ -57,7 +58,7 @@ def test_429_trips_breaker_and_continues():
 
 def test_all_fail_raises_exhausted_with_attempts():
     clock = FakeClock(0)
-    breaker = CircuitBreaker(clock=clock, open_after_fails=1)
+    breaker = CircuitBreaker(clock=clock, open_after_fails=1, jitter_ratio=0)
     chain = FallbackChain(breaker, ["a", "b"])
 
     def call(provider: str) -> str:
@@ -73,7 +74,7 @@ def test_all_fail_raises_exhausted_with_attempts():
 
 
 def test_empty_chain():
-    breaker = CircuitBreaker(clock=FakeClock(0))
+    breaker = CircuitBreaker(clock=FakeClock(0), jitter_ratio=0)
     try:
         FallbackChain(breaker, []).execute(lambda p: p)
         raise AssertionError("expected exhausted")
@@ -83,7 +84,19 @@ def test_empty_chain():
 
 def test_router_counts_usage_without_double_tripping():
     clock = FakeClock(0)
-    router = GatewayRouter(providers=["gemini", "groq"], default_cooldown_seconds=10, clock=clock)
+    router = GatewayRouter(
+        providers=["gemini", "groq"],
+        default_cooldown_seconds=10,
+        clock=clock,
+        jitter_ratio=0,
+        # Do not auto-load providers.yaml aliases into this unit test.
+        upstreams=UpstreamIndex(
+            deployments=(),
+            alias_upstreams={},
+            upstream_aliases={},
+            upstream_deployment_ids={},
+        ),
+    )
 
     def call(provider: str) -> str:
         if provider == "gemini":
@@ -101,3 +114,18 @@ def test_router_counts_usage_without_double_tripping():
     # A single 429 must not have been applied twice (which would still be open,
     # but retry_at would be computed twice from the same clock and stay 20).
     assert by_name["gemini"]["retry_at"] == 20
+
+
+def test_401_in_chain_does_not_open_circuit():
+    clock = FakeClock(0)
+    breaker = CircuitBreaker(clock=clock, open_after_fails=1, jitter_ratio=0)
+    chain = FallbackChain(breaker, ["gemini", "groq"])
+
+    def call(provider: str) -> str:
+        if provider == "gemini":
+            raise CallFailed("gemini", "no key", status_code=401)
+        return "ok"
+
+    result = chain.execute(call)
+    assert result.provider == "groq"
+    assert breaker.state("gemini") == CircuitState.CLOSED

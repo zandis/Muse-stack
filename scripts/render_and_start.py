@@ -42,6 +42,12 @@ def main() -> None:
             file=sys.stderr,
         )
 
+    # The thin Muse callback lives next to this script. LiteLLM imports it
+    # by module name (muse_litellm_callback.proxy_handler_instance).
+    scripts_dir = str(Path(__file__).resolve().parent)
+    existing = os.environ.get("PYTHONPATH", "")
+    os.environ["PYTHONPATH"] = scripts_dir + (os.pathsep + existing if existing else "")
+
     os.execvp(
         "litellm",
         [

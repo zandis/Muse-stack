@@ -1,16 +1,17 @@
 """Ordered fallback chains that skip open circuits and stop on first success.
 
-A chain is a list of provider ids, tried in order. The circuit breaker decides
-whether a provider is callable. The caller supplies a function
-``call(provider) -> result``. If that function raises ``CallFailed`` (or a
-subclass) the chain records the failure, trips the breaker when a status is
-attached, and moves on. ``CircuitOpen`` is skipped without calling.
+A chain is a list of provider (or alias) ids, tried in order. The circuit
+breaker decides whether a provider is callable. The caller supplies a
+function ``call(provider) -> result``. If that function raises
+``CallFailed`` (or a subclass) the chain records the failure, trips the
+breaker when a status is attached, and moves on. ``CircuitOpen`` is
+skipped without calling.
 
-This sits *next to* LiteLLM's alias fallbacks, not in place of them. LiteLLM
-already walks deployments inside ``fast`` / ``smart`` with a fixed cooldown.
+This sits *next to* LiteLLM's alias fallbacks, not in place of them.
+LiteLLM 1.108.5 already honours Retry-After on its own deployments.
 Use this chain when Muse Stack itself is choosing a provider (useful-work
-jobs, health probes, or a sidecar in front of the proxy) and needs to honour
-Retry-After.
+jobs, health probes, or the quota-exhausted / cross-alias callback) and
+must skip an open circuit.
 """
 
 from __future__ import annotations
@@ -18,7 +19,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Generic, TypeVar
 
-from muse.gateway.circuit_breaker import CircuitBreaker, CircuitOpen
+from muse.gateway.circuit_breaker import CircuitBreaker, CircuitOpen, ProbeTicket
+from muse.gateway.quota import is_quota_exhausted
 
 T = TypeVar("T")
 
@@ -34,11 +36,15 @@ class CallFailed(Exception):
         status_code: int | None = None,
         retry_after: str | None = None,
         cause: BaseException | None = None,
+        quota_exhausted: bool = False,
+        upstream: str | None = None,
     ) -> None:
         self.provider = provider
         self.status_code = status_code
         self.retry_after = retry_after
         self.cause = cause
+        self.quota_exhausted = quota_exhausted
+        self.upstream = upstream
         super().__init__(message)
 
 
@@ -59,6 +65,7 @@ class Attempt:
     outcome: str  # "success" | "failed" | "skipped"
     detail: str = ""
     status_code: int | None = None
+    upstream: str | None = None
 
 
 @dataclass
@@ -80,7 +87,7 @@ class FallbackChain:
         errors: list[str] = []
         for provider in self.providers:
             try:
-                self.breaker.allow(provider)
+                ticket = self.breaker.allow(provider)
             except CircuitOpen as exc:
                 attempts.append(
                     Attempt(provider, "skipped", detail=str(exc), status_code=429)
@@ -91,9 +98,25 @@ class FallbackChain:
                 value = call(provider)
             except CallFailed as exc:
                 status = exc.status_code if exc.status_code is not None else 599
-                self.breaker.on_response(provider, status, exc.retry_after)
+                exhausted = exc.quota_exhausted or is_quota_exhausted(
+                    status_code=status, message=str(exc)
+                )
+                target = exc.upstream or provider
+                self.breaker.on_response(
+                    target,
+                    status,
+                    exc.retry_after,
+                    ticket=ticket if target == ticket.provider or target == provider else None,
+                    quota_exhausted=exhausted,
+                )
                 attempts.append(
-                    Attempt(provider, "failed", detail=str(exc), status_code=status)
+                    Attempt(
+                        provider,
+                        "failed",
+                        detail=str(exc),
+                        status_code=status,
+                        upstream=exc.upstream,
+                    )
                 )
                 errors.append(f"{provider}: {exc}")
                 continue
@@ -104,13 +127,13 @@ class FallbackChain:
                 errors.append(str(exc))
                 continue
             except Exception as exc:  # noqa: BLE001 - record and move on
-                self.breaker.on_transport_error(provider)
+                self.breaker.on_transport_error(provider, ticket=ticket)
                 attempts.append(
                     Attempt(provider, "failed", detail=f"{type(exc).__name__}: {exc}")
                 )
                 errors.append(f"{provider}: {type(exc).__name__}: {exc}")
                 continue
-            self.breaker.on_response(provider, 200, None)
+            self.breaker.on_response(provider, 200, None, ticket=ticket)
             attempts.append(Attempt(provider, "success", status_code=200))
             return FallbackResult(value=value, provider=provider, attempts=attempts)
         raise FallbackExhausted(self.providers, errors, attempts)

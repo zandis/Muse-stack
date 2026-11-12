@@ -1,4 +1,9 @@
-"""Routing layer: Retry-After circuit breaker, fallback chains, and health/usage."""
+"""Routing layer: circuit breaker, fallback chains, health, and upstream maps.
+
+LiteLLM 1.108.5 already honours Retry-After on its own deployments. This
+package is the Muse-side breaker (useful-work runner, quota-exhausted
+state, cross-alias cooldown) and the health/usage endpoints.
+"""
 
 from muse.gateway.circuit_breaker import CircuitBreaker, CircuitOpen, CircuitState
 from muse.gateway.fallback import FallbackChain, FallbackExhausted

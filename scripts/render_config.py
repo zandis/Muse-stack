@@ -166,6 +166,13 @@ def render(catalog: Mapping[str, Any], environ: Mapping[str, str]) -> tuple[dict
         if context_target and present.get(context_target, 0) > 0:
             context_fallbacks.append({name: [context_target]})
 
+    # cooldown_time is the *fallback* used when a failed deployment has no
+    # Retry-After header and no per-deployment cooldown_time. LiteLLM 1.108.5
+    # already honours Retry-After with priority:
+    #   deployment cooldown_time > Retry-After header > this router default.
+    # Setting 30 here does not disable or override a provider's Retry-After.
+    # See docs/ARCHITECTURE.md ("LiteLLM and Retry-After") and
+    # scripts/muse_litellm_callback.py.
     router: dict[str, Any] = {
         "routing_strategy": "simple-shuffle",
         "num_retries": 1,
@@ -198,6 +205,9 @@ def render(catalog: Mapping[str, Any], environ: Mapping[str, str]) -> tuple[dict
             "drop_params": True,
             "request_timeout": 120,
             "num_retries": 1,
+            # Thin callback: quota-exhausted + cross-alias cooldown.
+            # Retry-After itself is already applied by LiteLLM 1.108.5.
+            "callbacks": ["muse_litellm_callback.proxy_handler_instance"],
         },
         "router_settings": router,
         "general_settings": general,
