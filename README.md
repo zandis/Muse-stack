@@ -97,7 +97,7 @@ A key (`sk-muse-app-...`) is shown once, with the base URL and key to paste into
 
 The rules, in plain words:
 
-- **Interactive** apps (a chat window you are typing in) are never held back. **Normal** apps keep a small reserve of each allowance free for interactive ones. **Background** apps step aside while an interactive app is active (`MUSE_ACTIVE_WINDOW_S`, default 2 minutes) and keep a larger reserve, except in the last hour before a daily allowance resets, when they may use what would be wasted.
+- **Interactive** apps (a chat window you are typing in) are never held back. **Normal** apps keep a small reserve of each allowance free for interactive ones. **Background** apps step aside while an interactive app is active (`MUSE_ACTIVE_WINDOW_S`, default 2 minutes) and keep a larger reserve, and they also wait while an allowance is being used faster than its even pace (see "Routing rules and pacing" below), except in the last hour before a daily allowance resets, when they may use what would be wasted.
 - A per-app daily cap (requests or tokens) ends that app's day at the cap until local midnight.
 - Paid providers are used only by apps allowed to, only while today's paid spend is under `MUSE_DAILY_PAID_CAP_USD` (default 1.00; 0 turns paid use off), and only when the price is known.
 - A request that is turned away gets HTTP 429 with `x-muse-ration: defer:<reason>` (try again later; nothing was sent upstream) or `refuse:<reason>` (not today), plus `Retry-After`. A 429 without that header comes from a provider.
@@ -116,6 +116,30 @@ muse pause ; muse resume                            # stops and restarts the que
 Jobs live in `~/.muse/queue.sqlite` (separate from the usage ledger because they hold your prompts; a finished job's prompt is erased). Results are written to `~/.muse/queue-out/` or the path you give, never to the ledger or a log. The runner is a background app named `queue` that Muse creates and keeps (its key is stored in the key store and never printed). It does what the proxy says: a deferral is retried after `Retry-After` plus a little random delay, an app cap holds all queue jobs until midnight, a provider 429 or server error backs off exponentially, a privacy refusal is final, and a job past its `--by` deadline fails instead of paying. The queue is free-only unless a job is added with `--allow-paid`, which uses a second managed app (`queue-paid`) that is still bound by the daily paid cap. `muse status` and the dashboard show the apps, the paid total and the queue.
 
 To check the real providers with your own keys, see [docs/real-key-checklist.md](docs/real-key-checklist.md).
+
+### Routing rules and pacing
+
+**Fit the task.** `config/routing.yaml` says how strong a model each kind of task gets: `light` (classify, extract, tag) uses `fast` and at most 300 output tokens, `everyday` uses `cheap`, `heavy` uses `smart` (and `long-context` for inputs over about 60,000 tokens), `frontier` uses `smart` and suggests a hand-off, plus `embed` and `rerank`. Edit the file and the next request uses it, no restart; a broken file never stops the proxy (the built-in rules, identical to the shipped file, are used and the problem is logged once).
+
+```bash
+muse rules                     # the rules as sentences (--lang zh for Traditional Chinese, --json)
+muse rules check               # validate the file; warns about aliases missing from the catalogue
+muse ask --task light "Tag this: invoice from ACME"
+muse queue add --task heavy "Write the weekly report"   # without --task or --alias: the queue's default task (light)
+```
+
+An app asks for a task with the header `x-muse-task: <task>` and any model name, or with the model `auto` (no header: the app's default task from the file, else `everyday`). The proxy replaces the model with the task's alias and lowers `max_tokens` to the task's ceiling (a lower one is kept). An unknown task is HTTP 400 listing the valid ones; the response says `x-muse-task: <task>`. A word in a task *name* can pick the task (`classify-emails` is `light`); prompt text is never read for this.
+
+**Spend what expires soonest.** For each daily or monthly allowance with a known limit (from the provider's headers, or the catalogue's `quota:` minus the ledger) the router draws a straight line from full at the last reset (midnight Pacific for Gemini, UTC otherwise, the calendar month, or the reset time minus one window for rolling limits) to empty at the next. `surplus = remaining/limit - (1 - elapsed/window)`.
+
+- Background apps may use an allowance only when its surplus is at least `MUSE_PACE_MARGIN` (default 0: on or under the line) and the reserve allows it; in the last hour before a daily reset (last day before a monthly one) both are lifted. A held request gets `x-muse-ration: defer:pace` and a `Retry-After` for when the line catches up. Normal apps keep only the reserve; interactive apps are never held. Minute limits and windows of unknown length are not paced (the reserve still applies). `MUSE_PACE_MARGIN=-1` turns pacing off.
+- When two free upstreams share an order level, the one that will reset with the most left over is preferred: by the projected leftover at reset when every one has a recent burn rate (at least `MUSE_PACE_BURN_MIN_CALLS`, default 3, calls in the last `MUSE_PACE_BURN_WINDOW_S`, default 3600 s), else by surplus; an upstream that reports nothing counts as on the line. The others are set aside only when they are more than `MUSE_PACE_PREFER_GAP` (default 0.10 of the allowance) behind; closer than that, requests are load-balanced as before. A retry or fallback is never narrowed. The response then says `x-muse-ration: pace:prefer`.
+
+**Offer the hand-off.** A `frontier` task, or a refusal for the strong alias, carries `x-muse-handoff: suggest`. For a frontier task paid providers are not used until the user chooses to pay (`x-muse-allow-paid: true`), so the user first sees the choices. A refusal's message ends with the choices available now, for a bot to turn into buttons: ` | options=wait:2026-11-13T00:00:00Z,handoff,pay:0.041000` (`wait` = the soonest reset, `handoff` = open your own ChatGPT, Claude or Gemini app, `pay` = estimated US$ when this app may pay, the cap has room and a priced paid model exists; `options=none` if nothing is). Nothing is ever routed to a subscription.
+
+**Hold one-offs.** Trial credits that never renew (marked one-off in the catalogue, rendered as `model_info.muse_oneoff`) are used only when the request says `x-muse-allow-oneoff: true`; otherwise `refuse:oneoff-held`, even when nothing else is left.
+
+**Exact repeats** (off unless `MUSE_CACHE=exact`): an identical request (same alias, messages and output settings, temperature 0 or a task marked `deterministic`) is answered from a cache without contacting anyone (`x-muse-cache: hit`, `x-muse-provider: cache`), recorded in the ledger as `cached` at zero cost, and not counted against quotas or app caps. The privacy class and the app's default class are part of the key. Public and standard answers are kept in `~/.muse/cache.sqlite` (0600) so every worker shares them; private and local answers are kept in memory only and never written to disk. `MUSE_CACHE_TTL_S` (default 3600) and `MUSE_CACHE_MAX_ENTRIES` (default 1000) bound it.
 
 ## Trust layer
 
