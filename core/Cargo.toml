@@ -1,0 +1,21 @@
+[package]
+name = "muse-core"
+version = "0.1.0"
+edition = "2021"
+description = "Portable core of Muse: the pure quota, pacing and cache-key rules, kept in step with the Python implementation by a conformance suite."
+publish = false
+
+[lib]
+name = "muse_core"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+# float_roundtrip: JSON numbers must parse to the exact f64 Python wrote.
+serde_json = { version = "1", features = ["float_roundtrip"] }
+sha2 = "0.10"
+
+[dev-dependencies]
+# Only to cross-check the hand-ported Pacific DST rule against tzdata (tests/pacific_tzdata.rs).
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+chrono-tz = { version = "0.10", default-features = false, features = ["std"] }

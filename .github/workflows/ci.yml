@@ -35,6 +35,16 @@ jobs:
       - name: Unit tests
         run: python -m pytest tests -q --ignore=tests/integration
 
+  core:
+    # The Rust core (core/) replays the vectors exported from Python
+    # (core/conformance). The unit job checks that those files are current.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust core tests
+        working-directory: core
+        run: cargo test --locked
+
   proxy-integration:
     # Starts the real LiteLLM proxy with the hook loaded against a fake
     # upstream. No provider is called and no real key is used.
