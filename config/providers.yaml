@@ -14,6 +14,16 @@
 # promise of the provider's real quota.
 #
 # verified describes what was checked on 2026-11-11. See README for the gaps.
+#
+# policy: what the privacy classes route on (muse/policy.py). Values are
+#   yes | no | unknown. "unknown" is treated as "yes" by the private class, so
+#   a provider only receives private prompts once someone has checked its terms
+#   and written "no" here. commercial_use is allowed | prohibited | unknown.
+#
+# kind: local providers have no key. They are enabled when base_env is set
+#   (e.g. OLLAMA_API_BASE) and their deployments come from the local catalog
+#   written by `muse local discover` (MUSE_LOCAL_CATALOG, default
+#   $MUSE_HOME/local.yaml), because the models installed differ per machine.
 
 aliases:
   fast:
@@ -40,6 +50,13 @@ providers:
   - id: gemini
     env: GEMINI_API_KEY
     tier: free
+    policy:
+      trains_on_inputs: yes
+      human_review: yes
+      region: us
+      commercial_use: allowed
+      terms_url: https://aistudio.google.com/docs/terms
+      note: "Free tier: Google uses prompts and responses to improve products and human reviewers may read them. Free tier may not serve EEA/UK/CH end users."
     key_url: https://aistudio.google.com/apikey
     notes: >-
       Google AI Studio free tier. The pricing page marks the models below
@@ -119,6 +136,13 @@ providers:
   - id: groq
     env: GROQ_API_KEY
     tier: free
+    policy:
+      trains_on_inputs: unknown
+      human_review: unknown
+      region: us
+      commercial_use: allowed
+      terms_url: https://groq.com/terms-of-use/
+      note: "Not re-checked. Treated as unknown, so the private class skips it."
     key_url: https://console.groq.com/keys
     notes: >-
       Public models page lists openai/gpt-oss-20b and openai/gpt-oss-120b as
@@ -151,6 +175,13 @@ providers:
   - id: cohere
     env: COHERE_API_KEY
     tier: trial
+    policy:
+      trains_on_inputs: unknown
+      human_review: unknown
+      region: us
+      commercial_use: prohibited
+      terms_url: https://cohere.com/pricing
+      note: "Trial keys are not permitted for production or commercial use."
     key_url: https://dashboard.cohere.com/api-keys
     notes: >-
       Trial keys are free and, per Cohere's rate-limit docs, capped at 1,000
@@ -199,6 +230,13 @@ providers:
   - id: openrouter
     env: OPENROUTER_API_KEY
     tier: free
+    policy:
+      trains_on_inputs: yes
+      human_review: unknown
+      region: varies
+      commercial_use: unknown
+      terms_url: https://openrouter.ai/terms
+      note: "Free endpoints follow the upstream host; many log or train on prompts."
     key_url: https://openrouter.ai/keys
     extra_headers:
       HTTP-Referer: https://github.com/zandis/muse-stack
@@ -272,6 +310,13 @@ providers:
   - id: siliconflow
     env: SILICONFLOW_API_KEY
     tier: metered
+    policy:
+      trains_on_inputs: unknown
+      human_review: unknown
+      region: unknown
+      commercial_use: unknown
+      terms_url: https://siliconflow.com/terms
+      note: "Not checked."
     key_url: https://cloud.siliconflow.com/account/ak
     api_base: https://api.siliconflow.com/v1
     notes: >-
@@ -319,6 +364,13 @@ providers:
   - id: jina
     env: JINA_API_KEY
     tier: trial
+    policy:
+      trains_on_inputs: unknown
+      human_review: unknown
+      region: unknown
+      commercial_use: unknown
+      terms_url: https://jina.ai/legal
+      note: "Not checked."
     key_url: https://jina.ai/api-dashboard
     notes: >-
       LiteLLM reads JINA_API_KEY (also JINA_AI_API_KEY). Embeddings go to
@@ -348,6 +400,13 @@ providers:
   - id: novita
     env: NOVITA_API_KEY
     tier: paid
+    policy:
+      trains_on_inputs: unknown
+      human_review: unknown
+      region: unknown
+      commercial_use: unknown
+      terms_url: https://novita.ai/legal/terms-of-service
+      note: "Not checked."
     key_url: https://novita.ai/settings/key-management
     api_base: https://api.novita.ai/v3/openai
     notes: >-
@@ -391,6 +450,13 @@ providers:
   - id: deepseek
     env: DEEPSEEK_API_KEY
     tier: paid
+    policy:
+      trains_on_inputs: unknown
+      human_review: unknown
+      region: cn
+      commercial_use: unknown
+      terms_url: https://platform.deepseek.com/downloads/DeepSeek%20Open%20Platform%20Terms%20of%20Service.html
+      note: "Hosted in the PRC. Not checked further."
     key_url: https://platform.deepseek.com/api_keys
     api_base: https://api.deepseek.com/v1
     notes: >-
@@ -425,6 +491,13 @@ providers:
   - id: voyage
     env: VOYAGE_API_KEY
     tier: paid
+    policy:
+      trains_on_inputs: unknown
+      human_review: unknown
+      region: us
+      commercial_use: unknown
+      terms_url: https://www.voyageai.com/tos
+      note: "Not checked."
     key_url: https://dash.voyageai.com/api-keys
     notes: >-
       Paid embeddings and rerank. voyage-4-lite and rerank-3-lite are the
@@ -454,6 +527,13 @@ providers:
   - id: nvidia_nim
     env: NVIDIA_NIM_API_KEY
     tier: paid
+    policy:
+      trains_on_inputs: unknown
+      human_review: unknown
+      region: us
+      commercial_use: unknown
+      terms_url: https://build.nvidia.com
+      note: "Not checked."
     key_url: https://build.nvidia.com/settings/api-keys
     api_base: https://integrate.api.nvidia.com/v1
     notes: >-
@@ -492,3 +572,47 @@ providers:
         join: paid_fallback
         verified: nvidia-models-list-2026-11-11
         notes: Pinned as nim-embed only. Dimension not verified. Do not insert these vectors into an index built with embed.
+
+  - id: ollama
+    kind: local
+    base_env: OLLAMA_API_BASE
+    tier: local
+    policy:
+      trains_on_inputs: no
+      human_review: no
+      region: local
+      commercial_use: depends-on-model-licence
+      terms_url: https://ollama.com
+      note: "Runs on this machine. Check each model's licence before commercial use."
+    notes: >-
+      Ollama on the user's machine. Default base http://127.0.0.1:11434, or
+      http://host.docker.internal:11434 from inside the container.
+    deployments: []
+
+  - id: lmstudio
+    kind: local
+    base_env: LM_STUDIO_API_BASE
+    tier: local
+    policy:
+      trains_on_inputs: no
+      human_review: no
+      region: local
+      commercial_use: depends-on-model-licence
+      terms_url: https://lmstudio.ai
+      note: "Runs on this machine."
+    notes: LM Studio local server. Default base http://127.0.0.1:1234/v1.
+    deployments: []
+
+  - id: local_openai
+    kind: local
+    base_env: MUSE_LOCAL_OPENAI_BASE
+    tier: local
+    policy:
+      trains_on_inputs: no
+      human_review: no
+      region: local
+      commercial_use: depends-on-model-licence
+      terms_url: ""
+      note: "Any OpenAI-compatible server on this machine (llama.cpp, MLX, vLLM, Jan)."
+    notes: Generic OpenAI-compatible local server. Models use the openai/ prefix.
+    deployments: []

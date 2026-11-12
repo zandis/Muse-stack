@@ -22,12 +22,22 @@ services:
       LITELLM_NUM_WORKERS: ${LITELLM_NUM_WORKERS:-1}
       MUSE_ALLOW_PAID_FALLBACK: ${MUSE_ALLOW_PAID_FALLBACK:-false}
       MUSE_DISABLE_PROVIDERS: ${MUSE_DISABLE_PROVIDERS:-}
+      MUSE_LOCAL_ORDER: ${MUSE_LOCAL_ORDER:-5}
+      MUSE_DEFAULT_PRIVACY: ${MUSE_DEFAULT_PRIVACY:-standard}
+      # State shared with the muse CLI and dashboard on the host.
+      MUSE_HOME: /opt/muse/home
+      PYTHONPATH: /opt/muse
     ports:
       # Loopback by default. Set MUSE_BIND=0.0.0.0 only behind a firewall or TLS proxy.
       - "${MUSE_BIND:-127.0.0.1}:${MUSE_PORT:-4000}:4000"
     volumes:
       - ./config:/opt/muse/config:ro
       - ./scripts:/opt/muse/scripts:ro
+      - ./muse:/opt/muse/muse:ro
+      - ${MUSE_HOME:-${HOME}/.muse}:/opt/muse/home
+    extra_hosts:
+      # Lets the container reach Ollama or LM Studio on the host (Linux needs this line).
+      - "host.docker.internal:host-gateway"
     entrypoint: ["/bin/sh", "/opt/muse/scripts/entrypoint.sh"]
     healthcheck:
       test:

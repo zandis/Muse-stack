@@ -61,11 +61,51 @@ def _disabled(environ: Mapping[str, str]) -> set[str]:
     return {part.strip().lower() for part in raw.split(",") if part.strip()}
 
 
+def is_local(provider: Mapping[str, Any]) -> bool:
+    return provider.get("kind", "cloud") == "local"
+
+
 def _enabled(provider: Mapping[str, Any], environ: Mapping[str, str], disabled: set[str]) -> bool:
     provider_id = str(provider["id"]).lower()
     if provider_id in disabled:
         return False
-    return bool(environ.get(str(provider["env"]), "").strip())
+    gate = provider["base_env"] if is_local(provider) else provider["env"]
+    return bool(environ.get(str(gate), "").strip())
+
+
+def local_catalog_path(environ: Mapping[str, str]) -> Path:
+    explicit = environ.get("MUSE_LOCAL_CATALOG", "").strip()
+    if explicit:
+        return Path(explicit)
+    home = environ.get("MUSE_HOME", "").strip() or str(Path.home() / ".muse")
+    return Path(home) / "local.yaml"
+
+
+def load_local_deployments(environ: Mapping[str, str]) -> dict[str, list[dict[str, Any]]]:
+    """Models installed on this machine, keyed by local provider id.
+
+    Written by `muse local discover`. A missing or malformed file means no
+    local models; it never stops the proxy from starting.
+    """
+    path = local_catalog_path(environ)
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out: dict[str, list[dict[str, Any]]] = {}
+    for provider_id, items in data.items():
+        if isinstance(items, list):
+            out[str(provider_id)] = [item for item in items if isinstance(item, dict) and item.get("id") and item.get("model")]
+    return out
+
+
+def _local_order(environ: Mapping[str, str]) -> int:
+    try:
+        return int(environ.get("MUSE_LOCAL_ORDER", "5"))
+    except ValueError:
+        return 5
 
 
 def _deployment_joins(
@@ -82,13 +122,16 @@ def _deployment_joins(
 
 
 def _litellm_params(provider: Mapping[str, Any], deployment: Mapping[str, Any], *, for_alias: bool) -> dict[str, Any]:
-    params: dict[str, Any] = {
-        "model": deployment["model"],
-        "api_key": f"os.environ/{provider['env']}",
-    }
-    api_base = deployment.get("api_base") or provider.get("api_base")
-    if api_base:
-        params["api_base"] = api_base
+    params: dict[str, Any] = {"model": deployment["model"]}
+    if is_local(provider):
+        # No key. The base URL is not a secret but differs per machine, so it
+        # stays an environment reference like the keys do.
+        params["api_base"] = f"os.environ/{provider['base_env']}"
+    else:
+        params["api_key"] = f"os.environ/{provider['env']}"
+        api_base = deployment.get("api_base") or provider.get("api_base")
+        if api_base:
+            params["api_base"] = api_base
     headers = {}
     headers.update(provider.get("extra_headers") or {})
     headers.update(deployment.get("extra_headers") or {})
@@ -101,12 +144,31 @@ def _litellm_params(provider: Mapping[str, Any], deployment: Mapping[str, Any], 
     return params
 
 
+def _tri(value: Any) -> str:
+    """YAML reads bare yes/no as booleans. Normalise to yes | no | unknown."""
+    if value is True:
+        return "yes"
+    if value is False:
+        return "no"
+    text = str(value).strip().lower() if value is not None else ""
+    return text if text in {"yes", "no"} else "unknown"
+
+
 def _model_info(provider: Mapping[str, Any], deployment: Mapping[str, Any], deployment_id: str) -> dict[str, Any]:
+    policy = provider.get("policy") or {}
     info: dict[str, Any] = {
         "id": deployment_id,
         "mode": deployment["mode"],
         "provider": provider["id"],
         "muse_verified": deployment.get("verified", "unspecified"),
+        # Read by muse/hook.py. muse_upstream is the same for every alias that
+        # points at one upstream model, so a 429 on one alias blocks them all.
+        "muse_upstream": f"{provider['id']}:{deployment['model']}",
+        "muse_kind": provider.get("kind", "cloud"),
+        "muse_tier": str(provider.get("tier", "unknown")),
+        "muse_trains": _tri(policy.get("trains_on_inputs")),
+        "muse_human_review": _tri(policy.get("human_review")),
+        "muse_region": str(policy.get("region", "unknown")),
     }
     if deployment.get("notes"):
         info["description"] = str(deployment["notes"]).strip()
@@ -121,11 +183,20 @@ def render(catalog: Mapping[str, Any], environ: Mapping[str, str]) -> tuple[dict
     model_list: list[dict[str, Any]] = []
     present: dict[str, int] = {name: 0 for name in alias_meta}
 
+    local_deployments = load_local_deployments(environ)
+    local_order = _local_order(environ)
+
     for provider in catalog["providers"]:
         if not _enabled(provider, environ, disabled):
             continue
         enabled.append(provider["id"])
-        for deployment in provider["deployments"]:
+        deployments = list(provider.get("deployments") or [])
+        if is_local(provider):
+            for item in local_deployments.get(str(provider["id"]), []):
+                merged = {"join": "always", "order": local_order, "rpm": 10, "aliases": [], "verified": "local-discovery"}
+                merged.update(item)
+                deployments.append(merged)
+        for deployment in deployments:
             # Direct name, so a paid model can be called without joining an alias.
             pin_id = str(deployment["id"])
             model_list.append(
@@ -138,8 +209,12 @@ def render(catalog: Mapping[str, Any], environ: Mapping[str, str]) -> tuple[dict
             if not _deployment_joins(deployment, paid_fallback=paid_fallback):
                 continue
             for alias in deployment.get("aliases") or []:
+                if is_local(provider) and alias not in alias_meta:
+                    continue
                 if alias not in alias_meta:
                     raise SystemExit(f"{pin_id} references unknown alias {alias!r}")
+                if is_local(provider) and alias_meta[alias]["mode"] != deployment["mode"]:
+                    continue  # a hand-edited local catalog must not stop startup
                 if alias_meta[alias]["mode"] != deployment["mode"]:
                     raise SystemExit(
                         f"{pin_id} mode {deployment['mode']} does not match alias {alias}"

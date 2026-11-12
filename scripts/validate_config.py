@@ -11,7 +11,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from render_config import dumps, load_catalog, render  # noqa: E402
+from render_config import _tri, dumps, load_catalog, render  # noqa: E402
 
 CATALOG_PATH = ROOT / "config" / "providers.yaml"
 ENV_EXAMPLE = ROOT / ".env.example"
@@ -55,6 +55,11 @@ def assert_refs(config: dict) -> None:
         deployment_id = entry["model_info"]["id"]
         check(deployment_id not in seen, f"duplicate deployment id {deployment_id}")
         seen.add(deployment_id)
+        if entry["model_info"].get("muse_kind") == "local":
+            check("api_key" not in entry["litellm_params"], f"{deployment_id} is local and must not carry a key")
+            base = entry["litellm_params"].get("api_base", "")
+            check(base.startswith("os.environ/"), f"{deployment_id} api_base is not an env reference")
+            continue
         api_key = entry["litellm_params"]["api_key"]
         check(
             isinstance(api_key, str) and api_key.startswith("os.environ/"),
@@ -179,6 +184,14 @@ def scenario_catalog_shape() -> None:
     check("\n.env\n" in f"\n{gitignore}\n", ".gitignore must ignore .env")
     seen_ids: set[str] = set()
     for provider in catalog["providers"]:
+        policy = provider.get("policy") or {}
+        for field in ("trains_on_inputs", "human_review", "region", "commercial_use"):
+            check(field in policy, f"{provider['id']} policy is missing {field}")
+        if provider.get("kind") == "local":
+            check(provider["base_env"] in env_example, f"{provider['base_env']} missing from .env.example")
+            check(_tri(policy["trains_on_inputs"]) == "no", f"{provider['id']} is local and must not train on inputs")
+            check(not provider.get("deployments"), f"{provider['id']} deployments belong in the local catalog")
+            continue
         check(provider["env"] in env_example, f"{provider['env']} missing from .env.example")
         check(provider["key_url"] in env_example, f"{provider['key_url']} missing from .env.example")
         for deployment in provider["deployments"]:
@@ -234,6 +247,49 @@ def scenario_round_trip_all_free() -> None:
     check(master == "os.environ/LITELLM_MASTER_KEY", master)
 
 
+def scenario_local_and_policy() -> None:
+    import tempfile
+
+    catalog = load_catalog(CATALOG_PATH)
+    with tempfile.TemporaryDirectory() as tmp:
+        local = Path(tmp) / "local.yaml"
+        local.write_text(
+            yaml.safe_dump(
+                {
+                    "ollama": [
+                        {"id": "ollama-qwen", "model": "ollama_chat/qwen3:8b", "mode": "chat", "aliases": ["fast", "nope"]},
+                        {"id": "ollama-embed", "model": "ollama/bge-m3", "mode": "embedding", "aliases": ["embed", "fast"]},
+                        {"model": "no-id"},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        env = env_with(GEMINI_API_KEY="g", OLLAMA_API_BASE="http://127.0.0.1:11434", MUSE_LOCAL_CATALOG=str(local))
+        config, enabled = render(catalog, env)
+        check(enabled == ["gemini", "ollama"], f"local provider not enabled: {enabled}")
+        assert_refs(config)
+        fast = [e for e in config["model_list"] if e["model_name"] == "fast"]
+        local_fast = [e for e in fast if e["model_info"]["muse_kind"] == "local"]
+        check([e["model_info"]["id"] for e in local_fast] == ["ollama-qwen__fast"], "local chat model should join fast once")
+        check(local_fast[0]["litellm_params"]["order"] == 5, "local models default to order 5")
+        check(local_fast[0]["model_info"]["muse_trains"] == "no", "local must be marked as not training")
+        check(ids_for(config, "ollama-embed") == ["ollama-embed"], "local pin missing")
+        check("ollama-embed__embed" in ids_for(config, "embed"), "local embedding should join embed")
+        # The same upstream model shares one key across aliases; the hook blocks on it.
+        upstream = {
+            e["model_info"]["muse_upstream"]
+            for e in config["model_list"]
+            if e["model_info"]["id"].startswith("gemini-3.1-flash-lite")
+        }
+        check(upstream == {"gemini:gemini/gemini-3.1-flash-lite"}, f"upstream key drifted: {upstream}")
+        gem = next(e for e in config["model_list"] if e["model_info"]["id"] == "gemini-3.8-flash")
+        check(gem["model_info"]["muse_trains"] == "yes", "gemini free tier trains on inputs")
+        # Base set but no local catalog: provider is on, with nothing to route to.
+        config2, enabled2 = render(catalog, env_with(OLLAMA_API_BASE="x", MUSE_LOCAL_CATALOG=str(Path(tmp) / "missing.yaml")))
+        check(enabled2 == ["ollama"] and config2["model_list"] == [], "missing local catalog should render no models")
+
+
 def main() -> int:
     steps = [
         scenario_empty,
@@ -243,6 +299,7 @@ def main() -> int:
         scenario_siliconflow_base,
         scenario_catalog_shape,
         scenario_round_trip_all_free,
+        scenario_local_and_policy,
     ]
     for step in steps:
         try:
