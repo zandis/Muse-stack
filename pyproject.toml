@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "muse-stack"
+version = "0.1.0"
+description = "One person's own AI keys and local models behind a local LiteLLM proxy."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["pyyaml>=6"]
+
+[project.optional-dependencies]
+keyring = ["keyring>=24"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+muse = "muse.cli:main"
+
+# The catalogue and compose file live in the repo, so use an editable install
+# (pip install -e .); muse.paths locates them relative to the package.
+[tool.setuptools.packages.find]
+include = ["muse*"]
+
+[tool.setuptools.package-data]
+"muse.dashboard" = ["*.html", "*.css", "*.js", "static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
