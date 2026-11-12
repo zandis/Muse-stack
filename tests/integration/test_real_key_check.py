@@ -103,3 +103,66 @@ def test_script_refuses_to_run_unconfirmed_without_a_terminal(make_proxy, tmp_pa
     env = {**os.environ, **RATION_KEYS, "LITELLM_MASTER_KEY": MASTER_KEY, "MUSE_HOME": str(proxy.home), "MUSE_CATALOG": str(proxy.catalog_path)}
     r = subprocess.run([sys.executable, str(SCRIPT), "--proxy-url", proxy.url], capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL, timeout=60)
     assert r.returncode == 2 and "--yes" in r.stderr and "requests in all" in r.stdout
+
+
+def _script_module():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("real_key_check_under_test", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_answer_state_tells_a_cut_short_reasoning_reply_from_an_empty_one():
+    rkc = _script_module()
+
+    def chat(message, finish="stop", usage=None):
+        return json.dumps({"choices": [{"message": message, "finish_reason": finish}], "usage": usage or {}}).encode()
+
+    assert rkc.answer_state("chat", chat({"content": "ok"})) == "answer"
+    assert rkc.answer_state("chat", chat({"content": ""}, "length")) == "cut_short"
+    assert rkc.answer_state("chat", chat({"content": None, "reasoning_content": "hm"})) == "cut_short"
+    assert rkc.answer_state("chat", chat({"content": "", "reasoning": "hm"})) == "cut_short"
+    assert rkc.answer_state("chat", chat({"content": ""}, "stop", {"completion_tokens_details": {"reasoning_tokens": 12}})) == "cut_short"
+    assert rkc.answer_state("chat", chat({"content": "  "})) == "empty"  # nothing at all is still a failure
+    assert rkc.answer_state("chat", chat({"content": ""}, "stop", {"completion_tokens_details": {"reasoning_tokens": 0}})) == "empty"
+    for raw in (b"not json", b"[]", b"{}", b'{"choices": []}', b'{"choices": [{"message": "x"}]}', b'{"choices": [null]}'):
+        assert rkc.answer_state("chat", raw) == "empty"
+    assert rkc.answer_state("embedding", b'{"data": [{"embedding": [0.1]}]}') == "answer"
+    assert rkc.answer_state("embedding", b'{"data": []}') == "empty"
+    assert rkc.body_ok("chat", chat({"content": ""}, "length")) and not rkc.body_ok("chat", chat({"content": ""}))
+    assert rkc.provider_busy(429, {}, b'{"error": "slow down"}')
+    assert not rkc.provider_busy(429, {"x-muse-ration": "defer:yield"}, b"")  # Muse's own deferral is not "busy"
+    assert not rkc.provider_busy(429, {}, b"[muse] every deployment is blocked")
+    assert not rkc.provider_busy(401, {}, b"")
+
+
+def test_reasoning_only_reply_passes_and_a_busy_free_tier_is_a_note_not_a_failure(make_proxy, upstream, tmp_path):
+    proxy = start(make_proxy, local=False)  # no canaries here: they would fill in the empty reply
+    upstream.set("a-model", "ok_reasoning_only")  # like gpt-oss at max_tokens=16
+    upstream.set("b-model", "429_retry_after:60")  # like an OpenRouter :free model at a busy moment
+    r, report = run_script(proxy, tmp_path)
+    data = json.loads(report.read_text())
+    checks = {c["id"]: c for c in data["checks"]}
+    assert checks["provider:freea"]["result"] == "pass" and "output tokens on reasoning" in checks["provider:freea"]["detail"]
+    assert checks["provider:freeb"]["result"] == "info" and "the key was not rejected" in checks["provider:freeb"]["detail"]
+    a = next(p for p in data["providers"] if p["id"] == "freea")
+    b = next(p for p in data["providers"] if p["id"] == "freeb")
+    assert a["answer_state"] == "cut_short" and b["busy"] is True and b["status"] == 429
+    assert b["block"] and b["block"]["kind"] == "cooldown" and b["block"]["cause"] == "rate-limit"  # what Muse decided after the 429, not the provider's text
+    assert not [c for c in data["checks"] if c["result"] == "fail"], data["checks"]
+    assert r.returncode == 0 and data["passed"] is True, r.stdout + r.stderr
+    assert "notes" in r.stdout
+    assert_clean(report.read_text() + r.stdout + r.stderr, proxy)
+    assert "thinking it over" not in report.read_text() + r.stdout  # reasoning text is never kept either
+
+
+def test_a_rejected_key_is_still_a_failure_not_a_busy_note(make_proxy, upstream, tmp_path):
+    proxy = start(make_proxy, local=False)
+    upstream.set("b-model", "401")
+    r, report = run_script(proxy, tmp_path)
+    data = json.loads(report.read_text())
+    checks = {c["id"]: c for c in data["checks"]}
+    assert checks["provider:freeb"]["result"] == "fail" and r.returncode == 1
+    assert not next(p for p in data["providers"] if p["id"] == "freeb").get("busy")

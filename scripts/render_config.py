@@ -381,6 +381,12 @@ def render(catalog: Mapping[str, Any], environ: Mapping[str, str]) -> tuple[dict
         # carries no Retry-After. Never set cooldown_time on a deployment:
         # that would override the header.
         "cooldown_time": cooldown_fallback(environ),
+        # A rate limit is never retried in the same group. LiteLLM would first
+        # sleep for the provider's Retry-After (router.py
+        # _time_to_sleep_before_retry: always, for a group with one deployment),
+        # holding the caller for up to a minute before the same 429. Fallback
+        # groups are still tried, and the hook's block says when to come back.
+        "retry_policy": {"RateLimitErrorRetries": 0},
     }
     if fallbacks:
         router["fallbacks"] = fallbacks

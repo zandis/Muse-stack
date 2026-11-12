@@ -170,6 +170,15 @@ class FakeUpstream:
                 ],
                 "usage": {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18},
             }, limits
+        if behaviour == "ok_reasoning_only":
+            # A reasoning model that spent a tiny max_tokens before writing anything visible.
+            return 200, {
+                "id": "chatcmpl-fake", "object": "chat.completion", "created": int(time.time()), "model": model,
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "", "reasoning_content": "thinking it over"},
+                             "finish_reason": "length"}],
+                "usage": {"prompt_tokens": 11, "completion_tokens": 16, "total_tokens": 27,
+                          "completion_tokens_details": {"reasoning_tokens": 16}},
+            }, {}
         if behaviour == "429_minute":
             return 429, {"error": {"message": "Rate limit reached for requests per minute", "type": "requests", "code": "rate_limit_exceeded"}}, {
                 "retry-after": "2",

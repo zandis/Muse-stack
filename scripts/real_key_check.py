@@ -152,20 +152,54 @@ def request_for(mode: str, model: str) -> tuple[str, dict[str, Any]]:
     return "/v1/chat/completions", {"model": model, "messages": [{"role": "user", "content": PROMPT}], "max_tokens": MAX_OUT_TOKENS}
 
 
-def body_ok(mode: str, raw: bytes) -> bool:
-    """Did a 200 carry a usable answer? Never keeps the answer."""
+def answer_state(mode: str, raw: bytes) -> str:
+    """What a 200 carried: `answer`, `cut_short`, or `empty`. Never keeps the answer.
+
+    `cut_short` is a chat reply with no visible text because the model spent the
+    few allowed output tokens on reasoning (gpt-oss and other reasoning models
+    do this at max_tokens=16). The provider accepted the key and ran the model,
+    which is all this script checks, so it counts as a pass with a note.
+    """
     try:
         data = json.loads(raw)
     except ValueError:
-        return False
+        return "empty"
+    if not isinstance(data, dict):
+        return "empty"
     if mode == "embedding":
-        return bool(data.get("data"))
+        return "answer" if data.get("data") else "empty"
     if mode == "rerank":
-        return bool(data.get("results"))
+        return "answer" if data.get("results") else "empty"
     try:
-        return bool(str(data["choices"][0]["message"]["content"]).strip())
-    except (KeyError, IndexError, TypeError):
-        return False
+        choice = data["choices"][0]
+        message = choice.get("message") or {}
+    except (KeyError, IndexError, TypeError, AttributeError):
+        return "empty"
+    if not isinstance(message, dict):
+        return "empty"
+    content = message.get("content")
+    if isinstance(content, str) and content.strip():
+        return "answer"
+    reasoning = any(isinstance(message.get(k), str) and message[k].strip() for k in ("reasoning_content", "reasoning"))
+    usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+    details = usage.get("completion_tokens_details") if isinstance(usage.get("completion_tokens_details"), dict) else {}
+    spent = details.get("reasoning_tokens")
+    if choice.get("finish_reason") == "length" or reasoning or (isinstance(spent, int) and spent > 0):
+        return "cut_short"
+    return "empty"
+
+
+def body_ok(mode: str, raw: bytes) -> bool:
+    """Did a 200 show that the provider ran the request? (A reply cut short by the token cap counts.)"""
+    return answer_state(mode, raw) in ("answer", "cut_short")
+
+
+CUT_SHORT_NOTE = f"no visible text: the model used all {MAX_OUT_TOKENS} output tokens on reasoning; the key and route work"
+
+
+def provider_busy(status: int, headers: Mapping[str, str], raw: bytes) -> bool:
+    """A 429 that came from the provider, not from Muse. The key was not rejected; the free tier is busy."""
+    return status == 429 and "x-muse-ration" not in headers and b"[muse]" not in raw
 
 
 def error_summary(status: int, headers: Mapping[str, str], raw: bytes) -> dict[str, Any]:
@@ -179,6 +213,23 @@ def error_summary(status: int, headers: Mapping[str, str], raw: bytes) -> dict[s
         "body_shape": shape(parsed) if parsed is not None else f"<non-json:{len(text)}>",
         "keywords": keywords_in(text), "retry_hint": retry_hint(text), "muse_refusal": "[muse]" in text,
     }
+
+
+def rate_limited_now(env: Mapping[str, str], provider: Mapping[str, Any], status: int, headers: Mapping[str, str], raw: bytes) -> bool:
+    """The provider answered 429 to this very call.
+
+    Either its 429 came straight back, or the proxy's one retry was answered by
+    Muse's "blocked by a provider quota" message. In the second case the ledger
+    holds a block set seconds ago, and its cause must be a rate limit: a block
+    for a bad key or missing credit stays a failure.
+    """
+    if status != 429 or "x-muse-ration" in headers:
+        return False
+    if b"[muse]" not in raw:
+        return True
+    time.sleep(0.4)  # the ledger write happens just after the response
+    block = block_decision(env, provider["upstream"], provider["id"], time.time())
+    return bool(block) and block["cause"] == "rate-limit" and block["set_ago_s"] <= 30
 
 
 # ---------------------------------------------------------------- plan
@@ -275,7 +326,10 @@ def block_decision(env: Mapping[str, str], upstream: str, provider: str, now: fl
     hit = blocks.get(upstream) or blocks.get(f"provider:{provider}")
     if not hit:
         return None
-    return {"scope": "upstream" if upstream in blocks else "provider", "kind": hit["kind"], "blocked_for_s": round(hit["until"] - now)}
+    reason = str(hit.get("reason", "")).lower()  # Muse's own wording, never the provider's text
+    return {"scope": "upstream" if upstream in blocks else "provider", "kind": hit["kind"], "blocked_for_s": round(hit["until"] - now),
+            "set_ago_s": round(now - float(hit.get("set_at", now))),
+            "cause": "key" if ("key" in reason or "payment" in reason) else "rate-limit"}
 
 
 def run(args: argparse.Namespace, env: dict[str, str]) -> int:
@@ -329,6 +383,7 @@ def run(args: argparse.Namespace, env: dict[str, str]) -> int:
         entry: dict[str, Any] = {
             "id": p["id"], "tier": p["tier"], "kind": p["kind"], "deployment": p["deployment"], "mode": p["mode"], "status": status,
             "latency_ms": round((time.time() - t0) * 1000), "answer_ok": status == 200 and body_ok(p["mode"], raw),
+            "answer_state": answer_state(p["mode"], raw) if status == 200 else None,
             "headers": safe_headers(headers),
         }
         if status == 200:
@@ -342,7 +397,14 @@ def run(args: argparse.Namespace, env: dict[str, str]) -> int:
         ok = status == 200 and entry["answer_ok"]
         served = headers.get("x-muse-provider")
         if ok and served in (None, p["id"]):
-            report.add(f"provider:{p['id']}", f"{p['id']}: one tiny call to {p['deployment']}", "pass", f"{entry['latency_ms']} ms")
+            report.add(f"provider:{p['id']}", f"{p['id']}: one tiny call to {p['deployment']}", "pass",
+                       f"{entry['latency_ms']} ms" + (f"; {CUT_SHORT_NOTE}" if entry["answer_state"] == "cut_short" else ""))
+        elif rate_limited_now(env, p, status, headers, raw):
+            # Not a failure of the key or of Muse: a shared free tier turned the call away. Record what Muse decided.
+            entry["busy"] = True
+            entry["block"] = block_decision(env, p["upstream"], p["id"], time.time())
+            report.add(f"provider:{p['id']}", f"{p['id']}: one tiny call to {p['deployment']}", "info",
+                       "HTTP 429 from the provider: rate-limited right now, the key was not rejected. Run the check again later.")
         else:
             report.add(f"provider:{p['id']}", f"{p['id']}: one tiny call to {p['deployment']}", "fail", f"HTTP {status}" + (f", served by {served}" if served else ""))
         if ok:
@@ -358,12 +420,22 @@ def run(args: argparse.Namespace, env: dict[str, str]) -> int:
         path, body = request_for(alias["mode"], alias["name"])
         status, headers, raw = client.call(path, body)
         ok = status == 200 and body_ok(alias["mode"], raw)
-        entry = {"name": alias["name"], "mode": alias["mode"], "status": status, "answer_ok": ok, "headers": safe_headers(headers)}
+        state = answer_state(alias["mode"], raw) if status == 200 else None
+        entry = {"name": alias["name"], "mode": alias["mode"], "status": status, "answer_ok": ok, "answer_state": state,
+                 "headers": safe_headers(headers)}
         if status != 200:
             entry["error"] = error_summary(status, headers, raw)
         report.data["aliases"].append(entry)
-        report.add(f"alias:{alias['name']}", f"alias {alias['name']}: one tiny call", "pass" if ok else "fail",
-                   f"served by {headers.get('x-muse-deployment', '?')}" if ok else f"HTTP {status}")
+        if ok:
+            report.add(f"alias:{alias['name']}", f"alias {alias['name']}: one tiny call", "pass",
+                       f"served by {headers.get('x-muse-deployment', '?')}" + (f"; {CUT_SHORT_NOTE}" if state == "cut_short" else ""))
+        elif provider_busy(status, headers, raw):
+            entry["busy"] = True
+            report.add(f"alias:{alias['name']}", f"alias {alias['name']}: one tiny call", "info",
+                       "HTTP 429 from the providers behind it: rate-limited right now. Run the check again later.")
+        else:
+            report.add(f"alias:{alias['name']}", f"alias {alias['name']}: one tiny call", "fail",
+                       f"HTTP {status}" if status != 200 else "HTTP 200 with an empty reply")
 
     # 4. privacy local with no local model
     has_local = any(p["kind"] == "local" for p in plan["providers"])
@@ -489,7 +561,8 @@ def finish(report: Report, env: Mapping[str, str], args: argparse.Namespace, cli
         json.dump(out, handle, indent=2)
         handle.write("\n")
     print()
-    print(f"{len(report.checks) - len(failed)} of {len(report.checks)} checks passed" + (f", {len(failed)} FAILED" if failed else "")
+    counts = {kind: sum(1 for c in report.checks if c["result"] == kind) for kind in ("pass", "info", "skip")}
+    print(f"{counts['pass']} passed, {len(failed)} failed, {counts['info']} notes, {counts['skip']} skipped"
           + f"; {client.requests} requests sent.")
     print(f"Report (no keys, prompts or responses): {path}")
     return 1 if failed else 0

@@ -33,6 +33,13 @@ python scripts/real_key_check.py
 
 It first prints exactly what it will send: for each configured provider, the most requests and tokens it can use, and the total. Every request is a few words with `max_tokens=16`. Type `y` to go on. (`--yes` skips the question.)
 
+How to read the result:
+
+- `✓` passed, `✗` failed, `·` a note, `-` skipped. Only `✗` makes the script exit 1.
+- A reply with no visible text still passes when the model used its 16 output tokens on reasoning (gpt-oss and other reasoning models do). The note says so. The key and the route work; give such models a few hundred output tokens in real use.
+- `HTTP 429 from the provider` is a note, not a failure: a shared free tier (OpenRouter `:free` models especially) was busy. The key was not rejected. Run the check again later.
+
+
 It then does, in order:
 
 | Check | What it proves |

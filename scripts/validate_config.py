@@ -489,6 +489,8 @@ def scenario_native_retry_after() -> None:
         check("allowed_fails" not in router and "allowed_fails_policy" not in router,
               "router_settings must not set allowed_fails: it disables the immediate 429 cooldown")
         check(router.get("cooldown_time") == DEFAULT_COOLDOWN_FALLBACK_S, f"fallback cooldown: {router.get('cooldown_time')}")
+        check(router.get("retry_policy", {}).get("RateLimitErrorRetries") == 0,
+              "a rate limit must not be retried in the same group: LiteLLM sleeps for the Retry-After first")
         for entry in config["model_list"]:
             for part in ("litellm_params", "model_info"):
                 check("cooldown_time" not in entry[part] and "allowed_fails" not in entry[part],

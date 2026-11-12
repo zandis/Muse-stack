@@ -92,3 +92,23 @@ def test_native_cooldown_alone_does_not_cover_a_second_alias(make_proxy, upstrea
     assert proxy.chat("fast")[0] == 200 and g_calls(upstream) == 0  # `fast` is covered
     assert proxy.chat("cheap")[0] == 200
     assert g_calls(upstream) == 1  # `cheap` is not: the same upstream is called again inside its Retry-After
+
+
+@pytest.mark.parametrize("path", ["native", "muse"])
+def test_a_rate_limited_single_deployment_answers_at_once(make_proxy, upstream, path):
+    """A model with one deployment: the caller gets the 429 now, not after the proxy slept for the Retry-After.
+
+    LiteLLM sleeps for the provider's Retry-After before retrying a group with a
+    single deployment, so the caller used to wait up to a minute for the same
+    429. The rendered `retry_policy` turns that retry off.
+    """
+    env = {"MUSE_COOLDOWN_FALLBACK_S": str(FALLBACK)}
+    if path == "native":
+        env["MUSE_DISABLE_HOOK"] = "true"
+    proxy = make_proxy(local=False, env=env)
+    upstream.set("q-small", f"429_retry_after:{RETRY_AFTER}")
+    started = time.time()
+    status, _, body = proxy.chat("q-small", timeout=45)  # the pinned name: a group of one
+    assert status == 429, body
+    assert time.time() - started < 10
+    assert len(upstream.calls("q-small")) == 1  # and it was sent once
