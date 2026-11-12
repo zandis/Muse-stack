@@ -290,8 +290,26 @@ def scenario_local_and_policy() -> None:
         check(enabled2 == ["ollama"] and config2["model_list"] == [], "missing local catalog should render no models")
 
 
+def scenario_hook_callback() -> None:
+    """The muse hook is registered in every render, and the module it names exists."""
+    from render_config import HOOK_CALLBACK
+
+    catalog = load_catalog(CATALOG_PATH)
+    for env in ({}, env_with(GEMINI_API_KEY="g")):
+        config, _ = render(catalog, env)
+        callbacks = config["litellm_settings"].get("callbacks")
+        check(callbacks == [HOOK_CALLBACK], f"muse hook not registered: {callbacks}")
+    module, _, attribute = HOOK_CALLBACK.rpartition(".")
+    hook_file = ROOT.joinpath(*module.split(".")).with_suffix(".py")
+    check(hook_file.is_file(), f"{hook_file} missing")
+    check(f"\n{attribute} = " in hook_file.read_text(encoding="utf-8"), f"{hook_file} has no module-level {attribute}")
+    config, _ = render(catalog, env_with(MUSE_DISABLE_HOOK="true"))
+    check("callbacks" not in config["litellm_settings"], "MUSE_DISABLE_HOOK should drop the callback")
+
+
 def main() -> int:
     steps = [
+        scenario_hook_callback,
         scenario_empty,
         scenario_partial,
         scenario_paid_gate,

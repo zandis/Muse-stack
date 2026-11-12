@@ -223,7 +223,7 @@ def render_status(snap: Mapping[str, Any], *, color: bool = False, now: datetime
             " ".join(
                 [
                     _cell(paint, p["id"], 13, None if _is_active(p) else "dim"),
-                    _cell(paint, _STATE_LABEL.get(state, state), 9, _STATE_STYLE.get(state)),
+                    _cell(paint, "off" if p.get("kind") == "local" and state == "no_key" else _STATE_LABEL.get(state, state), 9, _STATE_STYLE.get(state)),
                     _cell(paint, key, 3, key_style),
                     _cell(paint, str(p.get("tier", "")), 7),
                     _cell(paint, badge, 8, _BADGE_STYLE.get(badge)),
@@ -293,7 +293,7 @@ def render_status(snap: Mapping[str, Any], *, color: bool = False, now: datetime
 
 def _limit_line(lim: Mapping[str, Any], now: datetime, paint: Paint, unicode_ok: bool) -> str:
     metric = "req" if lim.get("metric") == "requests" else "tok"
-    head = f"  {str(lim.get('window', '')):<6}{metric} "
+    head = f"  {str(lim.get('window', '')):<7}{metric} "
     limit, remaining = lim.get("limit"), lim.get("remaining")
     if limit is None and remaining is None:
         return paint(_fit(head + "— limit unknown", WIDTH), "dim")

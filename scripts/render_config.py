@@ -23,6 +23,7 @@ DEFAULT_OUT = ROOT / "config" / "generated" / "litellm.yaml"
 
 TRUTHY = {"1", "true", "yes", "on"}
 ALIASES_ORDER = ("fast", "cheap", "smart", "long-context", "embed", "rerank")
+HOOK_CALLBACK = "muse.hook.handler"
 
 
 def load_dotenv(path: Path, environ: dict[str, str]) -> None:
@@ -267,13 +268,20 @@ def render(catalog: Mapping[str, Any], environ: Mapping[str, str]) -> tuple[dict
     if not environ.get("DATABASE_URL", "").strip():
         general["disable_spend_logs"] = True
 
+    litellm_settings: dict[str, Any] = {
+        "drop_params": True,
+        "request_timeout": 120,
+        "num_retries": 1,
+    }
+    if not _truthy(environ, "MUSE_DISABLE_HOOK"):
+        # muse/hook.py: shared quota blocks, usage ledger, privacy classes.
+        # LiteLLM imports it as a module, so the repo root (/opt/muse in the
+        # container) must be on PYTHONPATH; render_and_start.py sets that.
+        litellm_settings["callbacks"] = [HOOK_CALLBACK]
+
     config: dict[str, Any] = {
         "model_list": model_list,
-        "litellm_settings": {
-            "drop_params": True,
-            "request_timeout": 120,
-            "num_retries": 1,
-        },
+        "litellm_settings": litellm_settings,
         "router_settings": router,
         "general_settings": general,
     }

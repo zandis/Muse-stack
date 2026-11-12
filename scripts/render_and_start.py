@@ -42,6 +42,12 @@ def main() -> None:
             file=sys.stderr,
         )
 
+    # The config names the callback muse.hook.handler; LiteLLM imports it, so
+    # the repo root (/opt/muse in the container) must be importable.
+    python_path = [part for part in os.environ.get("PYTHONPATH", "").split(os.pathsep) if part]
+    if str(ROOT) not in python_path:
+        os.environ["PYTHONPATH"] = os.pathsep.join([str(ROOT), *python_path])
+
     os.execvp(
         "litellm",
         [

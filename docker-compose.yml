@@ -22,8 +22,26 @@ services:
       LITELLM_NUM_WORKERS: ${LITELLM_NUM_WORKERS:-1}
       MUSE_ALLOW_PAID_FALLBACK: ${MUSE_ALLOW_PAID_FALLBACK:-false}
       MUSE_DISABLE_PROVIDERS: ${MUSE_DISABLE_PROVIDERS:-}
+      # Bare names pass a value through from the shell that runs compose, so
+      # `muse up` can hand over keychain-stored keys without writing them to disk.
+      # Unset in the shell means the .env value (if any) applies.
+      GEMINI_API_KEY:
+      GROQ_API_KEY:
+      COHERE_API_KEY:
+      OPENROUTER_API_KEY:
+      SILICONFLOW_API_KEY:
+      JINA_API_KEY:
+      NOVITA_API_KEY:
+      DEEPSEEK_API_KEY:
+      VOYAGE_API_KEY:
+      NVIDIA_NIM_API_KEY:
+      OLLAMA_API_BASE:
+      LM_STUDIO_API_BASE:
+      MUSE_LOCAL_OPENAI_BASE:
       MUSE_LOCAL_ORDER: ${MUSE_LOCAL_ORDER:-5}
       MUSE_DEFAULT_PRIVACY: ${MUSE_DEFAULT_PRIVACY:-standard}
+      # 1/true/on: muse/hook.py raises a request to private when it spots sensitive content.
+      MUSE_AUTO_PRIVACY: ${MUSE_AUTO_PRIVACY:-}
       # State shared with the muse CLI and dashboard on the host.
       MUSE_HOME: /opt/muse/home
       PYTHONPATH: /opt/muse
