@@ -571,7 +571,8 @@ class MuseHook(CustomLogger):
                 if reason is not None:
                     outcome.kept = narrowed
                     if note is not None:
-                        note.codes.add(ration.PACE_PREFER)
+                        if reason.startswith(ration.PACE_PREFER):
+                            note.codes.add(ration.PACE_PREFER)
                         note.details.append(reason)
             except Exception as exc:
                 self._fault("prefer", exc)

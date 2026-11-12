@@ -673,9 +673,11 @@ def prefer(
     as before. Decisive means: some deployment's value is more than
     settings.prefer_gap below the best one's (see rank_values); only those are
     dropped, so near-equals are still load-balanced. Never narrows when fewer
-    than two upstreams share the level, or when a deployment of the level was
-    already tried for this request (a retry is LiteLLM's failover, not a
-    preference). Returns (deployments, reason or None).
+    than two upstreams share the level. On a retry (a deployment of the level
+    was already tried for this request) it is not a pacing choice: the upstreams
+    that failed are set aside if another one at the level is left, else nothing
+    changes. Returns (deployments, reason or None); a pacing reason starts with
+    "pace:prefer", a retry reason with "retry:".
     """
     deployments = list(deployments)
     orders = [deployment_order(d) for d in deployments]
@@ -686,8 +688,17 @@ def prefer(
     if len(upstreams) < 2:
         return deployments, None
     tried_ids = set(tried)
-    if any(str(_info(d).get("id", "")) in tried_ids for d in members):
-        return deployments, None
+    tried_here = [d for d in members if str(_info(d).get("id", "")) in tried_ids]
+    if tried_here:
+        # A retry after a failed attempt: not a pacing choice. Steer it to an
+        # upstream of this level that has not failed yet, if there is one, so the
+        # hint (which sent the first attempt to one upstream) never makes failover worse.
+        failed = {upstream_of(_info(d)) for d in tried_here}
+        fresh = [d for d in members if upstream_of(_info(d)) not in failed]
+        if not fresh:
+            return deployments, None
+        out = [d for d, o in zip(deployments, orders) if o != level or upstream_of(_info(d)) not in failed]
+        return out, f"retry: {', '.join(sorted(failed))} already failed for this request; trying the others at this level first"
     ranks = [rank_upstream(u, state.limits.get(u, ()), now, state.burn, settings) for u in upstreams]
     values = dict(zip(upstreams, rank_values(ranks)))
     top = max(values.values())

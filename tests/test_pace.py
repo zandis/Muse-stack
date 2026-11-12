@@ -335,10 +335,19 @@ def test_prefer_only_touches_the_level_litellm_picks():
     assert ids(pref(mixed, limits)[0]) == ["a", "y"]
 
 
-def test_prefer_never_narrows_on_a_retry_or_with_one_upstream():
+def test_a_retry_goes_to_an_upstream_that_has_not_failed():
     limits = {"a:up": [day_limit(80, 12)], "b:up": [day_limit(20, 12)]}
-    assert pref([A, B], limits, tried=["a"])[1] is None
-    assert pref([A, B], limits, tried=["b"])[1] is None
+    out, reason = pref([A, B], limits, tried=["a"])  # the preferred one failed: the retry goes to b
+    assert ids(out) == ["b"] and reason.startswith("retry: a:up already failed")
+    out, reason = pref([A, B], limits, tried=["b"])
+    assert ids(out) == ["a"] and reason.startswith("retry:")
+    assert pref([A, B], limits, tried=["a", "b"]) == ([A, B], None)  # all failed: LiteLLM decides
+    a2 = dep("a2", "a:up", order=2)
+    assert ids(pref([A, B, a2], limits, tried=["a2"])[0]) == ["a", "a2"]  # another level's attempt: a normal choice
+
+
+def test_prefer_never_narrows_with_one_upstream():
+    limits = {"a:up": [day_limit(80, 12)], "b:up": [day_limit(20, 12)]}
     assert pref([A, dep("a-other", "a:up")], limits)[1] is None
     assert pref([], limits) == ([], None)
     out, _ = pref([A, B, C], {**limits, "c:up": [day_limit(78, 12)]})
