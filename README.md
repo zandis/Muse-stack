@@ -4,6 +4,24 @@ Self-hosted OpenAI-compatible gateway for [Muse AIMedics](https://github.com/zan
 
 The first host is a small Linux box with Docker. The later host is an Oracle Cloud Always Free ARM VM in US West (San Jose). See [deploy/oracle-cloud.md](deploy/oracle-cloud.md).
 
+## Phase 0: four layers
+
+This branch, stacked on the LiteLLM gateway, adds the rest of the phase 0 skeleton described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md):
+
+1. **Routing additions.** A circuit breaker that honours `Retry-After`, fallback chains for Muse-side calls, and `GET /v1/providers/health` (and `/usage`, `/keys`) on a small service at `127.0.0.1:4100`. Members still add keys via `.env`; values are never committed or returned.
+2. **Results settlement.** An [x402](https://docs.cdp.coinbase.com/x402/core-concepts/how-it-works)-style HTTP 402 stub that sells a verified result for USDC on **Base Sepolia**, with a **mock verifier only**. It refuses to start on a mainnet network and never moves funds.
+3. **Useful work.** A job runner that takes a Lean problem (bundled samples, or a local `formal-conjectures` checkout), asks routed aliases for a proof, verifies it (CI mocks Lean; see [docs/LEAN.md](docs/LEAN.md)), and records a result hash.
+4. **Data-market contract skeleton.** Solidity interfaces and a `DataVaultRegistry` for per-person vaults (hash, consent, tier, hospital EIP-712 provenance). Foundry tests only; **no deployment**.
+
+```bash
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements-dev.txt
+python -m pytest tests -q
+python -m muse    # http://127.0.0.1:4100  (mock LLM, mock Lean, no provider keys)
+```
+
+The LiteLLM proxy on port 4000 is unchanged; the phase 0 service is a sibling, not a replacement. There is no billing integration and no mainnet path.
+
 ## Do not send patient data through this
 
 Free and trial tiers are not a place for clinical records.
@@ -182,7 +200,12 @@ It reads `LITELLM_MASTER_KEY` from the environment or from `.env`. It does not c
 
 ## CI
 
-`.github/workflows/ci.yml` renders the config with empty and partial environments and does not call a provider. A second job boots the pinned image with a throwaway master key, checks the health endpoint, and checks that a fake Gemini key exposes the chat and embed aliases without sending a completion.
+`.github/workflows/ci.yml` has four jobs:
+
+- `validate` renders the LiteLLM catalog with empty and partial environments and does not call a provider.
+- `boot` starts the pinned LiteLLM image with a throwaway master key, checks `/health/liveliness`, and checks that a fake Gemini key exposes the chat and embed aliases without sending a completion. Unchanged from the gateway PR; it does not start the phase 0 service.
+- `phase0-python` runs `pytest` for the circuit breaker, the x402 mock, the useful-work runner, and the phase 0 HTTP service. Lean is mocked.
+- `phase0-contracts` installs Foundry and runs `forge test` in `contracts/`. No deploy, no RPC.
 
 ## Layout
 
@@ -197,3 +220,10 @@ It reads `LITELLM_MASTER_KEY` from the environment or from `.env`. It does not c
 | `docker-compose.spend.yml` | Optional Postgres |
 | `.env.example` | Every variable and the page that issues the key |
 | `deploy/oracle-cloud.md` | Always Free ARM VM in us-sanjose-1 |
+| `muse/` | Phase 0 Python package: gateway, settlement, useful work, HTTP service |
+| `tests/` | Pytest for phase 0 (no provider calls, no real funds) |
+| `contracts/` | Data-vault Solidity skeleton and Foundry tests (no deploy) |
+| `docs/ARCHITECTURE.md` | Four-layer design, what works, what is stubbed |
+| `docs/LEAN.md` | Mock vs real Lean, formal-conjectures |
+| `docker-compose.phase0.yml` | Optional compose for the phase 0 service |
+| `requirements.txt` | Python deps of the phase 0 service |

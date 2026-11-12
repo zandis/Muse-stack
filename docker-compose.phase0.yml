@@ -1,0 +1,34 @@
+# Phase 0 HTTP service (health, x402 mock settlement, useful-work runner).
+# Optional: does not replace docker-compose.yml and is not started by the
+# existing CI boot job.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.phase0.yml up -d
+#
+# The service refuses to start if MUSE_X402_NETWORK is a mainnet identifier
+# or if MUSE_X402_FACILITATOR is anything other than "mock".
+
+services:
+  phase0:
+    image: python:3.12-slim
+    restart: unless-stopped
+    working_dir: /app
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      MUSE_X402_NETWORK: ${MUSE_X402_NETWORK:-eip155:84532}
+      MUSE_X402_FACILITATOR: mock
+      MUSE_LEAN_MODE: ${MUSE_LEAN_MODE:-mock}
+      MUSE_WORK_LLM: ${MUSE_WORK_LLM:-mock}
+      MUSE_PHASE0_HOST: "0.0.0.0"
+      MUSE_PHASE0_PORT: "4100"
+      MUSE_BASE_URL: ${MUSE_BASE_URL:-http://litellm:4000}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
+    ports:
+      - "${MUSE_BIND:-127.0.0.1}:${MUSE_PHASE0_PORT:-4100}:4100"
+    volumes:
+      - ./:/app
+    command:
+      - sh
+      - -c
+      - pip install --no-cache-dir -r requirements.txt && python -m muse --host 0.0.0.0 --port 4100
