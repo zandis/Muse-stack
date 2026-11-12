@@ -631,18 +631,27 @@ def deployment_order(deployment: Mapping[str, Any]) -> int | None:
 
 
 def rank_values(ranks: Sequence[Rank]) -> list[float]:
-    """Comparable values: unknown = 0 (on the line), deficit = its surplus (< 0),
-    surplus = projected leftover when every known rank has one, else the surplus."""
+    """Comparable values, higher = spend first. Pure.
+
+    unknown remaining -> 0.0 (as if on the line).
+    known, when every known rank has a burn rate -> the projected leftover
+      fraction at reset if it is > 0; an upstream projected to run dry ranks by
+      min(0, surplus), so one behind schedule falls below unknown.
+    known, otherwise -> the surplus.
+    Either way: known with something to spare > unknown > known behind schedule.
+    """
     known = [r for r in ranks if r.klass != "unknown"]
     use_leftover = bool(known) and all(r.leftover is not None for r in known)
     out = []
     for r in ranks:
+        surplus = float(r.surplus or 0.0)
         if r.klass == "unknown":
             out.append(0.0)
-        elif r.klass == "deficit":
-            out.append(float(r.surplus or 0.0))
+        elif use_leftover:
+            leftover = float(r.leftover or 0.0)
+            out.append(leftover if leftover > 0 else min(0.0, surplus))
         else:
-            out.append(float(r.leftover if use_leftover else (r.surplus or 0.0)))
+            out.append(surplus)
     return out
 
 

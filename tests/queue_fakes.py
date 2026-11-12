@@ -42,6 +42,7 @@ class FakeProxy:
                 proxy.requests.append({
                     "path": self.path, "auth": self.headers.get("authorization", ""), "privacy": self.headers.get("x-muse-privacy"),
                     "model": body.get("model"), "max_tokens": body.get("max_tokens"), "prompt": body["messages"][0]["content"],
+                    "task": self.headers.get("x-muse-task"),
                 })
                 if proxy.on_request:
                     proxy.on_request(len(proxy.requests))

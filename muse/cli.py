@@ -991,6 +991,9 @@ def cmd_ask(args: argparse.Namespace) -> int:
         except Exception:
             pass
         _err(msg + " See `muse status`.")
+        said = payload.get("error", {}).get("message") if isinstance(payload, dict) and isinstance(payload.get("error"), dict) else None
+        if isinstance(said, str) and "[muse]" in said:
+            _err(said[said.index("[muse]"):][:600])  # the router's reason, with its options=... choices
         return 1
     if status >= 400:
         err = payload.get("error", payload) if isinstance(payload, dict) else {}

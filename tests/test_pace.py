@@ -208,12 +208,13 @@ def test_pace_holds_against_margin(margin, remaining, holds):
 @pytest.mark.parametrize("remaining, hours, margin, release_in_h", [
     (40, 12, 0.0, 2.4),  # start + 0.6 * 24 h = now - 12 h + 14.4 h
     (40, 12, 0.1, 4.8),
-    (10, 3, 0.0, 1.0),  # the line would catch up at 3 h 36 min after... the expiring horizon opens first
+    (10, 3, 0.0, 0.6),  # start (now - 21 h) + 0.9 * 24 h
+    (0, 3, 0.0, 2.0),  # the line would catch up at the reset; the expiring horizon opens first
     (0, 24, 0.0, 23.0),  # empty: only the expiring horizon releases it
 ])
 def test_pace_release_at(remaining, hours, margin, release_in_h):
     lim = day_limit(remaining, hours)
-    assert ration.pace_release_at(lim, margin, S, NOW) == pytest.approx(NOW + release_in_h * 3600)
+    assert ration.pace_release_at(lim, margin, S, NOW) - NOW == pytest.approx(release_in_h * 3600)
 
 
 # ---------------------------------------------------------------- pacing inside ration()
@@ -229,7 +230,7 @@ def test_background_is_held_over_the_line_with_a_release_time():
     assert ids(out.kept) == ["b"]
     (removed,) = out.removed
     assert removed.code == PACE and removed.kind == DEFER
-    assert removed.retry_at == pytest.approx(NOW + 2.4 * 3600)
+    assert removed.retry_at - NOW == pytest.approx(2.4 * 3600)
     assert "ahead of schedule" in removed.detail and "40/100" in removed.detail
 
 
@@ -268,7 +269,7 @@ def test_margin_off_never_holds():
 def test_pacing_decision_defers_to_the_soonest_release():
     out = run(BACKGROUND, [A, B], {"a:up": [day_limit(40, 12)], "b:up": [day_limit(45, 12)]})
     assert out.decision.kind == DEFER and out.decision.code == PACE
-    assert out.decision.retry_at == pytest.approx(NOW + 1.2 * 3600)
+    assert out.decision.retry_at - NOW == pytest.approx(1.2 * 3600)
     assert out.decision.message.startswith("[muse] pacing:")
 
 
@@ -312,7 +313,7 @@ def test_prefer_uses_projected_leftover_when_every_rate_is_known():
     limits = {"a:up": [day_limit(60, 12, scope="a:up")], "b:up": [day_limit(40, 12, scope="b:up")]}
     # b has too few calls for a rate, so both are compared by surplus: a +0.10, b -0.10.
     out, reason = pref([A, B], limits, burn={"a:up": {"calls": 15, "tokens": 0}, "b:up": {"calls": 1, "tokens": 0}})
-    assert ids(out) == ["a"] and "leftover" not in reason
+    assert ids(out) == ["a"] and reason.endswith("surplus -0.10 (gap > 0.10)")
     # Both rates known (15/h and 3/h over the 1 h burn window): a runs dry (0.00), b keeps 0.04.
     burn = {"a:up": {"calls": 15, "tokens": 0}, "b:up": {"calls": 3, "tokens": 0}}
     assert pref([A, B], limits, burn=burn)[1] is None  # 0.04 apart: within the gap
@@ -398,7 +399,7 @@ def test_oneoff_is_held_for_every_app(app):
 def test_oneoff_refusal_beats_a_deferral_and_names_the_wait():
     out = ration.ration(BACKGROUND, [A, TRIAL_ONEOFF], State(last_interactive={"a:up": NOW - 10}), S, NOW)
     assert out.decision.code == ONEOFF_HELD and out.decision.kind == REFUSE
-    assert out.decision.retry_at == pytest.approx(NOW + 110)
+    assert out.decision.retry_at - NOW == pytest.approx(110)
 
 
 def test_fail_closed_drops_oneoff():
@@ -480,3 +481,15 @@ def test_handoff_refusal_names_the_soonest_wait():
     out = ration.ration(INTERACTIVE, [PAID], State(), S, NOW, handoff_hold=True,
                         prior=[Removed("s", "s:up", "blocked", DEFER, NOW + 7200, "blocked")])
     assert out.decision.code == HANDOFF_FIRST and out.decision.retry_at == NOW + 7200
+
+
+@pytest.mark.parametrize("ranks, values", [
+    ([("surplus", 0.3, None), ("unknown", None, None), ("deficit", -0.2, None)], [0.3, 0.0, -0.2]),
+    ([("surplus", 0.3, 0.1), ("deficit", -0.2, 0.05)], [0.1, 0.05]),  # every rate known: leftover
+    ([("surplus", 0.3, 0.0), ("deficit", -0.2, 0.0)], [0.0, -0.2]),  # both run dry: behind schedule ranks lower
+    ([("surplus", 0.3, 0.1), ("deficit", -0.2, None)], [0.3, -0.2]),  # a rate missing: surplus for all
+    ([("unknown", None, None), ("unknown", None, None)], [0.0, 0.0]),
+])
+def test_rank_values(ranks, values):
+    built = [ration.Rank(f"u{i}", k, s, l, "") for i, (k, s, l) in enumerate(ranks)]
+    assert ration.rank_values(built) == pytest.approx(values)
