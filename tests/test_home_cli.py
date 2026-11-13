@@ -269,3 +269,21 @@ def test_token_add_takes_a_role_and_list_shows_it(monkeypatch):
     assert {d["name"]: d["role"] for d in json.loads(out)} == lines
     assert run(["home", "token", "add", "x", "--role", "admin"], monkeypatch, tty=True)[0] == 2
     assert "x" not in {d.name for d in auth.list_devices()}
+
+
+@pytest.mark.parametrize("stop, ignore_interrupt", [(signal.SIGTERM, False), (signal.SIGINT, True)])
+def test_serve_stops_cleanly_on_terminate_and_when_started_detached(stop, ignore_interrupt, tmp_path):
+    """A service manager sends SIGTERM; a detached start (nohup, a background job) inherits SIGINT ignored."""
+    with short_dir() as muse_home:
+        env = {**os.environ, "PYTHONPATH": str(ROOT), "PYTHONUNBUFFERED": "1", "MUSE_HOME": str(muse_home)}
+        before = (lambda: signal.signal(signal.SIGINT, signal.SIG_IGN)) if ignore_interrupt else None
+        proc = subprocess.Popen([sys.executable, "-m", "muse", "home", "serve"], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True, env=env, preexec_fn=before)
+        sock = muse_home / "home.sock"
+        try:
+            wait_for(sock)
+        finally:
+            proc.send_signal(stop)
+            out, err = proc.communicate(timeout=20)
+        assert proc.returncode == 0, err
+        assert not sock.exists()

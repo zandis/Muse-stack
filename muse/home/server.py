@@ -424,7 +424,24 @@ def serve_in_thread(server: HomeServer) -> threading.Thread:
     return thread
 
 
+def _stop_request(signum: int, frame: Any) -> None:
+    raise KeyboardInterrupt
+
+
 def serve(server: HomeServer, banner: str = "Muse home") -> None:
+    """Serve until asked to stop, then remove the socket.
+
+    Both an interrupt and a terminate request stop it cleanly. They are set
+    here on purpose: a service manager stops a program with SIGTERM, and a
+    program started detached (`nohup`, a background job) inherits SIGINT
+    ignored, so neither default can be relied on.
+    """
+    import signal
+
+    previous = {}
+    if threading.current_thread() is threading.main_thread():
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            previous[signum] = signal.signal(signum, _stop_request)
     print(f"{banner}: {server.where}  (Ctrl-C to stop)", flush=True)
     try:
         server.serve_forever()
@@ -432,3 +449,5 @@ def serve(server: HomeServer, banner: str = "Muse home") -> None:
         pass
     finally:
         server.server_close()
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
