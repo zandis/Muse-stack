@@ -31,7 +31,10 @@ import yaml
 from muse.paths import CATALOG_PATH, REPO_ROOT
 
 RESOURCES_DIR = REPO_ROOT / "config" / "resources"
-RESOURCE_FILES = {"storage": "storage.yaml", "compute": "compute.yaml", "chain": "chain.yaml"}
+RESOURCE_FILES = {"storage": "storage.yaml", "compute": "compute.yaml", "chain": "chain.yaml", "messaging": "messaging.yaml"}
+# Kinds added after the first three. Their file may be absent (an older resources folder); the first three must exist.
+OPTIONAL_RESOURCE_KINDS = frozenset({"messaging"})
+RESOURCE_KINDS = tuple(RESOURCE_FILES)
 SUBSCRIPTIONS_FILE = "subscriptions.yaml"
 
 LANGS = ("en", "zh-TW")
@@ -97,6 +100,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "unit_class_a_operations": "class A operations",
         "unit_class_b_operations": "class B operations",
         "unit_transactions": "transactions",
+        "unit_pushed_messages": "pushed messages",
         "reset_utc_day": "refills at 00:00 UTC",
         "reset_pacific_day": "refills at midnight Pacific time",
         "reset_rolling": "refills gradually, not at a fixed time",
@@ -150,6 +154,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "unit_class_a_operations": "A 類操作",
         "unit_class_b_operations": "B 類操作",
         "unit_transactions": "筆交易",
+        "unit_pushed_messages": "則主動推播訊息",
         "reset_utc_day": "在 UTC 00:00 補滿",
         "reset_pacific_day": "在太平洋時間午夜補滿",
         "reset_rolling": "逐步補回，不是固定時刻",
@@ -341,6 +346,7 @@ class Resource:
     checked_on: str | None
     confidence: str | None
     source_urls: tuple[str, ...]
+    notes: str | None = None
 
     def headline(self) -> AllowanceEntry | None:
         for entry in self.allowance:
@@ -556,6 +562,7 @@ def resource_from_dict(item: Mapping[str, Any], kind: str) -> Resource:
         checked_on=_s(item.get("checked_on")),
         confidence=_s(item.get("confidence")),
         source_urls=_strs(item.get("source_urls")),
+        notes=_s(item.get("notes")),
     )
 
 
@@ -991,6 +998,8 @@ def validate_resource(item: Mapping[str, Any], kind: str, today: date) -> list[s
     problems.extend(validate_connection(item.get("connection"), f"{where}.connection", steps_required=False))
     problems.extend(validate_terms_flags(item.get("terms_flags"), f"{where}.terms_flags"))
     problems.extend(validate_provenance(item, where, today, required=True))
+    if item.get("notes") is not None and not isinstance(item["notes"], str):
+        problems.append(f"{where}.notes: must be text")
     return problems
 
 
@@ -1146,6 +1155,8 @@ def validate_catalog(
         ids: set[str] = set()
         for kind, filename in RESOURCE_FILES.items():
             path = base / filename
+            if kind in OPTIONAL_RESOURCE_KINDS and not path.exists():
+                continue
             try:
                 doc = _read_yaml(path)
             except (OSError, yaml.YAMLError) as exc:
@@ -1453,3 +1464,197 @@ def handoff_link(sub: Subscription, prompt: str, kind: str = "app") -> str | Non
         return template.replace("{prompt}", quote(text, safe=""))
     url = spec.get("url")
     return str(url) if url else None
+
+
+# ------------------------------------------------------- the public catalogue
+#
+# The shape published as catalogue/catalogue.v1.json (scripts/publish_catalogue.py,
+# docs/catalogue.md). Only public facts: nothing here reads the environment, a key
+# store or the ledger, and the key-check request (`connection.test`), API base
+# addresses, routing weights and aliases are left out on purpose.
+
+PUBLIC_SCHEMA_VERSION = "1.0"
+LIMIT_STATUS = ("verified", "estimated", "unknown")
+
+
+def _public_limits(allowance: tuple[AllowanceEntry, ...], quota: Any = None) -> list[dict[str, Any]]:
+    """Allowance entries are verified by the catalogue's rule. A `quota:` number with no matching entry is an estimate."""
+    out: list[dict[str, Any]] = [
+        {"window": a.window, "limit": a.limit, "unit": a.unit, "scope": a.scope, "condition": a.condition,
+         "headline": a.headline, "status": "verified"}
+        for a in allowance
+    ]
+    have = {(a.window, a.unit) for a in allowance}
+    for key, limit in sorted(_map(quota).items()):
+        unit, _, window = str(key).partition("_per_")
+        if window in WINDOWS and (window, unit) not in have and isinstance(limit, int) and not isinstance(limit, bool) and limit > 0:
+            out.append({"window": window, "limit": limit, "unit": unit, "scope": None, "condition": None,
+                        "headline": False, "status": "estimated"})
+    return out
+
+
+def _public_allowance(allowance: tuple[AllowanceEntry, ...], kinds: tuple[str, ...], reset: Mapping[str, Any],
+                      quota: Any = None, *, one_off: bool = False) -> dict[str, Any]:
+    limits = _public_limits(allowance, quota)
+    note = reset.get("note")
+    return {
+        "status": "verified" if any(item["status"] == "verified" for item in limits) else "estimated" if limits else "unknown",
+        "kinds": list(kinds),
+        "one_off": one_off,
+        "limits": limits,
+        "reset": {
+            "rule": str(reset.get("rule") or "unknown"),
+            "tz": _s(reset.get("tz")),
+            "note": {lang: pick(note, lang) for lang in LANGS} if isinstance(note, Mapping) else _s(note),
+        },
+    }
+
+
+def _public_read_remaining(value: Mapping[str, Any]) -> dict[str, Any]:
+    fields = value.get("fields")
+    return {
+        "method": str(value.get("method") or "unknown"),
+        "endpoint": _s(value.get("endpoint")),
+        "fields": [str(f) for f in fields] if isinstance(fields, list) else [],
+        "note": _s(value.get("note")),
+    }
+
+
+def _public_connection(conn: Connection | None, env_names: list[str]) -> dict[str, Any]:
+    if conn is None:
+        return {"method": "none", "key_url": None, "auth_url": None, "env_names": env_names, "steps": [], "how": None,
+                "minutes_estimate": None, "card_required": "unknown", "phone_required": "unknown", "usable_on_phone": "unknown"}
+    return {
+        "method": conn.method,
+        "key_url": conn.key_url,
+        "auth_url": conn.auth_url,
+        "env_names": env_names,
+        "steps": [
+            {"id": s.id, "title": {lang: pick(s.title, lang) for lang in LANGS}, "detail": {lang: pick(s.detail, lang) for lang in LANGS}}
+            for s in conn.steps
+        ],
+        "how": {lang: pick(conn.how, lang) for lang in LANGS} if conn.how else None,
+        "minutes_estimate": None if conn.minutes_estimate is None else {"minutes": conn.minutes_estimate, "basis": "estimate"},
+        "card_required": conn.card_required,
+        "phone_required": conn.phone_required,
+        "usable_on_phone": conn.usable_on_phone,
+    }
+
+
+def _public_terms(flags: Mapping[str, str]) -> dict[str, str]:
+    return {
+        "one_account_per_person": flags.get("one_account_per_person", "unknown"),
+        "aggregation_or_reselling": flags.get("aggregation_or_reselling", "unknown"),
+        "automation_of_console": flags.get("automation_of_console", "unknown"),
+        "hosted_in": flags.get("hosted_in", "unknown"),
+    }
+
+
+def _public_price(value: Any) -> dict[str, float] | None:
+    if not isinstance(value, Mapping):
+        return None
+    out = {k: float(v) for k, v in sorted(value.items()) if isinstance(v, (int, float)) and not isinstance(v, bool)}
+    return {**out, "currency": "USD"} if out else None  # type: ignore[dict-item]
+
+
+def public_ai_service(provider: Provider) -> dict[str, Any]:
+    """One AI service as the published catalogue shows it."""
+    raw = provider.raw
+    policy = provider.policy
+    names = [n for n in (provider.env, *provider.also_env) if n]
+    if provider.local and raw.get("base_env"):
+        names = [str(raw["base_env"])]
+    models = []
+    for dep in raw.get("deployments") or []:
+        if not isinstance(dep, Mapping) or not dep.get("model"):
+            continue
+        context = dep.get("context_tokens")
+        models.append({
+            "model": str(dep["model"]),
+            "mode": str(dep.get("mode") or "unknown"),
+            "context_tokens": context if isinstance(context, int) and not isinstance(context, bool) else None,
+            "price": _public_price(dep.get("price")),
+            "verified_by": _s(dep.get("verified")),
+            "notes": _s(dep.get("notes")),
+        })
+    return {
+        "id": provider.id,
+        "name": provider.name,
+        "kind": "local" if provider.local else "cloud",
+        "tier": provider.tier,
+        "good_for": list(provider.good_for),
+        "allowance": _public_allowance(provider.allowance, provider.kinds_of_allowance, provider.reset, raw.get("quota"), one_off=provider.one_off),
+        "read_remaining": _public_read_remaining(provider.read_remaining),
+        "connection": _public_connection(provider.connection, names),
+        "policy": {
+            "trains_on_inputs": _tri_word(policy.get("trains_on_inputs")),
+            "human_review": _tri_word(policy.get("human_review")),
+            "region": str(policy.get("region") or "unknown"),
+            "commercial_use": str(policy.get("commercial_use") or "unknown"),
+            "terms_url": _s(policy.get("terms_url")),
+            "note": _s(policy.get("note")),
+        },
+        "terms": _public_terms(provider.terms_flags),
+        "models": sorted(models, key=lambda m: (m["mode"], m["model"])),
+        "checked_on": provider.checked_on,
+        "confidence": provider.confidence,
+        "source_urls": list(provider.source_urls),
+        "notes": _s(raw.get("notes")),
+    }
+
+
+def public_other_allowance(resource: Resource) -> dict[str, Any]:
+    """Storage, compute, chain or messaging: an allowance Muse lists but does not manage."""
+    return {
+        "id": resource.id,
+        "name": {lang: pick(resource.name, lang) for lang in LANGS},
+        "kind": resource.kind,
+        "provider": resource.provider,
+        "good_for": {lang: pick(resource.summary, lang) for lang in LANGS},
+        "tier": "free",
+        "allowance": _public_allowance(resource.allowance, resource.kinds_of_allowance, resource.reset),
+        "read_remaining": _public_read_remaining(resource.read_remaining),
+        "connection": _public_connection(resource.connection, []),
+        "terms": _public_terms(resource.terms_flags),
+        "checked_on": resource.checked_on,
+        "confidence": resource.confidence,
+        "source_urls": list(resource.source_urls),
+        "notes": resource.notes,
+    }
+
+
+def public_subscription(sub: Subscription) -> dict[str, Any]:
+    """A consumer subscription: hand-off only, so only where it opens."""
+    opened = {}
+    for kind in ("web", "app"):
+        spec = sub.open.get(kind)
+        if spec:
+            opened[kind] = {"url": _s(spec.get("url")), "prefill": str(spec.get("prefill") or "unknown")}
+    return {
+        "id": sub.id,
+        "name": sub.name,
+        "kind": "subscription",
+        "handoff_only": True,
+        "good_for": {lang: pick(sub.description, lang) for lang in LANGS},
+        "open": opened,
+        "checked_on": sub.checked_on,
+        "confidence": sub.confidence,
+        "source_urls": list(sub.source_urls),
+        "notes": sub.note,
+    }
+
+
+def newest_checked_on(cat: Catalog) -> str | None:
+    dates = [d for d in (*(p.checked_on for p in cat.providers), *(r.checked_on for r in cat.resources),
+                         *(s.checked_on for s in cat.subscriptions)) if d and re.fullmatch(r"\d{4}-\d\d-\d\d", d)]
+    return max(dates) if dates else None
+
+
+def public_entries(cat: Catalog) -> dict[str, list[dict[str, Any]]]:
+    """The three published lists, each in a stable order."""
+    order = {kind: i for i, kind in enumerate(RESOURCE_KINDS)}
+    return {
+        "ai_services": [public_ai_service(p) for p in sorted(cat.providers, key=lambda p: p.id)],
+        "other_allowances": [public_other_allowance(r) for r in sorted(cat.resources, key=lambda r: (order.get(r.kind, 99), r.id))],
+        "subscriptions": [public_subscription(s) for s in sorted(cat.subscriptions, key=lambda s: s.id)],
+    }
