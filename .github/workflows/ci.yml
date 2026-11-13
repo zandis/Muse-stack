@@ -46,6 +46,17 @@ jobs:
         working-directory: core
         run: cargo test --locked
 
+  link:
+    # The device link and pairing prototype (core/link, its own workspace and lock
+    # file). Relays and address lookup are off in every test: nothing here uses the
+    # internet. A clean build of its tests takes about 1.5 minutes on 4 cores.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Link and pairing tests (loopback only)
+        working-directory: core/link
+        run: cargo test --locked
+
   app:
     # The app (app/): types, lint, unit tests and a production build of the front end,
     # then the Rust bridge to the home (no WebKit needed). The end-to-end tests
