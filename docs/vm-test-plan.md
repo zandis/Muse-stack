@@ -152,9 +152,9 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && . ~/.
 
 ---
 
-## Stage 3: the gate, on the fixed skills (after I confirm the research fix is merged)
+## Stage 3: the gate, on the fixed skills
 
-Do not re-run before I say the fix is merged; the result would be the same as today.
+The research fix is merged on `ccr-645e0264-bn082z` (14 November). Do stage 1 first: the fix is partly in the router (a higher minimum answer length and a lower reasoning setting for the gpt-oss models), so a run against the old live router would repeat the old result. The report now prints a warning when the router looks old.
 
 **3.1 Files skill only, capped.** The files skill passed (65 of 67). This run looks at its two misses and its slow tail, with failed answers kept.
 
@@ -164,7 +164,7 @@ python scripts/chores_check.py --check-tasks
 python scripts/chores_check.py --only files-answer --keep-failures --max-requests 200
 ```
 
-`--keep-failures` and `--max-requests` arrive with the fix. Until then use `--keep-outputs` and `--sample 20`.
+The research skill now makes fewer, larger calls (about 6 a run offline, against 12 on 13 November), so 250 requests should cover the sample of 10 with room to spare.
 
 **3.2 Research report, a sample first.**
 
