@@ -1,7 +1,7 @@
 """Proxy authentication: which application sent this request.
 
 Wired by scripts/render_config.py as `general_settings.custom_auth:
-muse.auth.user_api_key_auth`. In LiteLLM 1.108.5 (proxy/proxy_server.py,
+muse.auth.user_api_key_auth`. In LiteLLM 1.108.6 (proxy/proxy_server.py,
 load_config: `user_custom_auth = get_instance_fn(value=custom_auth)`) that
 replaces the built-in key check for every route that depends on
 `user_api_key_auth` (proxy/auth/user_api_key_auth.py,

@@ -402,7 +402,7 @@ def render(catalog: Mapping[str, Any], environ: Mapping[str, str]) -> tuple[dict
         "num_retries": 1,
         "timeout": 120,
         # No `allowed_fails` here, on purpose. Setting it switches LiteLLM
-        # 1.108.5 to its legacy rule (cool a deployment only after N failures
+        # 1.108.6 to its legacy rule (cool a deployment only after N failures
         # in a minute), so a single 429 was sent to the same upstream again.
         # Without it, a 429 cools the deployment at once, for the provider's
         # Retry-After (router.py deployment_callback_on_failure: deployment
@@ -430,7 +430,7 @@ def render(catalog: Mapping[str, Any], environ: Mapping[str, str]) -> tuple[dict
     if environ.get("LITELLM_MASTER_KEY", "").strip():
         general["master_key"] = "os.environ/LITELLM_MASTER_KEY"
     else:
-        # LiteLLM 1.108.5 refuses to boot with no master key. This is the
+        # LiteLLM 1.108.6 refuses to boot with no master key. This is the
         # documented local-dev override so a first start with an empty .env
         # still comes up. Do not expose that process past localhost.
         general["dangerously_permit_weak_or_unset_master_key"] = True

@@ -361,7 +361,7 @@ Background health checks are off. A check every few seconds would burn the free 
 
 ## Setup
 
-Docker, and a Compose v2 plugin. The proxy image is `ghcr.io/berriai/litellm:v1.108.5` (amd64 and arm64), pinned by digest in `docker-compose.yml`; see "Supply chain" below.
+Docker, and a Compose v2 plugin. The proxy image is `ghcr.io/berriai/litellm:v1.108.6` (amd64 and arm64), pinned by digest in `docker-compose.yml`; see "Supply chain" below.
 
 ```bash
 cp .env.example .env
@@ -392,7 +392,7 @@ client.embeddings.create(model="embed", input="a short phrase")
 
 The admin UI is at `http://127.0.0.1:4000/ui`. The master key is the password.
 
-LiteLLM 1.108.5 refuses to start when no master key is set. If `LITELLM_MASTER_KEY` is empty, the renderer sets LiteLLM's `dangerously_permit_weak_or_unset_master_key` so a first boot with an empty `.env` still comes up, and the proxy does not check `Authorization`. That override is only acceptable on localhost. Set a real master key (not a published example such as `sk-1234`, which this LiteLLM version also rejects) before the port is reachable from anywhere else.
+LiteLLM 1.108.6 refuses to start when no master key is set. If `LITELLM_MASTER_KEY` is empty, the renderer sets LiteLLM's `dangerously_permit_weak_or_unset_master_key` so a first boot with an empty `.env` still comes up, and the proxy does not check `Authorization`. That override is only acceptable on localhost. Set a real master key (not a published example such as `sk-1234`, which this LiteLLM version also rejects) before the port is reachable from anywhere else.
 
 Startup prints the providers it actually enabled. A missing key is omitted from the generated config (`/tmp/muse-config.yaml` inside the container). It is not an error.
 
@@ -410,8 +410,9 @@ LiteLLM is the one large third-party program that sees every provider key, so th
 
 What is pinned:
 
-- **The image, by digest.** `docker-compose.yml` uses `ghcr.io/berriai/litellm:v1.108.5@sha256:008a5916c0a0ca6f4f6ad64969f6a4ef6f03ce885a639f3d97fd53665754ce48`. That is the multi-arch index (linux/amd64 `sha256:4e613e76…`, linux/arm64 `sha256:23192ecd…`; both in full in the compose file), read from ghcr.io on 13 November 2026. Docker pulls by the digest, so moving the tag changes nothing here.
-- **The Python install, by hash.** `requirements/proxy.lock` lists `litellm[proxy]==1.108.5` and all 119 packages it pulls in, each with the SHA-256 of every file PyPI holds for that version. `pip install --require-hashes -r requirements/proxy.lock` refuses anything else. `requirements/dev.lock` does the same for pytest and setuptools. The resolution is for CPython 3.12 and 3.13 on any platform, Linux x86_64 and aarch64 included; it was installed and tested on CPython 3.12 and 3.13 on Linux x86_64; for Linux aarch64 every pinned wheel was fetched with hash checking for both Pythons, but not installed or run there. PyPI received the 1.108.5 files on 10 November 2026 at 22:47 UTC, after the incident and after the key change.
+- **The image, by digest.** `docker-compose.yml` uses `ghcr.io/berriai/litellm:v1.108.6@sha256:c64fe10f82a1f77906f88574f954317c50f67c617e0c97b70ac8fc61b74d3ec3`. That is the multi-arch index (linux/amd64 `sha256:66670e9c…`, linux/arm64 `sha256:91addd1d…`; both in full in the compose file), read from ghcr.io on 13 November 2026. Docker pulls by the digest, so moving the tag changes nothing here.
+- **The Python install, by hash.** `requirements/proxy.lock` lists `litellm[proxy]==1.108.6` and all 119 packages it pulls in, each with the SHA-256 of every file PyPI holds for that version. `pip install --require-hashes -r requirements/proxy.lock` refuses anything else. `requirements/dev.lock` does the same for pytest and setuptools. The resolution is for CPython 3.12 and 3.13 on any platform, Linux x86_64 and aarch64 included; it was installed and tested on CPython 3.12 and 3.13 on Linux x86_64; for Linux aarch64 every pinned wheel was fetched with hash checking for both Pythons, but not installed or run there. PyPI received the 1.108.6 files on 12 November 2026 at 01:07 UTC, after the incident and after the key change.
+- **Why 1.108.6.** It fixes [GHSA-2rwg-2wh4-7c4f](https://github.com/BerriAI/litellm/security/advisories/GHSA-2rwg-2wh4-7c4f) (12 November 2026, high): an authenticated caller could override Azure Entra credential fields in the request body and read server secrets back. It needs an `azure/` or `azure_ai/` model, which the catalogue does not have, so exposure here was low. The 1.108.6 release also moves those six fields into `metadata` (a breaking change for callers that sent them). The files `muse/` relies on (`proxy_server.py`, `common_request_processing.py`, `custom_logger.py`, the cache, the router and its cooldowns, `types_utils/utils.py`, `route_checks.py`, `auth_checks.py`) are byte-identical between 1.108.5 and 1.108.6.
 - **The rules.** `scripts/validate_config.py` fails if a compose file names a LiteLLM image without an `@sha256:` digest or with a floating tag (`latest`, `main-latest`, `main-stable`, `main`), or if any tracked file installs `litellm` without an exact `==` version or the lock file.
 
 How to check:
@@ -428,7 +429,7 @@ The image signature can be checked with [cosign](https://docs.sigstore.dev/cosig
 ```bash
 curl -sL https://raw.githubusercontent.com/BerriAI/litellm/e82a3c646908ba0a6ee0beddc4310d7a6cac4065/cosign.pub -o cosign.pub
 shasum -a 256 cosign.pub      # must print e3fe3e08…c2c0
-cosign verify --key cosign.pub ghcr.io/berriai/litellm@sha256:008a5916c0a0ca6f4f6ad64969f6a4ef6f03ce885a639f3d97fd53665754ce48
+cosign verify --key cosign.pub ghcr.io/berriai/litellm@sha256:c64fe10f82a1f77906f88574f954317c50f67c617e0c97b70ac8fc61b74d3ec3
 ```
 
 On 13 November 2026 the key file had that fingerprint and the signature stored next to this digest on ghcr.io was valid under it (checked by hand with the public key, without the cosign program; the transparency-log entry was not checked). Never accept a signature from the old key for anything published on or after 21 October.

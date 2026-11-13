@@ -1,6 +1,6 @@
 """What one call cost, for the daily paid cap.
 
-Why this order (checked against LiteLLM 1.108.5, see muse/hook.py):
+Why this order (checked against LiteLLM 1.108.6, see muse/hook.py):
 1. tier free | trial | local costs 0 by definition. LiteLLM prices a model by
    its name, so a free-tier Gemini call would otherwise be billed at the paid
    list price.
