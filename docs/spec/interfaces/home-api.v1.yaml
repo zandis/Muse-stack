@@ -351,6 +351,11 @@ paths:
         checked again at this moment) and the reply says so in `write`; declined, the file's
         contents are thrown away. Exactly one answer ever succeeds, so the file is written at
         most once. A card that expires unanswered is treated as declined.
+        When the proposal was checked against a permission, the approval becomes a single-use
+        token for exactly that write (narrowed to this card, this file, five minutes) and is spent
+        here; if the permission was stopped meanwhile, the write is `refused` under `enforce`.
+        A `grant_permission` card that stands for a device's request issues the permission when
+        approved (`write.state: issued`).
       parameters:
         - {$ref: "#/components/parameters/cardId"}
       requestBody:

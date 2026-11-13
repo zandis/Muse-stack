@@ -243,7 +243,7 @@ muse hosts check openmausbot ~/.openmausbot/config.json   # read-only: which eng
 muse mcp serve --token-file PATH   # the tools server on stdin/stdout (a host starts this; needs `pip install -e '.[mcp]'`)
 ```
 
-- Tools: `allowance_status`, `pause_status`, `suggest_service`, `ask_approval`, `check_approval`, `check_permission` (advisory until permissions exist), `record_action` (a signed entry in your records; returns its number and hash), `list_skills`, `run_skill` and `skill_status`, `queue_job`, `job_status`. No `pay`, `pause` or `resume`.
+- Tools: `allowance_status`, `pause_status`, `suggest_service`, `ask_approval`, `check_approval`, `check_permission` (from the host's own permission when it has one, else a labelled interim rule; advice for the host's own tools), `record_action` (a signed entry in your records; returns its number and hash), `list_skills`, `run_skill` and `skill_status`, `queue_job`, `job_status`. No `pay`, `pause` or `resume`.
 - The tools server talks only to the home control API with a device token; it holds no provider key. That token has the `host` role: the home refuses it pause and resume, keys, connecting services, apps, answering any card and reading your records, and shows it only its own jobs, cards and skill runs. This is enforced by the home, not left to the bot. Muse controls model use, spending and its own tools; it cannot stop a host's own shell or file tools.
 - No host has been installed or run with Muse yet. Host settings are dated and say where they were read.
 
@@ -287,11 +287,43 @@ What is true today, and what is not:
   token never allows what its parent refuses; a block that tries to widen is refused;
   revoking the root stops the family and revoking a block stops that copy and those below
   it; a single-use approval works once.
-- **Not enforced yet:** nothing else in Muse asks for these tokens. The router, the
-  queue, `muse apps` keys and the request hook work exactly as before, and no skill is
-  held to a token. Wiring a permission to an app entry and to skill calls is the
-  compiler's job (work package C7); until then `muse permissions check` only answers a
-  question.
+- **Enforced now** (work package C7, `muse/compiler/`). `muse permissions grant` shows the
+  permission as a sentence, signs it after a yes, and makes what enforces it;
+  `muse permissions stop <id>` writes the signed revocation first and then removes each
+  of those things; `muse permissions status [<id>]` shows a mark per target and anything
+  that breaks the rule "no artifact without a permission"; `muse permissions sweep`
+  (safe every minute) cleans up after stopped or ended permissions and remakes what a
+  live one is missing. The home's API has the same (`/v1/mandates`), where a host bot
+  can only *ask* (a card the person approves) and only the person's own device issues
+  or stops.
+  - **Router, always:** a permission for an app or a device that grants `llm.call`
+    makes an app entry with its caps (`llm.paid` turns on paid services, its class is
+    the app's default privacy); the key is shown once. That key is refused the moment
+    the permission is stopped or ends ("permission stopped" / "has ended"), and for a
+    looser privacy class than the permission allows.
+  - **Skills, by setting:** `MUSE_PERMISSIONS=off|advise|enforce`, default `advise`.
+    Each folder a run is given, each proposed and applied file, each model call (its
+    privacy class) and each paid call (what it could cost and what was used so far) is
+    checked against the skill's narrowed copy of the helper's permission
+    (holder `helper:home`, or `helper:$MUSE_HELPER_ID`). `advise` computes, records and
+    shows every decision and blocks nothing, so nothing that worked before breaks.
+    `enforce` stops the run with a plain reason and a record. **A skill that does not
+    ship with Muse (from `~/.muse/skills/`) is always `enforce`**: it runs only under a
+    permission that covers it, e.g.
+    `muse permissions grant --holder helper:home --action llm.call --resource provider:router --resource home:skill/<name> --privacy standard`.
+    A file a skill proposes becomes a card; approving it mints a single-use token for
+    exactly that write (five minutes), which a replay or a stopped permission cannot use.
+  - **Host bots:** `muse hosts setup <host> --permission` gives the host's device a
+    permission (models through Muse up to its app's caps, no paid services, skills asked
+    about each time, files only through folders on the skill list) and ties its app key
+    to it. `check_permission` then answers from it (`basis: "permission"`); a host with
+    none gets the clearly labelled interim rule. A host's own shell and file tools are
+    outside Muse either way: for those the answer is advice.
+- **Not built:** payments (no spending limit on chain; Muse pays nothing under a
+  permission), connectors, the health add-on, approval with a passkey (in this version
+  "the person" is a device with the `owner` role), and syncing the revocation list to
+  other devices. These show as grey `not_built` marks, never green ones. Without
+  `biscuit-python` on the home nothing is checked, and `advise` runs skills as before.
 - **Limits and single-use approvals need the caller's help.** A token cannot count. The
   module that enforces it supplies "used so far this period" from its ledger and keeps
   the set of approvals already used; a module that reports zero defeats the limit.
@@ -533,7 +565,8 @@ It reads `LITELLM_MASTER_KEY` from the environment or from `.env`. It does not c
 | `muse/home/` | The home control API: server, device tokens with roles, cards, records and skills through the API, the fake home |
 | `muse/mcp/` | The Muse tools server for host bots (MCP over stdio), host settings and the read-only host check |
 | `docs/spec/interfaces/` | `home-api.v1.yaml` (OpenAPI) and `card.schema.json` |
-| `muse/permissions/`, `core/src/permissions.rs` | Signed permission tokens (Python and Rust twins); not yet enforced by anything else |
+| `muse/permissions/`, `core/src/permissions.rs` | Signed permission tokens (Python and Rust twins) |
+| `muse/compiler/` | The permission compiler: router app entries, skill tokens and folders, records; the skill guard (`MUSE_PERMISSIONS`); the sweep |
 | `docs/spec/interfaces/permission-token.md` | The permission token format both twins implement |
 | `scripts/verify_litellm.py` | Checks the installed LiteLLM and the pinned image (read-only, no keys) |
 | `requirements/proxy.lock`, `requirements/dev.lock` | Hash-locked installs: LiteLLM with its dependencies, and the test tools |

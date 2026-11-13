@@ -55,6 +55,18 @@ Anything on the right is answered `403`; another device's job, card or run is an
 
 The role limits what the token can do **to the home**. It does not limit the bot's own shell and file tools, as said above.
 
+### A permission for the host
+
+`muse hosts setup <name> --permission` (or answering yes when it asks in a terminal) also gives the host's tools device a signed permission, holder `device:<name>-tools`, for 90 days:
+
+| The permission says | What Muse does with it |
+|---|---|
+| Models through the Muse router, up to the caps of the host's app; no paid services | The host's app key is tied to the permission: it is refused (403, "permission stopped" or "has ended") from the moment you stop the permission or it ends. Stop it with `muse permissions stop <id>` or from the Permissions screen |
+| Running skills, asked about each time | `check_permission` answers `ask` |
+| No files of its own | `check_permission` answers `ask` for a path; skills reach your files only through folders you put on the skill list by name |
+
+`check_permission` then answers from that permission (`basis: "permission"`, and `allow`, `ask` or `deny`). A host with no permission gets the interim rule, labelled `basis: "interim rule"` in every answer. Either way the answer is **advice** for the host's own shell and file tools: Muse cannot block them. A host can also ask for a permission through the home (`POST /v1/mandates` from its device makes a card you approve); it can never issue or stop one itself.
+
 ## The tools
 
 All names are fixed. Every result is a small JSON object; no result ever holds a key, a token or a prompt.
@@ -66,7 +78,7 @@ All names are fixed. Every result is a small JSON object; no result ever holds a
 | `suggest_service` | The next service worth connecting and why. Only you can connect it | Built |
 | `ask_approval` | Puts a card in front of you and waits: `approved`, `declined`, `expired`, or `pending` if the wait (at most 10 minutes) runs out | Built |
 | `check_approval` | Looks up a card's answer without waiting | Built |
-| `check_permission` | Whether an action may go ahead without asking. It is advisory only: Muse permissions are not built, so this is an interim rule and nothing is enforced on it. It says `allow` only for reading something you listed with `--allow-read`, and `ask` for everything else | Interim |
+| `check_permission` | Whether an action may go ahead without asking. With a permission for this host it answers from that permission (`allow`, `ask` or `deny`); without one, an interim rule answers (`allow` only for reading something you listed with `--allow-read`, `ask` for everything else) and says so. Advice either way for the host's own tools | From the host's permission; interim rule without one |
 | `record_action` | Adds a signed entry to your records saying what the bot did, and returns the entry's number and hash. It is the bot's own report: filed under `host.` (a bot's `files.write` is recorded as `host.files.write`), marked as done by a helper under this host, never as done by you, and Muse cannot check it. A summary is one line with no key or long code in it | Built |
 | `queue_job` | Hands Muse a prompt to run later on free allowance. May use paid services only with an approved spend card | Built |
 | `job_status` | How a queued job is doing. Never returns a prompt or an answer | Built |
@@ -101,6 +113,7 @@ No other host has settings here. Goose, Hermes Agent and OpenClaw were not added
 ```bash
 muse hosts list                              # the hosts above, and how each was checked
 muse hosts setup openmausbot                 # the host's own app key (shown once) and tools token (in a private file), plus what to paste
+muse hosts setup openmausbot --permission    # the same, and a signed permission for the host that its app key stops with
 muse hosts show openmausbot                  # print what to paste again; creates nothing, shows no secret
 muse hosts check openmausbot ~/.openmausbot/config.json   # read-only: does an engine point at Muse; which engines do not
 muse home serve                              # the tools server needs the home running
