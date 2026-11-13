@@ -103,8 +103,8 @@ Text rules, applied to every string before it enters a token and to every reques
 
 ### 3.2 Size
 
-Measured on the fixtures: an issued token is 760 to 1,300 bytes (the plain example in
-section 9 is 900; one with six actions, six resources and four limits is 1,300). Each
+Measured on the fixtures: an issued token is 760 to 1,300 bytes (a plain one with three actions,
+two resources and two limits is 900; one with six actions, six resources and four limits is 1,300). Each
 narrowing adds 140 to 520 bytes; a single approval adds about 350. The largest fixture,
 narrowed three times, is 2,358 bytes, 3,144 characters as base64. Tokens travel in
 request bodies and files, not in URLs or cookies.
