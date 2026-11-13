@@ -127,7 +127,8 @@ def set_rlimits(limits: dict[str, int]) -> dict[str, int]:
         if which is None:
             continue
         try:
-            resource.setrlimit(which, (int(value), int(value)))
+            # CPU: the soft limit sends SIGXCPU (so the parent can say "processor time"), the hard one, 2 s later, SIGKILL.
+            resource.setrlimit(which, (int(value), int(value) + (2 if name == "CPU" else 0)))
             done[name] = int(value)
         except (ValueError, OSError):
             pass

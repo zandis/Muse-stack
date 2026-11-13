@@ -778,7 +778,23 @@ def run_checks() -> list[dict[str, str]]:
         else:
             checks.append(_check("unverified", OK, "All catalogued deployments are verified"))
 
-    for cid, fn in [("python", python), ("catalogue", catalogue), ("master_key", master), ("dotenv", dotenv_perms), ("providers", providers), ("accounts", accounts), ("local", local_rt), ("proxy", proxy), ("ledger", ledger), ("docker", docker), ("bind", bind), ("unverified", unverified)]:
+    def skill_sandbox() -> None:
+        from muse import sandbox  # tries each isolation layer in a throw-away process (docs/sandbox.md)
+
+        caps = sandbox.probe()
+        setting = env.get(sandbox.policy.ENV_MODE, "").strip().lower() or "off"
+        detail = "; ".join(caps.lines()) + f"; MUSE_SANDBOX={setting}"
+        if caps.can_require:
+            have = [name for name, ok in (("bubblewrap", caps.bwrap_works), (f"Landlock ABI {caps.landlock_abi}", caps.landlock_works),
+                                          ("seccomp", caps.seccomp_works)) if ok]
+            root = " (running as root: do not run skills as root)" if caps.running_as_root else ""
+            checks.append(_check("sandbox", OK, f"Skill sandbox can isolate files and network ({', '.join(have)}){root}", detail))
+        else:
+            fix = ("Install bubblewrap (Debian/Ubuntu: sudo apt-get install bubblewrap), then run `muse doctor` again. See docs/sandbox.md."
+                   if caps.platform == "linux" else "Skills of your own run only on Linux for now. See docs/sandbox.md.")
+            checks.append(_check("sandbox", WARN, "Skill sandbox is not complete here: skills of your own will be refused", detail, fix))
+
+    for cid, fn in [("python", python), ("catalogue", catalogue), ("master_key", master), ("dotenv", dotenv_perms), ("providers", providers), ("accounts", accounts), ("local", local_rt), ("proxy", proxy), ("ledger", ledger), ("docker", docker), ("bind", bind), ("unverified", unverified), ("sandbox", skill_sandbox)]:
         guarded(fn, cid)
     return checks
 

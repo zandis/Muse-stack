@@ -228,8 +228,8 @@ def run(
         found = loader.find(skill, env) if isinstance(skill, str) else skill
         loader.require_ready(found)
         if found.needs.net:
-            raise loader.LoaderError(f"skill '{found.name}' asks for internet access of its own; that needs the sandbox, "
-                                     "which is not built yet, so it cannot run")
+            raise loader.LoaderError(f"skill '{found.name}' asks for internet access of its own; the sandbox cannot yet "
+                                     "hold a skill to a list of hosts, so it cannot run")
         if not _sandbox_decided:
             mode = sandbox_policy.mode_for(found.source, sandbox, env)
             if mode != "off":

@@ -209,7 +209,8 @@ class Executor:
             raise self._refuse(f"{who}, and the sandboxed process could not be started ({type(exc).__name__})") from None
         os.close(to_child_r)
         os.close(from_child_w)
-        self._chan = Channel(from_child_r, to_child_w, policy.frame_bytes, tick=self._tick)
+        self._chan = Channel(from_child_r, to_child_w, policy.frame_bytes, tick=self._tick,
+                             tick_every=max(0.01, policy.watch_seconds))
         seconds = float(getattr(budget, "seconds", 60.0))
         cpu = policy.cpu_seconds if policy.cpu_seconds is not None else seconds + policy.grace_seconds
         rlimits = {"AS": policy.memory_bytes, "CPU": int(cpu) + 1, "NOFILE": policy.open_files, "NPROC": policy.processes,
@@ -272,6 +273,8 @@ class Executor:
             r.best_effort.append("running as root: the kernel does not apply the process-count limit to root")
         if not plan.bwrap and not r.seccomp:
             r.best_effort.append("a process the skill starts in a new session is not ended with it (needs bubblewrap or seccomp)")
+        if not r.seccomp and (plan.bwrap or landlock):
+            r.best_effort.append("a unix socket inside a folder named for this run can still be connected to (needs seccomp)")
         if plan.bwrap or (r.landlock_abi and r.landlock_full):
             r.files = "isolated"
         elif r.landlock_abi or plan.macos_profile:
@@ -284,9 +287,9 @@ class Executor:
 
     # ------------------------------------------------------------ the pipe
 
-    def _tick(self) -> None:
+    def _tick(self, force: bool = False) -> None:
         now = time.monotonic()
-        if now - self._last_tick < 1.0:
+        if not force and now - self._last_tick < self.policy.watch_seconds:
             return
         self._last_tick = now
         for path, cap in self._watch:
@@ -328,6 +331,7 @@ class Executor:
                 frame = self._chan.recv(self._deadline or time.monotonic() + START_TIMEOUT_S)
                 op = frame["op"]
                 if op == expect:
+                    self._tick(force=True)  # a skill that filled its folder quickly and finished is still over the cap
                     return frame
                 if op == "event":
                     self._event(frame)

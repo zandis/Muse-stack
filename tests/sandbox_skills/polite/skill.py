@@ -19,7 +19,7 @@ def run(ctx):
         return {"thing": object()}
     files = sorted(info.path.rsplit("/", 1)[-1] for info in ctx.workspace.list())
     words = sum(len(ctx.workspace.read_text(info.path).split()) for info in ctx.workspace.list())
-    ctx.event("read", files=len(files), words=words, text="x" * 200, options=["not a number"])
+    ctx.event("read", files=len(files), words=words, text="x" * 200)
     counter = ctx.data_dir / "runs.json"
     runs = json.loads(counter.read_text())["runs"] + 1 if counter.exists() else 1
     counter.write_text(json.dumps({"runs": runs}))

@@ -43,7 +43,8 @@ class Policy:
     cpu_seconds: float | None = None    # RLIMIT_CPU; None = the job's `seconds` budget plus the grace
     # Limits the parent enforces.
     grace_seconds: float = 15.0         # wall clock allowed beyond the job's `seconds` budget (covers start-up)
-    data_bytes: int = 4096 * MIB        # the skill's `data` folder, checked about once a second; over it, the run is ended
+    data_bytes: int = 4096 * MIB        # the skill's `data` folder, checked every `watch_seconds`; over it, the run is ended
+    watch_seconds: float = 1.0          # how often the parent measures the data and temp folders while the skill works
     tmp_bytes: int = 256 * MIB          # the private temp folder (a size-capped tmpfs under bubblewrap, else checked like data)
     frame_bytes: int = 64 * MIB         # the largest single message the child may send
     events: int = 20_000                # progress events accepted from the child; more are dropped

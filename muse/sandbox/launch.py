@@ -127,6 +127,9 @@ def bwrap_argv(bwrap: str, env: Mapping[str, str], runtime: Sequence[str], muse_
     if tmp_bytes:
         args += ["--size", str(int(tmp_bytes))]
     args += ["--tmpfs", INNER_TMP, "--dir", INNER_TMP + "/home", "--chdir", INNER_TMP]
+    # The root itself is bubblewrap's own tmpfs. Read-only, so nothing can be created beside the shared paths
+    # (it would live in memory, uncapped). The temp folder above is a separate mount and stays writable.
+    args += ["--remount-ro", "/"]
     return args
 
 

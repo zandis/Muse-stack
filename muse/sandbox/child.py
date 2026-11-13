@@ -175,9 +175,14 @@ class Session:
         return reply
 
     def emit(self, kind: str, /, **facts: Any) -> None:
-        safe = {str(k)[:40]: v for k, v in facts.items()
-                if v is None or isinstance(v, (bool, int, float)) or (isinstance(v, str) and len(v) <= 80)
-                or (isinstance(v, (list, tuple)) and len(v) <= 64 and all(isinstance(x, (bool, int, float)) for x in v))}
+        safe: dict[str, Any] = {}
+        for key, value in facts.items():  # the same rule as the runner's events: numbers, booleans, short codes
+            if value is None or isinstance(value, (bool, int, float)):
+                safe[str(key)[:40]] = value
+            elif isinstance(value, str):
+                safe[str(key)[:40]] = value if len(value) <= 80 else "(long text removed)"
+            elif isinstance(value, (list, tuple)) and len(value) <= 64 and all(isinstance(x, (bool, int, float)) for x in value):
+                safe[str(key)[:40]] = list(value)
         self.chan.send({"op": "event", "kind": str(kind)[:60], "facts": safe})
 
     def load(self, frame: Mapping[str, Any]) -> dict[str, Any]:

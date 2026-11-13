@@ -84,8 +84,12 @@ def run(box: Any, name: str, inputs: dict[str, Any], layer: str = "all", mode: s
 
 
 def attempt(box: Any, what: str, layer: str = "all", **inputs: Any):
-    """Run one escape attempt. Returns (the skill's own report dict or None, Result, Report)."""
-    result, report = run(box, "escape", {"attempt": what, **inputs}, layer)
+    """Run one escape attempt. Returns (the skill's own report dict or None, Result, Report).
+
+    `policy=` and `budget=` are options of the run; every other keyword is an input for the skill.
+    """
+    options = {key: inputs.pop(key) for key in ("policy", "budget") if key in inputs}
+    result, report = run(box, "escape", {"attempt": what, **inputs}, layer, **options)
     return (result.output if isinstance(result.output, dict) else None), result, report
 
 
