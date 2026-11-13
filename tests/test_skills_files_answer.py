@@ -6,6 +6,7 @@ No network and no real provider: the router is queue_fakes.FakeProxy with script
 from __future__ import annotations
 
 import json
+import re
 import os
 import sqlite3
 from pathlib import Path
@@ -626,3 +627,71 @@ def test_no_file_content_reaches_events_notes_usage_or_the_terminal_log(env, pro
     captured = capsys.readouterr()
     assert code == 0 and captured.out.startswith("Tomatoes need six hours of sun [1].\n\nSources:\n[1] garden.txt › paragraph 1")
     assert "Answered by cohere and freea. Nothing spent." in captured.err and CANARY not in captured.err + captured.out
+
+
+# ================================================================ the two wrong-but-passed answers of the full real run
+
+
+LARKSPUR = Path(__file__).resolve().parents[1] / "evals" / "chores" / "fixtures" / "larkspur-en"
+
+
+def where(request: dict, words: str) -> int:
+    """The number of the passage sent in this request that holds `words`."""
+    user = request["messages"][1]["content"].split("\n\nQuestion:")[0]
+    for n, text in re.findall(r"^\[(\d+)\] (.*?)(?=^\[\d+\] |\Z)", user, flags=re.S | re.M):
+        if words in text:
+            return int(n)
+    raise AssertionError(f"no passage holds {words!r}")
+
+
+def model(proxy, make) -> None:
+    proxy.responder = lambda request: None if request["path"].endswith("/embeddings") else chat(make(request), task=request["task"])
+
+
+def test_fa_035_a_number_from_a_file_about_something_else_is_not_an_answer(env, proxy):
+    """The size of Flat 4B is in no file; the purifier FAQ says "rooms up to 42 square metres". A loose model used it."""
+    def loose(request: dict) -> str:
+        quote = "The Brisa K2 is made for rooms up to 42 square metres"
+        return answer_json("Flat 4B is 42 square metres [1].", [(quote, where(request, quote), "Flat 4B is 42 square metres.")])
+
+    model(proxy, loose)
+    result = ask(env, "How many square metres is Flat 4B?", LARKSPUR)
+    assert result.status == "needs_choice" and result.check["status"] == "failed"  # never delivered as checked
+    assert "no claim comes from a file that mentions what the question names" in result.check["reasons"]
+    assert len(chats(proxy)) == 2  # the first answer, and the runner's one stronger retry
+    model(proxy, lambda request: answer_json("", [], not_found=True))
+    result = ask(env, "How many square metres is Flat 4B?", LARKSPUR)
+    assert result.status == "done" and result.output["not_found"] is True
+
+
+def test_fa_027_a_two_part_question_needs_a_claim_for_each_part_or_says_what_is_missing(env, proxy):
+    question = "How much did the Brisa K2 air purifier cost on its invoice, and how long is the warranty on its motor?"
+    price = "INV-3106,2031-03-02,Nimbel Home,Brisa K2 air purifier,229.00"
+    warranty = "The warranty is 3 years for the motor"
+
+    def half(request: dict) -> str:
+        return answer_json("It cost 229.00 dollars [1].", [(price, where(request, price), "The Brisa K2 cost 229.00 dollars.")])
+
+    model(proxy, half)
+    result = ask(env, question, LARKSPUR)
+    assert result.check["status"] == "failed" and result.status == "needs_choice"
+    assert any(r.startswith("the question asks for 2 things but the answer rests on 1 claim") for r in result.check["reasons"])
+
+    def both(request: dict) -> str:
+        return answer_json("It cost 229.00 dollars [1] and the motor has a 3-year warranty [2].",
+                           [(price, where(request, price), "The Brisa K2 cost 229.00 dollars."),
+                            (warranty, where(request, warranty), "The motor warranty is 3 years.")])
+
+    model(proxy, both)
+    result = ask(env, question, LARKSPUR)
+    assert result.status == "done" and result.check["status"] == "passed", result.check
+    assert "229.00" in result.output["text"] and "3-year" in result.output["text"]
+    assert {Path(c["path"]).name for c in result.output["citations"]} == {"invoices.csv", "purifier-faq.md"}
+
+    def honest(request: dict) -> str:
+        body = json.loads(half(request))
+        return json.dumps({**body, "missing": ["the motor warranty"]})
+
+    model(proxy, honest)
+    result = ask(env, question, LARKSPUR)
+    assert result.status == "done" and "Not found in your files: the motor warranty" in result.output["text"]

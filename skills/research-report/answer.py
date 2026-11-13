@@ -30,9 +30,13 @@ Rules:
 - Then write "answer": one to three short sentences in the language of the question, each ending with the
   numbers of the claims it rests on, like [1] or [1][2] (claim numbers, counted from 1 in your list).
 - A question in Traditional Chinese gets "says" and "answer" in Traditional Chinese; the quotes stay as written.
+- If the question asks for several things, give at least one claim for each. A thing the passages do not state goes
+  in "missing" (a few words each), and the answer says it was not found.
+- A passage about something else is not an answer, even if it has a number of the right kind: a claim must be about
+  exactly what the question names.
 - If the passages do not contain the answer, set "not_found" to true and leave "claims" empty.
 - Reply with one JSON object and nothing else, in this shape:
-{"claims": [{"quote": "exact words from the passage", "n": 2, "says": "the fact"}], "answer": "short answer [1]", "not_found": false}"""
+{"claims": [{"quote": "exact words from the passage", "n": 2, "says": "the fact"}], "answer": "short answer [1]", "missing": [], "not_found": false}"""
 
 MAX_OUTPUT_TOKENS = 1200
 _MARK = re.compile(r"\[\s*(\d{1,3}(?:\s*[,、]\s*\d{1,3})*)\s*\]")
@@ -220,18 +224,21 @@ def quoted_claims(items: Any) -> list[dict[str, Any]]:
 
 
 def parse_quoted(raw: str) -> dict[str, Any]:
-    """{"answer", "claims": [{"quote", "n", "says"}], "not_found", "read": json|repaired|text|empty}.
+    """{"answer", "claims": [{"quote", "n", "says"}], "missing": [str], "not_found", "read": json|repaired|text|empty}.
 
     A reply that is not a JSON object gives no claims: a quote cannot be read out of prose.
     """
     raw = (raw or "").strip()
     if not raw:
-        return {"answer": "", "claims": [], "not_found": False, "read": "empty"}
+        return {"answer": "", "claims": [], "missing": [], "not_found": False, "read": "empty"}
     obj, how = find_object(raw)
     if obj is None or not any(key in obj for key in ("answer", "claims", "not_found")):
-        return {"answer": "", "claims": [], "not_found": False, "read": "text"}
+        return {"answer": "", "claims": [], "missing": [], "not_found": False, "read": "text"}
     answer = obj.get("answer")
     answer = answer.strip() if isinstance(answer, str) else ""
     flag = obj.get("not_found")
     not_found = flag is True or (isinstance(flag, str) and flag.strip().lower() in _TRUE) or flag == 1
-    return {"answer": answer, "claims": quoted_claims(obj.get("claims")), "not_found": bool(not_found), "read": how}
+    missing = obj.get("missing")
+    missing = [" ".join(m.split())[:120] for m in (missing if isinstance(missing, list) else []) if isinstance(m, str) and m.strip()]
+    return {"answer": answer, "claims": quoted_claims(obj.get("claims")), "missing": missing[:6], "not_found": bool(not_found),
+            "read": how}

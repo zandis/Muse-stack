@@ -31,9 +31,9 @@ How it works:
 
 1. Plan. A small model turns your question into 3 to 6 sub-questions. If its reply cannot be used, the question is split by simple rules instead.
 2. Gather. On this computer, the passages most related to each sub-question are found in your folders (the same search index as "Answer over my files", kept in Muse's own folder).
-3. Extract. A small model reads two passages at a time and lists the facts that help, each with the passage number it came from. This is most of the requests. Every fact is checked at once against the passage it cites, and dropped if it does not match.
+3. Extract. A small model reads two passages at a time and lists the facts that help: for each, the exact words it read in one passage, that passage's number, and what they say in the report's language. This is most of the requests. Every fact is checked at once on this computer: the quoted words must really be in that passage, and every number the fact states must be in the quote; a fact that fails is dropped. If the model returns no text at all (a "reasoning" model that spent its allowance thinking), it is asked once more with more room on a stronger tier; if it is still empty, those passages are NOT READ: the sub-question is listed under "Not done", never as something your material did not answer, and the run is not marked done.
 4. Write. A strong model writes the report once, from the checked facts only; it does not see your documents again.
-5. Check. Before you see it: every sentence that states a fact has a source, every source exists and shares words with the sentence, every sub-question is covered or listed as not answered, the length and language are as asked.
+5. Check. Before you see it: every fact's quote is still in its passage; every sentence that states a fact cites a fact number that exists, and holds only numbers that are in the quotes it cites; every sub-question is covered or listed; nothing was left unread; the length and language are as asked. The Sources list shows, for every fact the report cites, the file, the paragraph and the exact words quoted.
 
 What is sent: your question, and the passages found for it, to models through Muse's router under the privacy class of the run. The default is standard: free services may learn from what is sent. Run with `--privacy private` or `--privacy local` to restrict that.
 
@@ -41,6 +41,6 @@ The budget, before it starts: at most 40 requests and 150,000 tokens in 15 minut
 
 If the strong model is not free right now, you get exactly the choices the router offers (wait until a time, hand off to your own ChatGPT, Claude or Gemini app, or pay about an amount) together with the checked facts by sub-question, marked "Not done yet: the written report", and a prompt you can paste into your own app to have the report written there.
 
-What it cannot do: use the web, read scanned images, or judge whether a document is right. The check compares words, so it catches a missing or wrong source, not a subtle misreading; a report in a different language from the documents it cites usually fails the check.
+What it cannot do: use the web, read scanned images, or judge whether a document is right. The check compares quotes and numbers, so it catches an invented quote, a wrong source or a changed number, not a subtle misreading of words; it works when the report's language differs from the documents'.
 
 Inputs: `question` or `topic` (required); `outline` (parts you want, separated by `;`); `length` (`short` or `medium`, default short); `lang` (`zh`, `en`, default: the language of the question); `embeddings` (`auto` or `off`).

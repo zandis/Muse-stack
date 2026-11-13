@@ -166,9 +166,12 @@ def run(ctx: Any) -> dict[str, Any]:
         ctx.note("No passage in your files shares words with the question, so no model was asked.")
         return {**base, "answer": _not_found(zh), "text": _not_found(zh), "not_found": True}
 
+    names = identifiers(question)
+    anchored = {c.path for c in chunks if names and any(name in quotes.fold(c.text)[0] for name in names)}
     passages = [{"n": n, "path": c.path, "shown": _shown(c.path, roots), "paragraph": c.para_start,
                  "paragraph_end": c.para_end, "paragraphs": list(c.paras), "text": c.text,
-                 "label": _label(_shown(c.path, roots), list(range(c.para_start, c.para_end + 1)), zh)}
+                 "label": _label(_shown(c.path, roots), list(range(c.para_start, c.para_end + 1)), zh),
+                 "anchored": (c.path in anchored) if names else None}
                 for n, c in enumerate(chosen, start=1)]
     reply = recover.ask(ctx.llm, answer_mod.messages(question, [p["text"] for p in passages]),
                         max_tokens=answer_mod.MAX_OUTPUT_TOKENS)
@@ -184,6 +187,31 @@ def run(ctx: Any) -> dict[str, Any]:
     ctx.event("answer", read=parsed["read"], claims=len(kept), dropped=sum(dropped.values()), not_found=parsed["not_found"],
               empty=False, recovered=attempts > 1, unanswered=False, attempts=attempts)
     return _output(base, parsed, kept, dropped, passages, question, zh, attempts)
+
+
+_IDENTIFIER = re.compile(r"(?<![\w-])(?=[\w-]*[^\W\d_])(?=[\w-]*\d)[A-Za-z0-9][\w-]*(?![\w-])")
+_PART_EN = re.compile(r"(?:,?\s+and\s+|\?\s+|;\s*)(?=(?:how|what|when|where|who|whom|whose|which|why|is|are|does|do|did|"
+                      r"can|could|has|have)\b)", re.IGNORECASE)
+_PART_ZH = re.compile(r"[？?；;](?=\s*\S)|，?以及|，?還有")
+
+
+def identifiers(question: str) -> list[str]:
+    """The names in a question made of letters AND digits (Flat 4B, INV-3109, K2-F9, M3), folded for matching.
+
+    A file that mentions none of them is not about the thing asked: a number taken from it answers another question
+    (asked for the size of Flat 4B, the purifier's "42 square metres" is not an answer).
+    """
+    out: list[str] = []
+    for match in _IDENTIFIER.finditer(quotes.fold(question)[0]):
+        if match.group() not in out:
+            out.append(match.group())
+    return out
+
+
+def parts(question: str) -> int:
+    """How many things a question asks for: "How much ..., and how long ...?" is 2; "租金多少？押金多少？" is 2."""
+    pieces = [p for p in (_PART_ZH if mostly_chinese(question) else _PART_EN).split(question.strip()) if p and p.strip(" ?？,，")]
+    return max(1, len(pieces))
 
 
 def _unanswered_text(zh: bool) -> str:
@@ -238,13 +266,16 @@ def _output(base: dict[str, Any], parsed: dict[str, Any], kept: list[dict[str, A
             written = "claims"
     citations = [{"n": n, "path": by_n[n]["path"], "paragraphs": sorted(set(used[n])),
                   "label": _label(by_n[n]["shown"], used[n], zh)} for n in sorted(used)]
+    missing = list(parsed.get("missing") or []) if claims else []
     text = body
+    if missing:
+        text += "\n\n" + ("你的檔案裡找不到：" if zh else "Not found in your files: ") + ("、" if zh else "; ").join(missing)
     if claims and not not_found:
         text += "\n\n" + ("來源：" if zh else "Sources:") + "\n" + "\n".join(
             f"[{c['id']}] {c['source']}: “{c['quote']}”" for c in claims)
     return {**base, "answer": body, "text": text, "claims": claims, "not_found": not_found, "citations": citations,
             "passages": passages, "read": parsed["read"], "written": written, "dropped_claims": dict(sorted(dropped.items())),
-            "attempts": attempts}
+            "missing": missing, "attempts": attempts}
 
 
 def check(output: Any, ctx: Any = None) -> list[str]:
@@ -273,6 +304,21 @@ def check(output: Any, ctx: Any = None) -> list[str]:
     found = quotes.sentences(str(output.get("answer", "")).splitlines())
     for code, sentence, claim_id in quotes.statement_problems(found, quotes_by_id, question):
         reasons.append(f"sentence {sentence}: {_why(code, claim_id)}")
+    # What the question names (Flat 4B, INV-3109): an answer resting only on files that never mention it, or a
+    # number taken from such a file, answers another question.
+    anchored = {p["n"]: p.get("anchored") for p in output.get("passages", [])}
+    if claims and any(v is not None for v in anchored.values()):
+        if not any(anchored.get(c.get("n")) for c in claims):
+            reasons.append("no claim comes from a file that mentions what the question names")
+        else:
+            for number, claim in enumerate(claims, start=1):
+                if anchored.get(claim.get("n")) is False and quotes.numbers(str(claim.get("says", ""))):
+                    reasons.append(f"claim {number} states a number from a file that does not mention what the question names")
+    # A question that asks for several things needs a claim for each, or must say which it could not find.
+    wanted = parts(question)
+    if claims and wanted > 1 and len(quotes_by_id) < wanted and not output.get("missing"):
+        reasons.append(f"the question asks for {wanted} things but the answer rests on {len(quotes_by_id)} claim(s) "
+                       "and does not say what is missing")
     return reasons
 
 
