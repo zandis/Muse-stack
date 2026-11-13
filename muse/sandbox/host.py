@@ -136,7 +136,7 @@ class Executor:
         self.mode = normalise_mode(mode)
         self.token = token
         self.caps = caps
-        self.report = Report(mode=self.mode, platform=sys.platform)
+        self.report = Report(mode=self.mode, ran="refused", platform=sys.platform)  # until the child is really up
         self._proc: subprocess.Popen[bytes] | None = None
         self._chan: Channel | None = None
         self._plan: launch.Plan | None = None
@@ -582,5 +582,7 @@ def run_skill(
         finally:
             executor.close()
         report = executor.report
+        if report.ran == "refused" and not report.reason:  # the runner stopped before the sandbox was asked to start
+            report.reason = result.notes[0] if result.notes else "the run ended before the skill was started"
     result.sandbox = report.public()
     return result, report

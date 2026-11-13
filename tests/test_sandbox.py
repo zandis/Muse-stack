@@ -715,6 +715,17 @@ def test_a_skill_of_your_own_always_runs_with_require(box, proxy, monkeypatch):
             assert result.status == "failed" and result.sandbox["ran"] == "refused"
 
 
+def test_a_skill_that_never_started_is_not_reported_as_having_run(box, proxy, monkeypatch):
+    real_home_skills(monkeypatch)
+    write_skill(box.home, "unread", approve=False)
+    env_ = {k: v for k, v in box.env.items() if k != "MUSE_SKILLS_DIR"}
+    result = runner.run("unread", {"q": "hi"}, environ=env_)
+    assert result.status == "failed" and "not approved yet" in result.notes[0] and result.sandbox is None
+    result, report = sandbox.run_skill("unread", {"q": "hi"}, environ=env_)
+    assert result.status == "failed" and "not approved yet" in result.notes[0]
+    assert report.ran == "refused" and not report.isolated and "not approved" in report.reason and result.sandbox == report.public()
+
+
 @posix
 def test_a_skill_of_your_own_is_refused_where_the_sandbox_is_incomplete(box, proxy, monkeypatch):
     real_home_skills(monkeypatch)
