@@ -180,7 +180,7 @@ def run(
     events: list[dict[str, Any]] = []
     started = clock()
 
-    def emit(kind: str, **facts: Any) -> None:
+    def emit(kind: str, /, **facts: Any) -> None:
         event = {"t": round(clock() - started, 3), "kind": kind, **_safe_facts(facts)}
         events.append(event)
         if on_event is not None:
@@ -303,7 +303,7 @@ def run(
         if isinstance(exc, NeedsViolation):
             notes.append(f"Stopped: the skill asked for something it did not declare ({exc}).")
             return finish("failed", ctx, None, {"status": "not-run", "reasons": []}, notes)
-        emit("error", kind=type(exc).__name__, where=_where(exc))
+        emit("error", error=type(exc).__name__, where=_where(exc))
         notes.append(f"The skill stopped with an error ({type(exc).__name__} at {_where(exc) or 'an unknown place'}).")
         return finish("partial" if output is not None else "failed", ctx, output, check_state, notes)
 

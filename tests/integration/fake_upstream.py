@@ -58,6 +58,7 @@ class FakeUpstream:
 
     behaviours: dict[str, str] = field(default_factory=dict)
     limit_headers: dict[str, dict[str, str]] = field(default_factory=dict)  # per model, replaces the default x-ratelimit-*
+    replies: dict[str, str] = field(default_factory=dict)  # per model, the chat text of an `ok` reply (default "fake reply")
     default: str = "ok"
     slow_seconds: float = 3.0
     log: list[Logged] = field(default_factory=list)
@@ -81,6 +82,11 @@ class FakeUpstream:
         """Rate-limit headers this model returns on success ({} = none at all)."""
         with self._lock:
             self.limit_headers[model] = dict(headers)
+
+    def set_reply(self, model: str, text: str) -> None:
+        """The text this model answers a chat with (for callers that need a scripted answer, e.g. a JSON object)."""
+        with self._lock:
+            self.replies[model] = text
 
     def calls(self, model: str | None = None) -> list[Logged]:
         with self._lock:
@@ -158,6 +164,7 @@ class FakeUpstream:
             with self._lock:
                 if model in self.limit_headers:
                     limits = dict(self.limit_headers[model])
+                reply = self.replies.get(model, "fake reply")
             if path.endswith("/embeddings"):
                 return 200, {
                     "object": "list",
@@ -173,7 +180,7 @@ class FakeUpstream:
                 "choices": [
                     {
                         "index": 0,
-                        "message": {"role": "assistant", "content": "fake reply"},
+                        "message": {"role": "assistant", "content": reply},
                         "finish_reason": "stop",
                     }
                 ],

@@ -53,7 +53,6 @@ def _snapshot_for(state: str) -> dict[str, Any]:
     snap = demo_snapshot()
     snap["home"] = "(fake home)"
     if state == "used":
-        soonest = None
         for p in snap["providers"]:
             if not p.get("configured") or p.get("kind") == "local":
                 continue
@@ -70,8 +69,6 @@ def _snapshot_for(state: str) -> dict[str, Any]:
             for d in p.get("deployments") or []:
                 if d.get("state") in ("ok", "cooling", "unknown"):
                     d["state"], d["blocked_until"] = "exhausted", p.get("blocked_until")
-            if p.get("blocked_until"):
-                soonest = min(soonest, p["blocked_until"]) if soonest else p["blocked_until"]
         for alias in snap["aliases"]:
             alias["available"] = 0
     elif state == "empty":

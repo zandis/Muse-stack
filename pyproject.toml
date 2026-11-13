@@ -26,6 +26,7 @@ include = ["muse*"]
 
 [tool.setuptools.package-data]
 "muse.dashboard" = ["*.html", "*.css", "*.js", "static/*"]
+"muse.home" = ["*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

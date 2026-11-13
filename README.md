@@ -195,6 +195,23 @@ An app asks for a task with the header `x-muse-task: <task>` and any model name,
 
 **Exact repeats** (off unless `MUSE_CACHE=exact`): an identical request (same alias, messages and output settings, temperature 0 or a task marked `deterministic`) is answered from a cache without contacting anyone (`x-muse-cache: hit`, `x-muse-provider: cache`), recorded in the ledger as `cached` at zero cost, and not counted against quotas or app caps. The privacy class and the app's default class are part of the key. Public and standard answers are kept in `~/.muse/cache.sqlite` (0600) so every worker shares them; private and local answers are kept in memory only and never written to disk. `MUSE_CACHE_TTL_S` (default 3600) and `MUSE_CACHE_MAX_ENTRIES` (default 1000) bound it.
 
+### Home control API
+
+The one way an app talks to the home: a small local JSON service over a private Unix socket (`~/.muse/home.sock`, mode 0600; `127.0.0.1` on Windows or with `--tcp PORT`). The contract is [docs/spec/interfaces/home-api.v1.yaml](docs/spec/interfaces/home-api.v1.yaml); a card's shape is [docs/spec/interfaces/card.schema.json](docs/spec/interfaces/card.schema.json).
+
+```bash
+muse home token add my-phone     # a device token, shown once; only its hash is kept (list, rotate, rm)
+muse home serve                  # run it (Ctrl-C to stop); --tcp 4181 for 127.0.0.1
+MUSE_HOME_TOKEN=... muse home call GET /v1/status          # a tiny client for debugging
+python -m muse.home --fake --tcp 4181 --state cards        # canned data for building an app: no proxy, ledger or keys
+```
+
+- Every request carries `Authorization: Bearer <device token>`; on the socket the caller must also be the same user. No CORS headers are sent, bodies are bounded, and nothing from a request is logged.
+- Calls, all under `/v1`: `status` (the same snapshot as `muse status --json`), `catalogue`, `connect/{provider}` (returns the steps; the client opens the pages), `keys/{provider}` (the only call that accepts a key; never echoed), `jobs` (the queue; a prompt is accepted and never returned), `cards` and `cards/{id}/answer`, `pause` and `resume`, `apps` (a new app token is returned once). `receipts` and `mandates/artifacts` answer 501 until those parts exist.
+- Anything key-shaped in a request to any other call is refused. Errors have one shape: `{"error": {"code", "message", "retry_after"?}}`.
+- **Cards** are the questions the home asks before it acts (save a file, send a message, spend, grant a permission, use a one-off credit, send something private, install a skill). They wait in `~/.muse/cards.sqlite`, expire after 24 hours (5 minutes for a payment), and can be answered once. `muse.home.cards.CardStore` is what other code on the home uses to ask and wait.
+- The fake home has six states (`normal`, `used`, `paused`, `cards`, `empty`, `error`) and signs in with the fixed token it prints. `muse dash` is unchanged and still serves its own read-only page.
+
 ## Trust layer
 
 `muse/trust` holds what the bot and later data sales are built on: an encrypted
@@ -435,6 +452,8 @@ It reads `LITELLM_MASTER_KEY` from the environment or from `.env`. It does not c
 | `scripts/render_and_start.py` | Render, then exec `litellm` |
 | `scripts/smoke_test.py` | Health check plus one call per configured alias |
 | `scripts/validate_config.py` | The CI checks |
+| `muse/home/` | The home control API: server, device tokens, cards, the fake home |
+| `docs/spec/interfaces/` | `home-api.v1.yaml` (OpenAPI) and `card.schema.json` |
 | `scripts/verify_litellm.py` | Checks the installed LiteLLM and the pinned image (read-only, no keys) |
 | `requirements/proxy.lock`, `requirements/dev.lock` | Hash-locked installs: LiteLLM with its dependencies, and the test tools |
 | `docker-compose.yml` | Proxy only |

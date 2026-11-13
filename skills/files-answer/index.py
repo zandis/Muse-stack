@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS chunks (
   para_start INTEGER NOT NULL,
   para_end INTEGER NOT NULL,
   text TEXT NOT NULL,
+  paras TEXT NOT NULL,          -- JSON: the paragraph number of each blank-line-separated part of text (0 = a repeated table header)
   emb BLOB,
   emb_model TEXT
 );
@@ -95,6 +96,7 @@ class Chunk:
     para_start: int
     para_end: int
     text: str
+    paras: tuple[int, ...] = ()  # the paragraph number of each part of `text` (parts are separated by a blank line)
 
 
 # ---------------------------------------------------------------- text extraction
@@ -238,8 +240,8 @@ def _pieces(paragraph: str, limit: int) -> list[str]:
 
 
 def chunk(paras: list[str], limit: int = CHUNK_WEIGHT, overlap: int = OVERLAP_WEIGHT,
-          header: str | None = None) -> list[tuple[int, int, str]]:
-    """(first paragraph, last paragraph, text) per chunk. Paragraph numbers start at 1.
+          header: str | None = None) -> list[tuple[int, int, str, list[int]]]:
+    """(first paragraph, last paragraph, text, paragraph number of each part of text) per chunk. Numbers start at 1.
 
     Paragraphs are packed up to `limit`; each chunk after the first starts with
     the tail of the previous one (whole units, at most `overlap`), so a fact
@@ -247,7 +249,7 @@ def chunk(paras: list[str], limit: int = CHUNK_WEIGHT, overlap: int = OVERLAP_WE
     table's first row) is repeated at the top of later chunks.
     """
     units: list[tuple[int, str]] = [(n, piece) for n, para in enumerate(paras, start=1) for piece in _pieces(para, limit)]
-    chunks: list[tuple[int, int, str]] = []
+    chunks: list[tuple[int, int, str, list[int]]] = []
     current: list[tuple[int, str]] = []
     fresh = 0  # units in `current` that are not overlap
     size = 0
@@ -255,9 +257,10 @@ def chunk(paras: list[str], limit: int = CHUNK_WEIGHT, overlap: int = OVERLAP_WE
     def flush() -> None:
         new = current[len(current) - fresh:]
         body = "\n\n".join(text for _, text in current)
+        numbers = [n for n, _ in current]
         if header and new[0][0] != 1:
-            body = f"{header}\n\n{body}"
-        chunks.append((new[0][0], new[-1][0], body))
+            body, numbers = f"{header}\n\n{body}", [0] + numbers
+        chunks.append((new[0][0], new[-1][0], body, numbers))
 
     for unit in units:
         w = weight(unit[1])
@@ -375,8 +378,8 @@ def sync(db: sqlite3.Connection, workspace: Any, caps: Caps | None = None,
             cursor = db.execute("INSERT INTO files (path, size, mtime_ns, state, chunks) VALUES (?,?,?,?,?)",
                                 (info.path, info.size, info.mtime_ns, state, len(rows)))
             file_id = cursor.lastrowid
-            db.executemany("INSERT INTO chunks (file_id, seq, para_start, para_end, text) VALUES (?,?,?,?,?)",
-                           [(file_id, seq, a, b, text) for seq, (a, b, text) in enumerate(rows)])
+            db.executemany("INSERT INTO chunks (file_id, seq, para_start, para_end, text, paras) VALUES (?,?,?,?,?,?)",
+                           [(file_id, seq, a, b, text, json.dumps(numbers)) for seq, (a, b, text, numbers) in enumerate(rows)])
         stats.read += 1
         if state == "ok":
             stats.chunks += len(rows)
@@ -394,9 +397,9 @@ def sync(db: sqlite3.Connection, workspace: Any, caps: Caps | None = None,
 def load_chunks(db: sqlite3.Connection, file_ids: Iterable[int]) -> list[Chunk]:
     wanted = set(file_ids)
     rows = db.execute(
-        "SELECT c.id, c.file_id, f.path, c.para_start, c.para_end, c.text FROM chunks c JOIN files f ON f.id = c.file_id "
+        "SELECT c.id, c.file_id, f.path, c.para_start, c.para_end, c.text, c.paras FROM chunks c JOIN files f ON f.id = c.file_id "
         "ORDER BY f.path, c.seq")
-    return [Chunk(r[0], r[2], r[3], r[4], r[5]) for r in rows if r[1] in wanted]
+    return [Chunk(r[0], r[2], r[3], r[4], r[5], tuple(json.loads(r[6]))) for r in rows if r[1] in wanted]
 
 
 def embeddings(db: sqlite3.Connection, chunk_ids: Iterable[int], model: str) -> dict[int, bytes]:

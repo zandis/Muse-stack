@@ -340,22 +340,28 @@ In LINE the helper replies in the person's own chat with the same card. A tap op
 
 ## 4. Interfaces between processes
 
-### 4.1 Home control API (new)
+### 4.1 Home control API (built: v1)
 
-Local only: a Unix socket on the home, or carried over the Link. Authenticated by a device token narrowed from the device's mandate. JSON.
+Local only: a Unix socket on the home (`MUSE_HOME/home.sock`, mode 0600, same user only), `127.0.0.1` on Windows, or carried over the Link. JSON, versioned under `/v1`. The contract is `docs/spec/interfaces/home-api.v1.yaml`; a test keeps it equal to the server's route table. Code: `muse/home/`.
+
+Authenticated by a device token sent as `Authorization: Bearer`. In v1 the token is a random secret made by `muse home token add` and stored on the home only as a hash. The check sits behind one interface (`verify(token) -> Device`), so a token narrowed from the device's mandate (section 2.7) replaces it without changing any call.
 
 | Call | Purpose |
 |---|---|
-| `GET /status` | The snapshot the dashboard uses today: allowances, apps, queue, paid total |
-| `GET /catalogue` | The catalogue with the person's connection state |
-| `POST /connect/{provider}` | Start a guided connection; returns the next step |
-| `POST /keys/{provider}` | Store a key (sent inside the Link's encrypted channel) |
-| `GET /jobs`, `POST /jobs`, `POST /jobs/{id}/answer`, `DELETE /jobs/{id}` | Helper jobs and approvals |
-| `GET /mandates/artifacts` | Per-target state from the compiler |
-| `POST /pause`, `POST /resume` | The one switch |
-| `GET /receipts?since=` | Receipts written on the home |
+| `GET /v1/status` | The snapshot the dashboard uses today: allowances, apps, queue, paid total, paused |
+| `GET /v1/catalogue` | The catalogue with the person's connection state |
+| `POST /v1/connect/{provider}` | Start a guided connection; returns the steps (the client opens the pages) |
+| `POST /v1/keys/{provider}` | Store a key (sent inside the Link's encrypted channel); the only call that accepts one |
+| `GET /v1/jobs`, `POST /v1/jobs`, `GET /v1/jobs/{id}`, `DELETE /v1/jobs/{id}` | Jobs. Prompts are accepted and never returned |
+| `GET /v1/cards`, `GET /v1/cards/{id}`, `POST /v1/cards/{id}/answer` | Approvals: the cards waiting for the person, and their answers |
+| `GET /v1/apps`, `POST /v1/apps`, `PATCH /v1/apps/{name}`, `DELETE /v1/apps/{name}`, `POST /v1/apps/{name}/rotate` | The apps that share the router; a new app token is returned once |
+| `POST /v1/pause`, `POST /v1/resume` | The one switch |
+| `GET /v1/mandates/artifacts` | Per-target state from the compiler (answers 501 until the compiler exists) |
+| `GET /v1/receipts?since=` | Receipts written on the home (answers 501 until the records module exists) |
 
-The existing read-only dashboard server becomes the first version of this API.
+Approvals are answered on the card, not on the job (`POST /v1/cards/{id}/answer` replaces the earlier `POST /jobs/{id}/answer`): one job can ask several questions, and a card can come from something that is not a job, such as a permission request. A card's shape is `docs/spec/interfaces/card.schema.json`; cards wait in `MUSE_HOME/cards.sqlite`.
+
+The existing read-only dashboard server stays as it is for `muse dash`. `python -m muse.home --fake` serves the same API from canned data for app development.
 
 ### 4.2 Router endpoint (exists)
 

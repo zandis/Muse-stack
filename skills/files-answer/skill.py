@@ -46,14 +46,30 @@ def _int(value: Any, default: int, low: int, high: int) -> int:
         return default
 
 
-def _label(path: str, roots: list[str], a: int, b: int, zh: bool) -> str:
-    shown = path
-    for root in roots:
-        if path.startswith(root.rstrip(os.sep) + os.sep):
-            shown = os.path.relpath(path, root) if len(roots) == 1 else path
-            break
-    span = str(a) if a == b else f"{a}-{b}"
+def _shown(path: str, roots: list[str]) -> str:
+    """The path as the person knows it: relative to the folder they named when there is one folder."""
+    if len(roots) == 1 and path.startswith(roots[0].rstrip(os.sep) + os.sep):
+        return os.path.relpath(path, roots[0])
+    return path
+
+
+def _label(shown: str, numbers: list[int], zh: bool) -> str:
+    """`file path › paragraph 3`. Several paragraphs: `3, 5`; a run of them: `3-5`."""
+    numbers = sorted(set(numbers))
+    run = len(numbers) > 2 and numbers[-1] - numbers[0] == len(numbers) - 1
+    span = f"{numbers[0]}-{numbers[-1]}" if run else ("、" if zh else ", ").join(str(n) for n in numbers)
     return f"{shown} › 第 {span} 段" if zh else f"{shown} › paragraph {span}"
+
+
+def _paragraph(claim: str, passage: dict[str, Any]) -> int | None:
+    """The paragraph of a cited passage that shares most with the claim (None when no single one stands out)."""
+    best: tuple[int, float] = (0, 0.0)
+    number = None
+    for part, n in zip(passage["text"].split("\n\n"), passage["paragraphs"]):
+        score = overlap(claim, part)
+        if n and score > best:
+            best, number = score, n
+    return number
 
 
 def _hybrid(ctx: Any, db: Any, question: str, chunks: list[index.Chunk], lexical: list[int]) -> tuple[list[int], str]:
@@ -155,8 +171,9 @@ def run(ctx: Any) -> dict[str, Any]:
         ctx.note("No passage in your files shares words with the question, so no model was asked.")
         return {**base, "answer": _not_found(zh), "text": _not_found(zh), "not_found": True}
 
-    passages = [{"n": n, "path": c.path, "paragraph": c.para_start, "paragraph_end": c.para_end,
-                 "label": _label(c.path, roots, c.para_start, c.para_end, zh), "text": c.text}
+    passages = [{"n": n, "path": c.path, "shown": _shown(c.path, roots), "paragraph": c.para_start,
+                 "paragraph_end": c.para_end, "paragraphs": list(c.paras), "text": c.text,
+                 "label": _label(_shown(c.path, roots), list(range(c.para_start, c.para_end + 1)), zh)}
                 for n, c in enumerate(chosen, start=1)]
     reply = ctx.llm.ask(answer_mod.messages(question, [p["text"] for p in passages]), max_tokens=answer_mod.MAX_OUTPUT_TOKENS)
     parsed = answer_mod.parse(reply.text)
@@ -167,8 +184,19 @@ def run(ctx: Any) -> dict[str, Any]:
 
 def _output(base: dict[str, Any], parsed: dict[str, Any], passages: list[dict[str, Any]], zh: bool) -> dict[str, Any]:
     by_n = {p["n"]: p for p in passages}
-    claims = [{"text": c["text"], "cites": c["cites"], "sources": [by_n[n]["label"] for n in c["cites"] if n in by_n]}
-              for c in parsed["claims"]]
+    used: dict[int, list[int]] = {}  # passage number -> the paragraphs of it that claims rest on
+    claims = []
+    for c in parsed["claims"]:
+        sources = []
+        for n in c["cites"]:
+            if n not in by_n:
+                continue
+            p = by_n[n]
+            hit = _paragraph(c["text"], p)
+            numbers = [hit] if hit else list(range(p["paragraph"], p["paragraph_end"] + 1))
+            used.setdefault(n, []).extend(numbers)
+            sources.append(_label(p["shown"], numbers, zh))
+        claims.append({"text": c["text"], "cites": c["cites"], "sources": sources})
     not_found = bool(parsed["not_found"])
     body = parsed["answer"]
     if not_found:
@@ -176,9 +204,8 @@ def _output(base: dict[str, Any], parsed: dict[str, Any], passages: list[dict[st
     elif claims and not answer_mod._MARK.search(body):
         # The model's prose carries no markers: show the cited statements instead, so every line points somewhere.
         body = "\n".join(f"{c['text']} " + "".join(f"[{n}]" for n in c["cites"]) for c in claims).strip()
-    cited = sorted({n for c in claims for n in c["cites"] if n in by_n})
-    citations = [{"n": n, "path": by_n[n]["path"], "paragraph": by_n[n]["paragraph"],
-                  "paragraph_end": by_n[n]["paragraph_end"], "label": by_n[n]["label"]} for n in cited]
+    citations = [{"n": n, "path": by_n[n]["path"], "paragraphs": sorted(set(used[n])),
+                  "label": _label(by_n[n]["shown"], used[n], zh)} for n in sorted(used)]
     text = body
     if citations and not not_found:
         text += "\n\n" + ("來源：" if zh else "Sources:") + "\n" + "\n".join(f"[{c['n']}] {c['label']}" for c in citations)
