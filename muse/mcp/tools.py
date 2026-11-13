@@ -31,6 +31,7 @@ from typing import Any, Callable, Mapping, Sequence
 from muse.mcp import SCOPE_NOTE, permission, skills
 
 MAX_TEXT = 300  # any one string in a result
+MAX_ANSWER_CHARS = 4000  # except a skill's answer, which is what the host asked for
 MAX_RESULT_CHARS = 6000  # a whole result, as JSON (some hosts cut tool results at about 8,000 characters)
 MAX_ARGS_CHARS = 60_000
 MAX_PROMPT_CHARS = 20_000
@@ -86,7 +87,7 @@ class HomeLink:
         except (OSError, http.client.HTTPException, ValueError):
             raise ToolError("home_unreachable", "Muse's home is not running or cannot be reached. Tell the person to start it "
                                                 "with `muse home serve`, then try again.") from None
-        if status in (200, 201) and isinstance(payload, dict):
+        if status in (200, 201, 202) and isinstance(payload, dict):
             return "ok", payload
         err = payload.get("error") if isinstance(payload, dict) else None
         code = err.get("code") if isinstance(err, dict) and isinstance(err.get("code"), str) else "internal"
@@ -113,6 +114,8 @@ def _home_error(code: str, retry_after: int | None) -> ToolError:
                                      "are waiting for the person; wait for answers before asking more.")
     if code == "invalid_request":
         return ToolError("invalid_input", "Muse's home did not accept the request. Check the values against this tool's description.")
+    if code == "too_many_requests":
+        return ToolError("too_many", "Muse's home is being asked too often. Wait before trying again.", retry_after or 60)
     return ToolError("home_error", "Muse's home hit a problem. Nothing was done.")
 
 
@@ -204,12 +207,18 @@ def _clip(text: str, limit: int = MAX_TEXT) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+class _Answer(str):
+    """A skill's answer: the one string in a result that may be longer than MAX_TEXT (cut to MAX_ANSWER_CHARS)."""
+
+
 def _tidy(obj: Any) -> Any:
     """Every string cut to the limit; anything key-shaped blanked. The last thing done to a result."""
     from muse.catalog import looks_secret
 
     if isinstance(obj, str):
-        return "[removed]" if looks_secret(obj) else _clip(obj)
+        if looks_secret(obj):
+            return "[removed]"
+        return _clip(obj, MAX_ANSWER_CHARS) if isinstance(obj, _Answer) else _clip(obj)
     if isinstance(obj, dict):
         return {str(k): _tidy(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
@@ -557,21 +566,136 @@ def _skills_not_built() -> dict[str, Any]:
             "what_to_do": "Do the work with your own tools, or tell the person this is not available yet."}
 
 
+MAX_SKILLS_LISTED = 25
+RUN_ID = r"^[0-9a-f]{16}$"
+FOLDER_NAME = r"^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$"
+
+_RUN_WORDS = {
+    "running": "Still running on the person's home. Call skill_status with this run_id later.",
+    "done": "Finished, and its answer passed the skill's own check.",
+    "partial": "Finished, but something could not be done; the notes say what. Tell the person what is missing.",
+    "needs_choice": "Muse could not finish this on free allowance. The choices it was offered are listed; put them to the "
+                    "person. Do not treat the answer as checked.",
+    "failed": "It did not finish; the notes say why. Nothing was written.",
+}
+_FILE_WORDS = {
+    "pending": "waiting for the person to approve it in Muse; not written", "applying": "being written", "written": "written",
+    "refused": "approved, but could not be written", "discarded": "not written: the person said no, or did not answer in time",
+}
+
+
 def t_list_skills(ctx: Context, args: dict[str, Any]) -> dict[str, Any]:
     backend = skills.backend()
     if backend is None:
         return {**_skills_not_built(), "skills": []}
-    found = backend.list()
-    return {"built": True, "skills": [{"name": _text(s.get("name")), "summary": _text(s.get("summary"))}
-                                      for s in found[:50] if isinstance(s, Mapping)]}
+    listed = backend.list()
+    listed = listed if isinstance(listed, Mapping) else {}
+    found = [s for s in listed.get("skills") or [] if isinstance(s, Mapping) and isinstance(s.get("name"), str)]
+    folders = [f for f in listed.get("folders") or [] if isinstance(f, Mapping) and isinstance(f.get("name"), str)]
+    return {
+        "built": True,
+        "skills": [{"name": s["name"], "summary": _clip(s["description"], 160) if isinstance(s.get("description"), str) else None,
+                    "can_run": bool(s.get("approved")), "reads_folders": bool(s.get("reads_folders")),
+                    "proposes_files": bool(s.get("writes_files"))} for s in found[:MAX_SKILLS_LISTED]],
+        "more_skills": max(0, len(found) - MAX_SKILLS_LISTED),
+        "folders": [{"name": f["name"], "new_files_allowed": bool(f.get("output"))} for f in folders[:20]],
+        "about_folders": "A skill that reads folders can be given only these, by name. The person chooses them on the home "
+                         "with `muse skills folders add`; a host bot cannot add one or name any other path.",
+    }
+
+
+def _answer(output: Any) -> _Answer | None:
+    if output is None:
+        return None
+    if isinstance(output, Mapping) and isinstance(output.get("text"), str):
+        return _Answer(output["text"])
+    if isinstance(output, str):
+        return _Answer(output)
+    try:
+        return _Answer(json.dumps(output, ensure_ascii=False, default=str))
+    except (TypeError, ValueError):
+        return None
+
+
+def _run(run: Any) -> dict[str, Any]:
+    run = run if isinstance(run, Mapping) else {}
+    status = run.get("status") if run.get("status") in _RUN_WORDS else "failed"
+    run_id = run.get("id") if isinstance(run.get("id"), str) and re.fullmatch(RUN_ID.strip("^$"), run["id"]) else None
+    out: dict[str, Any] = {"built": True, "ran": status != "running", "run_id": run_id, "skill": _text(run.get("skill")),
+                           "status": status, "what_to_do": _RUN_WORDS[status]}
+    if status != "running":
+        result = run.get("result") if isinstance(run.get("result"), Mapping) else {}
+        check = result.get("check") if isinstance(result.get("check"), Mapping) else {}
+        out["checked"] = check.get("status") == "passed"
+        out["notes"] = [_clip(n) for n in result.get("notes") or [] if isinstance(n, str)][:5]
+        if status == "needs_choice":
+            out["choices"] = [c for c in result.get("options") or [] if isinstance(c, Mapping)][:5]
+        files = [w for w in run.get("writes") or [] if isinstance(w, Mapping)]
+        if files:
+            out["files"] = [{"file": _clip(w["file"], 80) if isinstance(w.get("file"), str) else None,
+                             "state": _FILE_WORDS.get(w.get("state"), "unknown"), "card_id": _text(w.get("card_id"))}
+                            for w in files[:10]]
+            out["more_files"] = max(0, len(files) - 10)
+            out["about_files"] = ("A skill only proposes files. Muse writes one only after the person approves its card in Muse; "
+                                  "check_approval with the card_id shows the answer. Do not write the file yourself instead.")
+        # The answer gets what is left of the result's size, at most MAX_ANSWER_CHARS, so a long answer is cut, not refused.
+        text = _answer(result.get("output"))
+        whole = len(text) if text is not None else 0
+        room = MAX_RESULT_CHARS - len(json.dumps(_tidy(out), ensure_ascii=False)) - 400
+        if text is not None:
+            text = _Answer(text[:MAX_ANSWER_CHARS])
+            while text and len(json.dumps(text, ensure_ascii=False)) > room:
+                text = _Answer(text[: max(0, int(len(text) * 0.9) - 1)])
+        out["answer"] = text
+        out["answer_cut_short"] = text is not None and len(text) < whole
+    out["scope_note"] = SCOPE_NOTE
+    return out
+
+
+def _skill_error(err: ToolError) -> ToolError:
+    if err.code == "conflict":
+        return ToolError("conflict", "Muse cannot run that skill now: it is not approved on the person's home, or another "
+                                     "skill is still running. Wait, or tell the person.")
+    if err.code == "invalid_input":
+        return ToolError("invalid_input", "Muse did not accept the run. Check the inputs, and use only folder names that "
+                                          "list_skills shows.")
+    if err.code == "not_found":
+        return ToolError("not_found", "Muse has no skill, or no run, with that name or id. Call list_skills.")
+    return err
 
 
 def t_run_skill(ctx: Context, args: dict[str, Any]) -> dict[str, Any]:
     backend = skills.backend()
     if backend is None:
         return {**_skills_not_built(), "ran": False}
-    result = backend.run(args["name"], args.get("inputs") or {})
-    return {"built": True, "ran": True, "result": result if isinstance(result, Mapping) else {}, "scope_note": SCOPE_NOTE}
+    try:
+        run = backend.run(args["name"], args.get("inputs") or {}, args.get("folders") or (), args.get("out"))
+    except ToolError as err:
+        raise _skill_error(err) from None
+    run_id = run.get("id") if isinstance(run, Mapping) else None
+    if not isinstance(run_id, str) or not re.fullmatch(RUN_ID.strip("^$"), run_id):
+        raise ToolError("home_error", "Muse's home hit a problem. Nothing was done.")
+    deadline = ctx.monotonic() + args.get("timeout_s", DEFAULT_TIMEOUT_S)
+    while run.get("status") == "running":
+        left = deadline - ctx.monotonic()
+        if left <= 0 or ctx.stop.wait(min(POLL_S, left)):
+            break
+        try:
+            run = backend.status(run_id)
+        except ToolError as err:
+            if err.code not in ("home_unreachable", "home_unavailable"):
+                raise  # the home may come back while we wait; anything else is final
+    return _run(run)
+
+
+def t_skill_status(ctx: Context, args: dict[str, Any]) -> dict[str, Any]:
+    backend = skills.backend()
+    if backend is None:
+        return {**_skills_not_built(), "ran": False}
+    try:
+        return _run(backend.status(args["run_id"]))
+    except ToolError as err:
+        raise _skill_error(err) from None
 
 
 # ---------------------------------------------------------------- the table
@@ -707,19 +831,37 @@ TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         "list_skills", "Muse skills",
-        "The Muse skills this host may run. Skills are NOT CONNECTED YET: until they are, this returns built = false and an "
-        "empty list. Read-only.",
+        "The Muse skills on the person's home: each one's name, what it does, whether it may run (can_run), whether it "
+        "reads folders and whether it proposes files. Also the folder names a skill may be given: only folders the person "
+        "put on a list on the home, by name. Call it before run_skill. Read-only.",
         _obj(), t_list_skills, True,
     ),
     Tool(
         "run_skill", "Run a Muse skill",
-        "Run one Muse skill by name with its inputs. Skills are NOT CONNECTED YET: until they are, this returns built = "
-        "false and runs nothing. " + SCOPE_NOTE,
+        "Run one Muse skill on the person's home, by name, and wait for its answer. The skill reaches models through Muse "
+        "(rationed, within its own budget, never paid for through this tool) and reads only the folders you name from "
+        "list_skills; you cannot give it a path. It returns status = done, partial, needs_choice, failed, or running "
+        "(the wait ran out: call skill_status with the run_id). 'answer' is the skill's answer; 'checked' says whether it "
+        "passed the skill's own check. A skill never writes files itself: each file it proposes becomes a question to the "
+        "person in Muse and is written by Muse only if they approve. " + SCOPE_NOTE,
         _obj({
             "name": _str(64, "The skill's name, from list_skills.", minLength=1, pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$"),
-            "inputs": {"type": "object", "description": "The skill's inputs, as its entry in list_skills describes."},
+            "inputs": {"type": "object", "description": "The skill's inputs: names and values (text, numbers, true or false)."},
+            "folders": {"type": "array", "minItems": 0, "maxItems": 8, "items": _str(40, "A folder name.", minLength=1, pattern=FOLDER_NAME),
+                        "description": "Names of folders, from list_skills, that the skill may read. Names only, never paths."},
+            "out": _str(40, "The name of a folder, from list_skills with new_files_allowed, where the skill may propose new "
+                            "files. Leave it out to use Muse's own folder for that skill.", minLength=1, pattern=FOLDER_NAME),
+            "timeout_s": {"type": "integer", "minimum": 0, "maximum": MAX_TIMEOUT_S,
+                          "description": f"How long to wait for it to finish, in seconds. Default {DEFAULT_TIMEOUT_S}, at most {MAX_TIMEOUT_S}."},
         }, ("name",)),
         t_run_skill, False,
+    ),
+    Tool(
+        "skill_status", "How a skill run went",
+        "The state of a run started with run_skill: still running, or its answer, notes and what became of each file it "
+        "proposed (waiting for the person, written, or not written). Does not wait. Read-only.",
+        _obj({"run_id": _str(16, "The run_id that run_skill returned.", minLength=16, pattern=RUN_ID)}, ("run_id",)),
+        t_skill_status, True,
     ),
 )
 

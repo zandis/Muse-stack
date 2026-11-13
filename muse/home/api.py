@@ -38,6 +38,7 @@ from muse.home import API_VERSION
 from muse.home.auth import Device, Verifier
 from muse.home.cards import CardAlreadyAnswered, CardError, CardExpired, CardNotFound, CardStore
 from muse.home.cards import STATUSES as CARD_STATUSES
+from muse.home.skills import SkillRefused, SkillRuns
 from muse.home.state import HomeState
 
 log = logging.getLogger("muse.home")
@@ -52,6 +53,8 @@ DEFAULT_RECEIPTS_PAGE = 50
 MAX_RECORDS_PER_HOUR = 600  # records one device may add with POST /v1/receipts; they are kept for ever
 # Action families only the home itself writes; POST /v1/receipts refuses them (record-format.md section 1.3).
 HOME_ACTIONS = ("home", "card", "app", "key", "job", "skill", "mandate", "records")
+# A setting from the key store whose NAME says it is a secret is never copied into the server's working environment.
+_SECRET_NAME = re.compile(r"(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?)(?:$|_)", re.IGNORECASE)
 
 # Every code a client can meet, with the status it comes with. The OpenAPI file lists the same set.
 ERROR_CODES: dict[str, int] = {
@@ -224,10 +227,52 @@ class Home:
         self._verify_cache: tuple[Any, Any] | None = None
         self._record_lock = threading.Lock()
         self._record_times: dict[str, list[float]] = {}
+        self.skills = SkillRuns(self)
 
     @property
     def env(self) -> Mapping[str, str]:
         return os.environ if self.environ is None else self.environ
+
+    def muse_home(self) -> Any:
+        from muse import paths
+
+        return paths.home(self.environ)
+
+    def settings_env(self) -> dict[str, str]:
+        """The process environment plus the settings kept in the home's `.env` and keychain, WITHOUT the secrets.
+
+        `muse status` builds its screen from the merged environment (`keys.export_env`), which holds
+        every provider key. This is that same environment with each stored secret left out: a setting
+        such as MUSE_DEFAULT_PRIVACY, MUSE_TZ or MUSE_DAILY_PAID_CAP_USD is kept; a key, token or
+        anything shaped like one that came from the key store is not. Whether a key is configured
+        is still answered by asking the key store by name, which returns yes or no and no value.
+        A value that is already in this process's own environment stays as it is. Built afresh on
+        each call and never kept, so the server holds no stored key between requests."""
+        from muse import keys
+        from muse.catalog import looks_secret
+
+        own = self.env
+        out = dict(own)
+        for name, value in keys.export_env(self.environ).items():  # holds secrets: read, filtered, dropped
+            if str(own.get(name, "")).strip():
+                continue  # the process's own value, already in `out`
+            if name in keys.KNOWN_KEYS or _SECRET_NAME.search(name) or looks_secret(value):
+                continue
+            out[name] = value
+        return out
+
+    def run_env(self) -> dict[str, str]:
+        """What a skill run started by the home gets: the settings, and the skill runner's own two router tokens
+        (Muse's own app tokens, kept in the key store). Never a provider key."""
+        from muse import keys
+        from muse.skills import app as skills_app
+
+        env = self.settings_env()
+        merged = keys.export_env(self.environ)
+        for name in skills_app.TOKEN_VARS.values():
+            if str(merged.get(name, "")).strip():
+                env[name] = merged[name]
+        return env
 
     def check_available(self) -> None:
         """Raise ApiError("unavailable") when the home cannot answer. The real home always can."""
@@ -717,10 +762,10 @@ def h_cards_list(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
     statuses = [s for s in req.query.get("status", "").split(",") if s]
     if any(s not in CARD_STATUSES for s in statuses):
         raise ApiError("invalid_request", f"status must be one or more of {', '.join(CARD_STATUSES)}.")
+    home.skills.sweep()  # cards that expired since the last look: the files that waited on them are thrown away
     if req.device.sees_all:
         return 200, {"cards": home.cards.list(statuses or None), "counts": home.cards.counts()}
-    mine = asked_by(req.device)
-    own = [c for c in home.cards.list(None, limit=1000) if c["job_ref"] == mine]
+    own = [c for c in home.cards.list(None, limit=1000) if _own_card(home, req.device, c)]
     counts = {s: sum(1 for c in own if c["status"] == s) for s in CARD_STATUSES}
     return 200, {"cards": [c for c in own if not statuses or c["status"] in statuses][:200], "counts": counts}
 
@@ -731,14 +776,17 @@ def _card_for(home: Home, req: Request) -> dict[str, Any]:
         card = home.cards.get(req.params["id"])
     except CardError as exc:
         raise _card_error(exc) from None
-    if not req.device.sees_all and card["job_ref"] != asked_by(req.device):
+    if not req.device.sees_all and not _own_card(home, req.device, card):
         raise ApiError("not_found", "There is no such card.")
     return card
 
 
 def h_card_get(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
     _query(req)
-    return 200, {"card": _card_for(home, req)}
+    card = _card_for(home, req)
+    if card["status"] != "pending":
+        home.skills.sweep()  # e.g. it has just expired: the file that waited on it is thrown away
+    return 200, {"card": card}
 
 
 # A device that asks (POST /v1/cards) is named on the card as `job_ref: "device:<name>"`. That is how
@@ -749,6 +797,17 @@ _ask_lock = threading.Lock()
 
 def asked_by(device: Device) -> str:
     return f"device:{device.name}"
+
+
+def _own_card(home: Home, device: Device, card: Mapping[str, Any]) -> bool:
+    """Is this a card the device made: one it asked for, or one a skill run it started asked for?"""
+    ref = str(card.get("job_ref") or "")
+    if ref == asked_by(device):
+        return True
+    if ref.startswith("skill-run:"):
+        run = home.book.get_run(ref[len("skill-run:"):])
+        return run is not None and run["device"] == device.name
+    return False
 
 
 # What each kind of card asks, for a record's summary. Never the card's own text: that is content.
@@ -795,12 +854,19 @@ def h_card_answer(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
     try:
         card = home.cards.answer(req.params["id"], decision, req.device.name, always)
     except CardError as exc:
+        home.skills.sweep()  # a card that ran out of time: what waited on it is thrown away now
         raise _card_error(exc) from None
     said = ("Approved" + (", and always from now on" if always else "")) if decision == "approve" else "Declined"
     record = home.record("card.answer", f"{said}: {CARD_WORDS.get(card['kind'], 'a question')} (answered on {_word(req.device.name)})",
                          outcome="ok" if decision == "approve" else "declined", links={"card": card["id"]}, egress="none",
                          **_who(req.device))
-    return 200, {"card": card, "recorded": record is not None}
+    # The first card -> action path: a file a skill proposed is written now, if this card stood for one and
+    # was approved; thrown away if it was declined. A card that stands for nothing else is only answered.
+    write = home.skills.settle_card(card)
+    reply: dict[str, Any] = {"card": card, "recorded": record is not None}
+    if write is not None:
+        reply["write"] = write
+    return 200, reply
 
 
 # ---------------------------------------------------------------- handlers: apps
@@ -1025,6 +1091,51 @@ def h_receipts_add(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
     return 201, {"record": record, "hash": fmt.record_hash(record), "recorded": True}
 
 
+# ---------------------------------------------------------------- handlers: skills
+
+
+def h_skills_list(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
+    """The skills on the home, what each asks for in plain words, and the folder names a run may be given."""
+    from muse.home import folders as folder_list
+    from muse.home import skills as skills_mod
+
+    _query(req)
+    try:
+        listed = skills_mod.listing(home.settings_env())
+    except Exception as exc:
+        log.warning("skills: the skills could not be listed (%s)", type(exc).__name__)
+        raise ApiError("unavailable", "The home could not read its skills. Run `muse skills list` on the home to see why.") from None
+    names = []
+    for entry in sorted(folder_list.load(home.environ).values(), key=lambda e: e["name"]):
+        item: dict[str, Any] = {"name": entry["name"], "output": entry["output"]}
+        if req.device.role == "owner":
+            item["path"] = entry["path"]  # the person's own app shows where; a host bot learns the name only
+        names.append(item)
+    return 200, {**listed, "folders": names}
+
+
+def h_skill_run(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
+    """Start a run. Answers at once with the run's id; `GET /v1/skills/runs/{id}` says how it went."""
+    _fields(req.body, {"inputs": dict, "folders": list, "out": (str, _NONE), "budget": dict, "privacy": (str, _NONE),
+                       "task": (str, _NONE)})
+    if any(not isinstance(name, str) for name in req.body.get("folders") or []):
+        raise ApiError("invalid_request", "folders must be a list of folder names.")
+    try:
+        run = home.skills.start(req.device, req.params["name"], req.body)
+    except SkillRefused as refused:
+        raise ApiError(refused.code, refused.message) from None
+    return 202, {"run": run}
+
+
+def h_skill_run_get(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
+    _query(req)
+    run_id = req.params["id"]
+    run = home.skills.get(req.device, run_id) if re.fullmatch(r"[0-9a-f]{16}", run_id) else None
+    if run is None:
+        raise ApiError("not_found", "There is no such run.")
+    return 200, {"run": run}
+
+
 # ---------------------------------------------------------------- handlers: planned
 
 
@@ -1087,6 +1198,9 @@ ROUTES: tuple[Route, ...] = (
     _r("POST", "/apps/{name}/rotate", "apps.write", h_app_rotate),
     _r("GET", "/receipts", "receipts.read", h_receipts_list),
     _r("POST", "/receipts", "receipts.write", h_receipts_add),
+    _r("GET", "/skills", "skills.read", h_skills_list),
+    _r("POST", "/skills/{name}/run", "skills.run", h_skill_run),
+    _r("GET", "/skills/runs/{id}", "skills.read", h_skill_run_get),
     _r("GET", "/mandates/artifacts", "mandates.read", h_not_built, planned=True),
 )
 

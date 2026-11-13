@@ -94,6 +94,17 @@ def _snapshot_for(state: str) -> dict[str, Any]:
     return snap
 
 
+def _fake_skill_run(skill: Any, inputs: Any = None, **_kwargs: Any) -> Any:
+    """What a skill run "returns" on a fake home: done, a canned answer, nothing spent, nothing proposed."""
+    from muse.skills.runner import Result
+
+    name = getattr(skill, "name", str(skill))
+    return Result("done", output={"text": f"(fake home: this is where the answer of the skill '{name}' would be)"},
+                  notes=["This is a fake home. No model was asked and nothing was read or written."],
+                  check={"status": "passed", "reasons": []},
+                  used={"requests": 0, "tokens": 0, "cost_usd": 0.0, "seconds": 0.0, "providers": {}}, skill=name, privacy="standard")
+
+
 class FakeHome(api.Home):
     def __init__(self, state: str = "normal", root: Path | None = None, clock: Callable[[], float] = time.time) -> None:
         if state not in STATES:
@@ -105,11 +116,18 @@ class FakeHome(api.Home):
         super().__init__(environ, clock=clock)
         self._fake_keys: set[str] = set()
         self._fake_connected: set[str] = set()
+        self.skills.runner = _fake_skill_run  # a fake home reaches no router: a run "finishes" with a canned answer
         self._seed()
 
     def close(self) -> None:
         if self._own_root:
             shutil.rmtree(self.root, ignore_errors=True)
+
+    def settings_env(self) -> dict[str, str]:
+        return dict(self.environ or {})  # a fake home reads no real .env and no real keychain
+
+    def run_env(self) -> dict[str, str]:
+        return dict(self.environ or {})
 
     # ---- canned behaviour
 

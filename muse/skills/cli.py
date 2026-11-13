@@ -219,7 +219,7 @@ def cmd_run(args: argparse.Namespace, env: Mapping[str, str]) -> int:
 def register(sub: Any, env: Callable[[], Mapping[str, str]]) -> None:
     """Add `muse skills` to the top-level parser. `env` returns the merged environment when a command runs."""
     p = sub.add_parser("skills", help="packaged abilities the helper can use: list, show, approve, run")
-    ssub = p.add_subparsers(dest="skills_cmd", metavar="list|show|approve|run")
+    ssub = p.add_subparsers(dest="skills_cmd", metavar="list|show|approve|run|folders")
 
     def bind(parser: argparse.ArgumentParser, fn: Callable[[argparse.Namespace, Mapping[str, str]], int]) -> None:
         parser.set_defaults(func=lambda args: fn(args, env()))
@@ -246,6 +246,11 @@ def register(sub: Any, env: Callable[[], Mapping[str, str]]) -> None:
     rn.add_argument("--yes", action="store_true", help="write the files it proposes without asking")
     rn.add_argument("--json", action="store_true", help="print the whole result as JSON")
     bind(rn, cmd_run)
+    # `muse skills folders add|list|rm`: the folders a skill may be given when run through the home API
+    # (by a host bot, say). The list and its commands live with the home: muse/home/folders.py.
+    from muse.home import folders as home_folders
+
+    home_folders.register_cli(ssub, bind)
 
     def usage(args: argparse.Namespace) -> int:
         p.print_help(sys.stderr)

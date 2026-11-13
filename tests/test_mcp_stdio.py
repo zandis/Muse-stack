@@ -150,7 +150,7 @@ def test_initialize_and_list_tools(rig):
         assert got.annotations.read_only_hint is spec.read_only and got.annotations.destructive_hint is False
     for absent in ("pay", "pause", "resume"):
         assert absent not in by_name
-    assert "started tools=11 token=file" in rig.stderr
+    assert "started tools=12 token=file" in rig.stderr
 
 
 def test_every_tool_answers_over_stdio(rig):
@@ -164,7 +164,8 @@ def test_every_tool_answers_over_stdio(rig):
         out["job"] = await call("queue_job", {"prompt": PROMPT_CANARY, "task": "light"})
         out["job_status"] = await call("job_status", {"id": out["job"][0]["job"]["id"]})
         out["skills"] = await call("list_skills")
-        out["run_skill"] = await call("run_skill", {"name": "weekly-digest"})
+        out["run_skill"] = await call("run_skill", {"name": "files-answer", "inputs": {"question": "what changed?"}})
+        out["skill_status"] = await call("skill_status", {"run_id": out["run_skill"][0]["run_id"]})
         out["ask"] = await call("ask_approval", {**ASK, "timeout_s": 0})
         out["check"] = await call("check_approval", {"card_id": out["ask"][0]["card_id"]})
         return out
@@ -179,7 +180,8 @@ def test_every_tool_answers_over_stdio(rig):
     assert got["record"]["recorded"] is True and got["record"]["action"] == "host.saved_a_file" and len(got["record"]["hash"]) == 64
     assert got["job"]["job"]["status"] == "queued" and got["job_status"]["job"]["id"] == got["job"]["job"]["id"]
     assert rig.home.queue().get(got["job"]["job"]["id"]).payload == PROMPT_CANARY  # it arrived; it never comes back
-    assert got["skills"]["built"] is False and got["run_skill"]["ran"] is False
+    assert got["skills"]["built"] is True and any(s["name"] == "files-answer" for s in got["skills"]["skills"])
+    assert got["run_skill"]["status"] == "done" and "fake home" in got["run_skill"]["answer"] and got["skill_status"] == got["run_skill"]
     assert got["ask"]["decision"] == "pending" and got["check"]["decision"] == "pending"
     assert got["ask"]["scope_note"] == got["check"]["scope_note"] == SCOPE_NOTE
     for name in [t.name for t in tools.TOOLS]:

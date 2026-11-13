@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 from pathlib import Path
@@ -27,7 +28,7 @@ KEY_CANARY = "gsk_CANARYtool0123456789abcdefABCDEF"
 PROMPT_CANARY = "CANARY-PROMPT-4be1 summarise my private notes"
 
 EXPECTED_TOOLS = ["allowance_status", "pause_status", "suggest_service", "ask_approval", "check_approval", "check_permission",
-                  "record_action", "queue_job", "job_status", "list_skills", "run_skill"]
+                  "record_action", "queue_job", "job_status", "list_skills", "run_skill", "skill_status"]
 
 
 class Rig:
@@ -551,22 +552,83 @@ def test_skills_answer_not_built_until_someone_connects_them(rig):
         rig.call("run_skill", bad, error="invalid_input")
 
 
-def test_a_connected_skills_backend_is_used_through_the_one_thin_function(rig):
-    class Backend:
-        def list(self):
-            return [{"name": "weekly-digest", "summary": "Summarise the week.", "internal": "not passed on"}]
+@pytest.fixture()
+def connected(rig):
+    """The tools server as `build_context` leaves it: skills reached through the home."""
+    skills.connect(skills.HomeSkills(rig.ctx.home))
+    yield rig
+    skills.connect(None)
 
-        def run(self, name, inputs):
-            return {"status": "done", "name": name, "inputs": inputs}
+
+def test_skills_are_listed_and_run_through_the_home(connected):
+    rig = connected
+    listed = rig.call("list_skills")
+    assert listed["built"] is True and listed["folders"] == [] and "cannot add one" in listed["about_folders"]
+    by_name = {s["name"]: s for s in listed["skills"]}
+    assert by_name["files-answer"]["can_run"] is True and by_name["files-answer"]["reads_folders"] is True
+    assert set(by_name["files-answer"]) == {"name", "summary", "can_run", "reads_folders", "proposes_files"}
+    assert len(by_name["files-answer"]["summary"]) <= 160
+    ran = rig.call("run_skill", {"name": "files-answer", "inputs": {"question": "what changed?"}})
+    assert ran["built"] is True and ran["ran"] is True and ran["status"] == "done" and ran["checked"] is True
+    assert "fake home" in ran["answer"] and ran["answer_cut_short"] is False and ran["scope_note"] == SCOPE_NOTE
+    assert re.fullmatch(tools.RUN_ID.strip("^$"), ran["run_id"]) and "files" not in ran
+    again = rig.call("skill_status", {"run_id": ran["run_id"]})
+    assert again == ran
+    # The run was started by this host's own device: the person's phone sees it, another device's id does not exist for the host.
+    assert rig.phone.call("GET", f"/v1/skills/runs/{ran['run_id']}")[1]["run"]["started_by"] == HOST
+    rig.call("skill_status", {"run_id": "0" * 16}, error="not_found")
+
+
+def test_run_skill_refusals_say_what_to_do(connected):
+    rig = connected
+    assert "list_skills" in rig.call("run_skill", {"name": "no-such-skill"}, error="not_found")["error"]["message"]
+    err = rig.call("run_skill", {"name": "files-answer", "folders": ["not-on-the-list"]}, error="invalid_input")
+    assert "folder names that list_skills shows" in err["error"]["message"]
+    for bad in ({}, {"name": "Bad Name"}, {"name": "ok", "inputs": "x"}, {"name": "ok", "inputs": {"a": "y" * 5000}},
+                {"name": "ok", "folders": ["/etc"]}, {"name": "ok", "folders": ["../x"]}, {"name": "ok", "out": "/tmp"},
+                {"name": "ok", "folders": ["a"] * 9}, {"name": "ok", "budget": {"paid_usd": 1}}, {"name": "ok", "timeout_s": 601}):
+        rig.call("run_skill", bad, error="invalid_input")  # a path is never a folder name, and a host cannot set a budget
+    rig.call("skill_status", {"run_id": "short"}, error="invalid_input")
+
+
+def test_a_run_that_outlasts_the_wait_is_picked_up_with_skill_status(connected):
+    rig = connected
+    release = threading.Event()
+    canned = rig.home.skills.runner
+    rig.home.skills.runner = lambda skill, inputs, **kw: release.wait(10) and canned(skill, inputs)
+    started = rig.call("run_skill", {"name": "files-answer", "timeout_s": 0})
+    assert started["status"] == "running" and started["ran"] is False and "skill_status" in started["what_to_do"] and "answer" not in started
+    assert "another skill is still running" in rig.call("run_skill", {"name": "files-answer"}, error="conflict")["error"]["message"]
+    release.set()
+    rig.home.skills.wait(started["run_id"])
+    assert rig.call("skill_status", {"run_id": started["run_id"]})["status"] == "done"
+
+
+def test_a_long_answer_is_cut_to_fit_and_says_so_and_proposed_files_are_listed_with_their_cards(connected):
+    rig = connected
+    run = {"id": "ab" * 8, "skill": "writer", "status": "partial", "result": {
+        "output": {"text": "line one\n" + "\"quoted\" " * 2000}, "notes": ["n" * 500] * 9, "check": {"status": "failed", "reasons": ["x"]}},
+        "writes": [{"card_id": f"{i:016x}", "file": "f" * 300, "size": 3, "state": state, "reason": None}
+                   for i, state in enumerate(["pending", "written", "refused", "discarded", "applying", "odd"] * 2)]}
+
+    class Backend:
+        def status(self, run_id):
+            return run
 
     skills.connect(Backend())
-    try:
-        assert rig.call("list_skills") == {"built": True, "skills": [{"name": "weekly-digest", "summary": "Summarise the week."}]}
-        ran = rig.call("run_skill", {"name": "weekly-digest", "inputs": {"week": "46"}})
-        assert ran["ran"] is True and ran["result"] == {"status": "done", "name": "weekly-digest", "inputs": {"week": "46"}}
-        assert ran["scope_note"] == SCOPE_NOTE
-    finally:
-        skills.connect(None)
+    got = rig.call("skill_status", {"run_id": "ab" * 8})
+    assert len(json.dumps(got, ensure_ascii=False)) <= tools.MAX_RESULT_CHARS
+    assert got["answer"].startswith("line one\n") and got["answer_cut_short"] is True and 500 < len(got["answer"]) <= tools.MAX_ANSWER_CHARS
+    assert got["checked"] is False and len(got["notes"]) == 5 and all(len(n) <= tools.MAX_TEXT for n in got["notes"])
+    assert len(got["files"]) == 10 and got["more_files"] == 2 and len(got["files"][0]["file"]) == 80
+    assert [f["state"].split(":")[0].split(";")[0] for f in got["files"][:6]] == [
+        "waiting for the person to approve it in Muse", "written", "approved, but could not be written", "not written", "being written", "unknown"]
+    assert "Do not write the file yourself" in got["about_files"]
+    # Replies of an unexpected shape never crash the tool or leak.
+    for odd in (None, [], "text", {"status": "exploded"}, {"status": "done", "result": "CANARY-ERRTEXT"}):
+        run = odd
+        got = rig.call("skill_status", {"run_id": "ab" * 8})
+        assert "CANARY" not in json.dumps(got) and got["status"] in ("failed", "done")
 
 
 def test_the_skills_bridge_imports_nothing_from_the_skills_package():
@@ -634,6 +696,13 @@ def test_an_unreachable_home_is_a_clear_tool_error_not_a_crash(tmp_path):
     # Tools that do not need the home keep working.
     assert tools.call(ctx, "check_permission", {"action": "write"})[0]["decision"] == "ask"
     assert tools.call(ctx, "list_skills", {})[1] is False
+    skills.connect(skills.HomeSkills(ctx.home))
+    try:
+        for name, args in (("list_skills", {}), ("run_skill", {"name": "files-answer"}), ("skill_status", {"run_id": "0" * 16})):
+            result, is_error = tools.call(ctx, name, args)
+            assert is_error and result["error"]["code"] == "home_unreachable", name
+    finally:
+        skills.connect(None)
 
 
 def test_a_wrong_token_and_an_unavailable_home(start):

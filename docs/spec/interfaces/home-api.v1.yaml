@@ -343,6 +343,12 @@ paths:
         `always: true` (only with `approve`) records that the person chose "Always allow this".
         The answering device's name is recorded as `answered_by`.
         A device that asked for the card (`POST /v1/cards`) cannot answer it: `forbidden` (403).
+
+        A card that stands for a file a skill proposed (`POST /v1/skills/{name}/run`) is acted on
+        here: approved, the home writes the file now (a new file only, inside the output folder,
+        checked again at this moment) and the reply says so in `write`; declined, the file's
+        contents are thrown away. Exactly one answer ever succeeds, so the file is written at
+        most once. A card that expires unanswered is treated as declined.
       parameters:
         - {$ref: "#/components/parameters/cardId"}
       requestBody:
@@ -358,10 +364,16 @@ paths:
                 always: {type: boolean, default: false}
       responses:
         "200":
-          description: The card as answered.
+          description: The card as answered, and what was done about a proposed file if it stood for one.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/CardReply"}
+              schema:
+                type: object
+                required: [card, recorded]
+                properties:
+                  card: {$ref: "#/components/schemas/Card"}
+                  recorded: {$ref: "#/components/schemas/Recorded"}
+                  write: {$ref: "#/components/schemas/WriteOutcome"}
         "400": {$ref: "#/components/responses/Invalid"}
         "404": {$ref: "#/components/responses/NotFound"}
         "409":
@@ -642,6 +654,115 @@ paths:
         "503": {$ref: "#/components/responses/Unavailable"}
         default: {$ref: "#/components/responses/Error"}
 
+  /v1/skills:
+    get:
+      operationId: listSkills
+      x-scope: skills.read
+      x-roles: [owner, host]
+      summary: The skills on the home, in plain words, and the folders a run may be given.
+      description: |
+        Every skill the home can load: what it does, what it asks for (one plain sentence per
+        line, the same lines `muse skills show` prints), and whether it may run. `approved` is
+        true for a skill that ships with Muse and for one of the person's own that they approved
+        and that has not changed since.
+
+        `folders` are the names a run may use for folders: the list the person keeps on the home
+        with `muse skills folders add|list|rm`. An `owner` device also sees each folder's path;
+        any other device sees names only.
+      responses:
+        "200":
+          description: The skills and the folder names.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [skills, broken, folders]
+                properties:
+                  skills: {type: array, items: {$ref: "#/components/schemas/Skill"}}
+                  broken: {type: integer, description: Skill folders on the home that could not be loaded. `muse skills list` names them.}
+                  folders:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, output]
+                      properties:
+                        name: {$ref: "#/components/schemas/FolderName"}
+                        output: {type: boolean, description: Skills may propose new files in it.}
+                        path: {type: string, description: Only for an `owner` device.}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/skills/{name}/run:
+    post:
+      operationId: runSkill
+      x-scope: skills.run
+      x-roles: [owner, host]
+      summary: Start a skill run. Answers at once with the run's id.
+      description: |
+        Runs one skill through the home's ordinary runner (the one `muse skills run` uses). The
+        reply comes at once with `status: running`; `GET /v1/skills/runs/{id}` says how it went.
+
+        A caller may be a host bot, so what it can choose is narrow:
+        * The skill must be `approved` (`conflict`, 409, otherwise).
+        * `folders` and `out` are NAMES from the person's list (`GET /v1/skills`), never paths. A
+          name that is not on the list, or whose folder has since gone or been replaced by a link,
+          is refused (`invalid_request`). `out` must be a folder the person allowed for new files.
+        * `budget`, `privacy` and `task` are optional and never beyond the skill's own: no budget
+          number above the skill's, no privacy class weaker than the skill's, no tier stronger
+          than the skill's (`invalid_request`). `paid_usd` is 0 unless given, and only an `owner`
+          device may give more than 0 (`forbidden`, 403, for anyone else).
+        * At most 2 runs at once on a home, and 1 at a time for a device that is not an `owner`
+          (`conflict`, 409).
+
+        Nothing a skill proposes is written by the run. Each proposed file (at most 20 a run)
+        becomes a `save_file` card; the home writes the file only when that card is approved
+        (`POST /v1/cards/{id}/answer`), and throws it away when the card is declined or expires.
+
+        The home records the run (`skill.run`; `egress` is `host:<name>` when a device that is not
+        an `owner` asked, since the answer goes back to it) and one `llm.call` per outside service
+        the run used.
+      parameters:
+        - {$ref: "#/components/parameters/skillName"}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/NewSkillRun"}
+      responses:
+        "202":
+          description: Started.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SkillRunReply"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/skills/runs/{id}:
+    get:
+      operationId: getSkillRun
+      x-scope: skills.read
+      x-roles: [owner, host]
+      summary: How a skill run went, and what became of the files it proposed.
+      description: |
+        `status` is `running`, or how the run ended: `done`, `partial` (something could not be
+        done; the notes say what), `needs_choice` (it could not finish on free allowance; the
+        choices the router offered are in `result.options`) or `failed`. `result.output` is the
+        skill's answer and may hold the person's content. `writes` lists each proposed file with
+        its card and its state. A device that is not an `owner` or `viewer` sees only the runs it
+        started; the home keeps the last 200 runs.
+      parameters:
+        - {$ref: "#/components/parameters/runId"}
+      responses:
+        "200":
+          description: The run.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SkillRunReply"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+
   /v1/mandates/artifacts:
     get:
       operationId: listMandateArtifacts
@@ -686,6 +807,17 @@ components:
       in: path
       required: true
       schema: {$ref: "#/components/schemas/AppName"}
+    skillName:
+      name: name
+      in: path
+      required: true
+      description: A skill's name, from `GET /v1/skills`.
+      schema: {type: string, pattern: "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$"}
+    runId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, pattern: "^[0-9a-f]{16}$"}
 
   responses:
     Error:
@@ -736,6 +868,109 @@ components:
                      too_many_requests, internal, not_built, unavailable]
             message: {type: string, description: One plain sentence. Never a secret, a prompt or internal error text.}
             retry_after: {type: integer, minimum: 0, description: Seconds. Also sent as the Retry-After header.}
+
+    FolderName:
+      type: string
+      pattern: "^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$"
+      description: A name on the person's list of folders skills may be given (`muse skills folders`).
+
+    Skill:
+      type: object
+      required: [name, description, version, source, approved, state, needs, reads_folders, writes_files, tier_default, privacy_default, budget]
+      properties:
+        name: {type: string}
+        description: {type: string}
+        version: {type: string}
+        source: {enum: [shipped, home], description: Ships with Muse, or is in the person's own skills folder.}
+        approved: {type: boolean, description: It may run.}
+        state: {enum: [ready, not-approved, changed]}
+        needs: {type: array, items: {type: string}, description: What it asks for, one plain sentence each.}
+        reads_folders: {type: boolean, description: It reads the folders named for a run.}
+        writes_files: {type: boolean, description: It proposes new files (each needs the person's approval).}
+        tier_default: {type: string}
+        privacy_default: {type: string}
+        budget:
+          type: object
+          required: [requests, tokens, seconds, paid_usd]
+          properties:
+            requests: {type: integer}
+            tokens: {type: integer}
+            seconds: {type: number}
+            paid_usd: {type: number}
+
+    NewSkillRun:
+      type: object
+      additionalProperties: false
+      properties:
+        inputs:
+          type: object
+          maxProperties: 32
+          description: The skill's inputs. Names are letters, digits and `_`; values are text (at most 20,000 characters), numbers, true or false.
+        folders: {type: array, maxItems: 8, items: {$ref: "#/components/schemas/FolderName"}, description: Folders the skill may read, by name.}
+        out: {oneOf: [{$ref: "#/components/schemas/FolderName"}, {type: "null"}], description: "The folder new files may be proposed in, by name. Absent: Muse's own folder for that skill."}
+        budget:
+          type: object
+          additionalProperties: false
+          description: Less than the skill's own budget, never more.
+          properties:
+            requests: {type: integer, minimum: 0}
+            tokens: {type: integer, minimum: 0}
+            seconds: {type: number, minimum: 0}
+            paid_usd: {type: number, minimum: 0, default: 0}
+        privacy: {type: [string, "null"], enum: [public, standard, private, local, null], description: "Never weaker than the skill's own."}
+        task: {type: [string, "null"], enum: [light, everyday, heavy, frontier, null], description: "Never stronger than the skill's own."}
+
+    WriteOutcome:
+      type: object
+      required: [state, file, reason]
+      properties:
+        state: {enum: [written, refused, discarded], description: "`refused`: approved, but it could not be written (the reason says why)."}
+        file: {type: string, description: The file's name.}
+        reason: {type: [string, "null"]}
+
+    SkillRun:
+      type: object
+      required: [id, skill, status, created_at, finished_at, started_by, result, writes]
+      properties:
+        id: {type: string, pattern: "^[0-9a-f]{16}$"}
+        skill: {type: string}
+        status: {enum: [running, done, partial, needs_choice, failed]}
+        created_at: {$ref: "#/components/schemas/Time"}
+        finished_at: {oneOf: [{$ref: "#/components/schemas/Time"}, {type: "null"}]}
+        started_by: {type: string, description: The device that started it.}
+        result:
+          type: [object, "null"]
+          description: Null while running. `output` is the skill's answer and may hold the person's content.
+          properties:
+            output: {}
+            notes: {type: array, items: {type: string}}
+            check:
+              type: object
+              properties:
+                status: {enum: [passed, failed, not-run]}
+                reasons: {type: array, items: {type: string}}
+            used: {type: object, description: "Requests, tokens, cost and the services used. Counts only."}
+            options: {type: array, items: {type: object}, description: "For `needs_choice`: exactly what the router offered."}
+            refusal: {type: [object, "null"]}
+            privacy: {type: string}
+        writes:
+          type: array
+          description: The files the run proposed. Each is a card; nothing is written until its card is approved.
+          items:
+            type: object
+            required: [card_id, file, size, state, reason]
+            properties:
+              card_id: {type: string, pattern: "^[0-9a-f]{16}$"}
+              file: {type: string}
+              size: {type: integer}
+              state: {enum: [pending, applying, written, refused, discarded]}
+              reason: {type: [string, "null"]}
+
+    SkillRunReply:
+      type: object
+      required: [run]
+      properties:
+        run: {$ref: "#/components/schemas/SkillRun"}
 
     Recorded:
       type: boolean

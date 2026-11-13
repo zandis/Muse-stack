@@ -44,10 +44,13 @@ EXPECTED: dict[tuple[str, str], set[str]] = {
     ("POST", "/v1/apps/{name}/rotate"): {O},
     ("GET", "/v1/receipts"): {O, V},
     ("POST", "/v1/receipts"): {O, H},
+    ("GET", "/v1/skills"): {O, H},
+    ("POST", "/v1/skills/{name}/run"): {O, H},
+    ("GET", "/v1/skills/runs/{id}"): {O, H},
     ("GET", "/v1/mandates/artifacts"): {O},
 }
 
-PARAMS = {"provider": "groq", "id": "0123456789ab", "name": "some-name"}
+PARAMS = {"provider": "groq", "id": "0123456789ab", "name": "some-name"}  # nothing by these names exists
 KEY_CANARY = "gsk_CANARYkey0123456789abcdefABCDEF"
 
 
@@ -86,7 +89,7 @@ def test_every_route_declares_a_known_scope_and_the_roles_follow_from_it():
     for route in api.ROUTES:
         assert route.scope in auth.SCOPES, (route.method, route.path)
         assert set(api.route_roles(route)) == EXPECTED[(route.method, route.path)], (route.method, route.path)
-    assert {r.scope for r in api.ROUTES} <= set(auth.SCOPES)
+    assert {r.scope for r in api.ROUTES} == set(auth.SCOPES)  # no scope that no route uses
     assert auth.ROLE_SCOPES[O] == frozenset(auth.SCOPES)
     assert auth.ROLE_SCOPES[H] < auth.ROLE_SCOPES[O] and auth.ROLE_SCOPES[V] < auth.ROLE_SCOPES[O]
 
