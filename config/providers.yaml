@@ -34,10 +34,24 @@
 #   smaller max_tokens / max_completion_tokens / max_output_tokens to it for
 #   that one upstream call, reported as `x-muse-min-output: raised:<from>-><to>`.
 #   A request that sets no cap is left alone, and nothing is ever lowered.
-#   The 256 used below is NOT from any provider's documentation. It is the
-#   owner's observation on real keys on 2026-11-12/13: gpt-oss models returned
-#   an empty answer at max_tokens 16-20 and a normal one at 300. Set it only
-#   on models known to reason before answering.
+#   The 1024 used below is NOT from any provider's documentation. It is the
+#   owner's observation on real keys: gpt-oss models returned an empty answer at
+#   max_tokens 16-20 and a normal one at 300 (2026-11-12/13), and the first
+#   skills run (2026-11-13) still got empty answers at the light ceiling of 300.
+#   A floor above a task's ceiling wins for that deployment (that is the point),
+#   so a light call to these models may use up to 1024 output tokens of the
+#   allowance. Set it only on models known to reason before answering.
+#
+# reasoning: optional, per chat deployment, e.g.
+#     reasoning: {param: reasoning_effort, light: low, everyday: low}
+#   Asks a reasoning model to think less on the named task tiers. The renderer
+#   writes model_info.muse_reasoning; the hook (muse/hook.py) sets the parameter
+#   on the upstream call by the request's task when the client did not set it,
+#   and answers `x-muse-reasoning: <value>`. Only where the provider documents
+#   the parameter for that model AND LiteLLM passes it through for that route
+#   (drop_params is on, so a dropped parameter would silently do nothing):
+#   checked 2026-11-13 for groq/ and cerebras/ (yes) and nvidia_nim/ and
+#   novita/ (LiteLLM 1.108.5 drops reasoning_effort there: no field).
 #
 # quota: optional, per provider, e.g. {requests_per_month: 1000}. Used by
 #   `muse status` and by the reserve rule when the provider reports nothing.
@@ -293,9 +307,15 @@ providers:
       - id: groq-gpt-oss-20b
         model: groq/openai/gpt-oss-20b
         mode: chat
-        # 2026-11-13: owner's observation (2026-11-12/13), not provider documentation: gpt-oss
-        # reasons first; empty answer at max_tokens 16-20, fine at 300.
-        min_output_tokens: 256
+        # 2026-11-13: owner's observation, not provider documentation: gpt-oss reasons first;
+        # empty answer at max_tokens 16-20, fine at 300 (2026-11-12). The first skills run on
+        # real keys (2026-11-13, research-report) still had 21 of 62 answers empty at the light
+        # ceiling of 300, which the old floor of 256 never raised: 1024 leaves room to answer.
+        min_output_tokens: 1024
+        # reasoning_effort low|medium|high is documented for GPT-OSS 20B/120B on
+        # https://console.groq.com/docs/reasoning (read 2026-11-13); LiteLLM 1.108.5 passes it
+        # through for groq/ (get_supported_openai_params). Less thinking on short tasks.
+        reasoning: {param: reasoning_effort, light: low, everyday: low}
         aliases: [fast, cheap]
         order: 1
         rpm: 30
@@ -306,9 +326,15 @@ providers:
       - id: groq-gpt-oss-120b
         model: groq/openai/gpt-oss-120b
         mode: chat
-        # 2026-11-13: owner's observation (2026-11-12/13), not provider documentation: gpt-oss
-        # reasons first; empty answer at max_tokens 16-20, fine at 300.
-        min_output_tokens: 256
+        # 2026-11-13: owner's observation, not provider documentation: gpt-oss reasons first;
+        # empty answer at max_tokens 16-20, fine at 300 (2026-11-12). The first skills run on
+        # real keys (2026-11-13, research-report) still had 21 of 62 answers empty at the light
+        # ceiling of 300, which the old floor of 256 never raised: 1024 leaves room to answer.
+        min_output_tokens: 1024
+        # reasoning_effort low|medium|high is documented for GPT-OSS 20B/120B on
+        # https://console.groq.com/docs/reasoning (read 2026-11-13); LiteLLM 1.108.5 passes it
+        # through for groq/ (get_supported_openai_params). Less thinking on short tasks.
+        reasoning: {param: reasoning_effort, light: low, everyday: low}
         aliases: [smart]
         order: 1
         rpm: 20
@@ -734,9 +760,11 @@ providers:
       - id: novita-gpt-oss-120b
         model: novita/openai/gpt-oss-120b
         mode: chat
-        # 2026-11-13: owner's observation (2026-11-12/13), not provider documentation: gpt-oss
-        # reasons first; empty answer at max_tokens 16-20, fine at 300.
-        min_output_tokens: 256
+        # 2026-11-13: owner's observation, not provider documentation: gpt-oss reasons first;
+        # empty answer at max_tokens 16-20, fine at 300 (2026-11-12). The first skills run on
+        # real keys (2026-11-13, research-report) still had 21 of 62 answers empty at the light
+        # ceiling of 300, which the old floor of 256 never raised: 1024 leaves room to answer.
+        min_output_tokens: 1024
         aliases: [cheap, smart]
         order: 4
         rpm: 8
@@ -935,9 +963,11 @@ providers:
       - id: nim-gpt-oss-20b
         model: nvidia_nim/openai/gpt-oss-20b
         mode: chat
-        # 2026-11-13: owner's observation (2026-11-12/13), not provider documentation: gpt-oss
-        # reasons first; empty answer at max_tokens 16-20, fine at 300.
-        min_output_tokens: 256
+        # 2026-11-13: owner's observation, not provider documentation: gpt-oss reasons first;
+        # empty answer at max_tokens 16-20, fine at 300 (2026-11-12). The first skills run on
+        # real keys (2026-11-13, research-report) still had 21 of 62 answers empty at the light
+        # ceiling of 300, which the old floor of 256 never raised: 1024 leaves room to answer.
+        min_output_tokens: 1024
         aliases: [fast, cheap]
         order: 5
         rpm: 5
@@ -1024,9 +1054,15 @@ providers:
       - id: cerebras-gpt-oss-120b
         model: cerebras/gpt-oss-120b
         mode: chat
-        # 2026-11-13: owner's observation (2026-11-12/13), not provider documentation: gpt-oss
-        # reasons first; empty answer at max_tokens 16-20, fine at 300.
-        min_output_tokens: 256
+        # 2026-11-13: owner's observation, not provider documentation: gpt-oss reasons first;
+        # empty answer at max_tokens 16-20, fine at 300 (2026-11-12). The first skills run on
+        # real keys (2026-11-13, research-report) still had 21 of 62 answers empty at the light
+        # ceiling of 300, which the old floor of 256 never raised: 1024 leaves room to answer.
+        min_output_tokens: 1024
+        # reasoning_effort low|medium (default)|high for gpt-oss-120b, reasoning tokens count toward
+        # max_completion_tokens: https://inference-docs.cerebras.ai/capabilities/reasoning (read
+        # 2026-11-13); LiteLLM 1.108.5 passes it through for cerebras/.
+        reasoning: {param: reasoning_effort, light: low, everyday: low}
         aliases: [smart]
         order: 2
         rpm: 5
