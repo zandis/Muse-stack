@@ -976,6 +976,75 @@ def _seal_vectors(v: _Vectors, chain: list[dict[str, Any]]) -> None:
     vt("not JSON", "muse records export", "malformed")
 
 
+EGRESS_ENTRIES: list[dict[str, Any]] = [
+    {"time": T0, "actor": "person", "action": "home.pause", "outcome": "ok", "summary": "Paused the queue", "egress": "none"},
+    {"time": T0 + 1_000, "actor": "helper", "action": "llm.call", "outcome": "ok", "summary": "Asked Gemini to summarise 3 notes",
+     "cost": {"currency": "TWD", "minor": 30}, "links": {"job": "job-17"}, "egress": "service:gemini"},
+    {"time": T0 + 2_000, "actor": "helper", "action": "llm.call", "outcome": "ok", "summary": "Answered by the model on the home",
+     "egress": "home"},
+    {"time": T0 + 3_000, "actor": "helper", "action": "skill.run", "outcome": "ok", "mandate": "device:openmausbot-tools",
+     "summary": "Ran the skill files-answer for a host bot", "egress": "host:openmausbot-tools"},
+    {"time": T0 + 4_000, "actor": "person", "action": "card.answer", "outcome": "declined", "summary": "Declined: save a file",
+     "links": {"card": "card-9"}},  # no egress: the record does not say
+]
+
+
+def _egress_vectors(v: _Vectors, chain: list[dict[str, Any]]) -> None:
+    """`egress`: an optional signed member. Its values, its bytes, and what editing it does to a signature."""
+    base = {"time": T0 + 200_000, "actor": "helper", "action": "files.write", "outcome": "ok", "summary": "Wrote a file"}
+
+    def ap(label: str, entry: dict[str, Any], want: str) -> None:
+        v.add("append", label, {"head": chain[-1], "entry": entry, "test_only_seed": SEED_A, "test_only_ref_key": REF_KEY}, want)
+
+    for value in ("none", "home", "service:gemini", "service:nvidia_nim", "service:api.example.com", "service:0", "host:openmausbot-tools",
+                  "host:a.b_c-d", "service:" + "a" * 64, "host:" + "9" * 64):
+        ap(f"egress {value[:32]} ({len(value)})", {**base, "egress": value}, "ok")
+    ap("egress with links, cost, mandate and a resource",
+       {**base, "egress": "service:gemini", "links": {"job": "j1"}, "cost": {"currency": "USD", "minor": 2}, "mandate": "m1",
+        "resource": "file:/a"}, "ok")
+    for value in ("", "None", "NONE", "Home", "none ", " none", "service", "service:", "host:", "service:Gemini", "service:-x",
+                  "service:.x", "service:_x", "service:a b", "service:a:b", "service:a/b", "host:主機", "cloud", "device:phone",
+                  "home:desk", "none:x", "service:" + "a" * 65, "service:gemini\n", None, 5, True, ["none"], {"to": "home"}):
+        shown = json.dumps(value, ensure_ascii=True)
+        ap(f"bad egress {shown[:24]} ({len(shown)})", {**base, "egress": value}, "malformed")
+    ap("a bad egress is reported before a bad summary", {**base, "egress": "cloud", "summary": "a" * 201}, "malformed")
+    ap("a good egress does not hide a bad summary", {**base, "egress": "home", "summary": "a" * 201}, "summary")
+
+    records = make_chain(EGRESS_ENTRIES)
+    for i, record in enumerate(records):
+        v.add("canonical_bytes", f"egress chain record {i}, signed fields", {"record": record, "with_sig": False}, "ok")
+        v.add("canonical_bytes", f"egress chain record {i}, with sig", {"record": record, "with_sig": True}, "ok")
+        v.add("hash", f"egress chain record {i}", {"record": record}, "ok")
+        v.add("redact", f"egress chain record {i}", {"record": record}, "ok")
+        v.add("verify_record", f"egress chain record {i}", {"record": record, "device": DEVICE_A}, "ok")
+    v.add("verify_chain", "the egress chain", {"records": records, "device": DEVICE_A}, "ok")
+    v.add("verify_chain", "the egress chain, redacted", {"records": [fmt.redact(r) for r in records], "device": DEVICE_A}, "ok")
+
+    r = records[1]
+    vr = lambda label, record, want: v.add("verify_record", label, {"record": record, "device": DEVICE_A}, want)  # noqa: E731
+    for value in ("none", "home", "service:groq", "host:gemini"):
+        vr(f"egress edited -> {value}", {**r, "egress": value}, "bad_signature")
+    vr("egress removed", {k: x for k, x in r.items() if k != "egress"}, "bad_signature")
+    vr("egress added to a record signed without one", {**records[4], "egress": "none"}, "bad_signature")
+    vr("egress added to a record of chain A", {**chain[2], "egress": "service:gemini"}, "bad_signature")
+    for value in ("", "cloud", "service:", "Service:gemini", "service:" + "a" * 65, None, 0, ["home"]):
+        shown = json.dumps(value, ensure_ascii=True)
+        vr(f"egress malformed {shown[:24]} ({len(shown)})", {**r, "egress": value}, "malformed")
+    v.add("verify_chain", "egress edited in the middle of a chain",
+          {"records": records[:2] + [{**records[2], "egress": "none"}] + records[3:], "device": DEVICE_A}, "bad_signature")
+
+    cp = seal.checkpoint([fmt.record_hash(x) for x in records], T0 + 10_000, bytes.fromhex(SEED_A))
+    full = v.add("export", "the egress chain", {"records": records, "checkpoint": cp, "select": None, "redact_summaries": False}, "ok")["ok"]
+    subset = v.add("export", "the egress chain: the records that left the devices",
+                   {"records": records, "checkpoint": cp, "select": [i for i, x in enumerate(records) if fmt.left_devices(x)],
+                    "redact_summaries": True}, "ok")["ok"]
+    v.add("verify_export", "the egress chain", {"export": full, "device": DEVICE_A}, "ok")
+    v.add("verify_export", "the egress chain: the records that left the devices", {"export": subset, "device": None}, "ok")
+    edited = copy.deepcopy(subset)
+    edited["records"][0]["egress"] = "none"
+    v.add("verify_export", "egress edited in a subset export", {"export": edited, "device": None}, "bad_signature")
+
+
 def build() -> list[dict[str, Any]]:
     """Every vector, in a fixed order."""
     v = _Vectors()
@@ -986,6 +1055,7 @@ def build() -> list[dict[str, Any]]:
     _chain_vectors(v, chain)
     _merkle_vectors(v)
     _seal_vectors(v, chain)
+    _egress_vectors(v, chain)  # added with the `egress` member; kept last so every earlier vector is byte for byte as it was
     missing = set(FUNCTIONS) - {x["fn"] for x in v.vectors}
     if missing:
         raise SystemExit(f"records: no vectors for {sorted(missing)}")

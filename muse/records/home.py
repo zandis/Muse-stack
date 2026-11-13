@@ -123,13 +123,19 @@ class HomeRecords:
         return int(self.clock() * 1000)
 
     def write(self, action: str, summary: str, *, actor: str = "person", outcome: str = "ok", mandate: str | None = None,
-              resource: str | None = None, cost: Mapping[str, Any] | None = None, links: Mapping[str, str] | None = None) -> dict[str, Any]:
-        """Append one record to the home's chain and return it."""
+              resource: str | None = None, cost: Mapping[str, Any] | None = None, links: Mapping[str, str] | None = None,
+              egress: str | None = None) -> dict[str, Any]:
+        """Append one record to the home's chain and return it.
+
+        `egress` says where the content of the action went (`none`, `home`, `service:<id>`, `host:<name>`);
+        leave it out when the writer does not know."""
         keys = self.keys
         entry: dict[str, Any] = {"actor": actor, "action": action, "outcome": outcome, "summary": summary,
                                  "mandate": mandate, "resource": resource, "cost": cost}
         if links:
             entry["links"] = dict(links)
+        if egress is not None:
+            entry["egress"] = egress
         now = self._now_ms()
 
         def make(head: dict[str, Any] | None) -> dict[str, Any]:
@@ -183,3 +189,11 @@ class HomeRecords:
         records = self.store.all()[:cp["size"]]
         select = None if keep is None else [r["seq"] for r in records if keep(r)]
         return export(records, cp, select, redact_summaries)
+
+
+def record_pause(environ: Mapping[str, str] | None, paused: bool, clock: Callable[[], float] = time.time) -> dict[str, Any]:
+    """The record a pause or a resume leaves. One function for `muse pause` / `muse resume` and for the
+    home API's pause and resume calls, so both write the same thing. Raises when it cannot be written;
+    the caller decides what that means (the pause itself has already happened and must stand)."""
+    action, summary = ("home.pause", "Paused the queue") if paused else ("home.resume", "Resumed the queue")
+    return HomeRecords(environ, clock=clock).write(action, summary, actor="person", egress="none")

@@ -48,9 +48,9 @@ const D_CHECKPOINT: &[u8] = b"muse/checkpoint/v1/sig\x00";
 
 const REQUIRED_FIELDS: [&str; 13] =
     ["v", "device", "seq", "time", "mandate", "actor", "action", "resource", "summary_hash", "outcome", "cost", "prev", "sig"];
-const OPTIONAL_FIELDS: [&str; 3] = ["links", "summary", "summary_salt"];
+const OPTIONAL_FIELDS: [&str; 4] = ["links", "egress", "summary", "summary_salt"];
 const ENTRY_REQUIRED: [&str; 5] = ["time", "actor", "action", "outcome", "summary"];
-const ENTRY_OPTIONAL: [&str; 4] = ["mandate", "resource", "cost", "links"];
+const ENTRY_OPTIONAL: [&str; 5] = ["mandate", "resource", "cost", "links", "egress"];
 
 /// Summary rule, part 3 (append only): prefixes of well-known credentials.
 pub const KEY_PREFIXES: [&str; 25] = [
@@ -295,6 +295,35 @@ fn is_action(text: &str) -> bool {
 
 fn is_currency(text: &str) -> bool {
     (3..=8).contains(&text.len()) && text.bytes().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+}
+
+/// `egress`: `none`, `home`, `service:<id>` or `host:<id>`; an id is 1 to 64 of `a-z 0-9 . _ -`, starting with `a-z 0-9`.
+fn is_egress(text: &str) -> bool {
+    if text == "none" || text == "home" {
+        return true;
+    }
+    let Some(id) = text.strip_prefix("service:").or_else(|| text.strip_prefix("host:")) else {
+        return false;
+    };
+    let b = id.as_bytes();
+    (1..=64).contains(&b.len())
+        && (b[0].is_ascii_lowercase() || b[0].is_ascii_digit())
+        && b.iter().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, b'.' | b'_' | b'-'))
+}
+
+/// Did the content of the action leave the person's devices, by the record's own statement?
+/// True for `service:...` and `host:...`; false for `none`, `home`, and for a record that does not say.
+pub fn left_devices(record: &Record) -> bool {
+    record.egress.as_deref().is_some_and(|e| e.starts_with("service:") || e.starts_with("host:"))
+}
+
+/// A member that is text when present; absent is None, and anything else (also `null`) is `Malformed`.
+fn present_text(v: Option<&Value>) -> Result<Option<String>, Problem> {
+    match v {
+        None => Ok(None),
+        Some(Value::String(s)) => Ok(Some(s.clone())),
+        Some(_) => malformed(),
+    }
 }
 
 fn bad_char(c: char) -> bool {
@@ -573,6 +602,8 @@ pub struct Entry {
     pub resource: Option<String>,
     pub cost: Option<Cost>,
     pub links: Links,
+    /// Where the content of the action went: `none`, `home`, `service:<id>`, `host:<name>`. None: not stated.
+    pub egress: Option<String>,
 }
 
 impl Entry {
@@ -594,6 +625,7 @@ impl Entry {
             resource: None,
             cost: Cost::parse(map.get("cost").unwrap_or(&Value::Null))?,
             links: Links::parse(map.get("links"))?,
+            egress: present_text(map.get("egress"))?,
         };
         entry.check()?;
         let summary = map["summary"].as_str().ok_or(Problem::from(Kind::Summary))?.to_string();
@@ -614,7 +646,11 @@ impl Entry {
         if let Some(cost) = &self.cost {
             cost.check()?;
         }
-        self.links.check()
+        self.links.check()?;
+        if self.egress.as_deref().is_some_and(|e| !is_egress(e)) {
+            return malformed();
+        }
+        Ok(())
     }
 }
 
@@ -638,6 +674,8 @@ pub struct Record {
     pub outcome: Outcome,
     pub cost: Option<Cost>,
     pub links: Links,
+    /// Where the content of the action went (signed when present). None: the record does not say.
+    pub egress: Option<String>,
     /// The hash of the record before, or the device's genesis value.
     pub prev: String,
     /// Ed25519 signature, 128 hex.
@@ -673,6 +711,7 @@ impl Record {
             outcome: Outcome::parse(&map["outcome"])?,
             cost: Cost::parse(&map["cost"])?,
             links: Links::parse(map.get("links"))?,
+            egress: present_text(map.get("egress"))?,
             prev: text(&map["prev"])?,
             sig: text(&map["sig"])?,
             summary: optional_text("summary")?,
@@ -696,7 +735,8 @@ impl Record {
             && is_hex(&self.sig, 128)
             && self.summary.is_some() == self.summary_salt.is_some()
             && self.summary.as_deref().is_none_or(summary_shape_ok)
-            && self.summary_salt.as_deref().is_none_or(|s| is_hex(s, 32));
+            && self.summary_salt.as_deref().is_none_or(|s| is_hex(s, 32))
+            && self.egress.as_deref().is_none_or(is_egress);
         if !ok {
             return malformed();
         }
@@ -722,6 +762,9 @@ impl Record {
         map.insert("prev".into(), json!(self.prev));
         if !self.links.is_empty() {
             map.insert("links".into(), self.links.to_value());
+        }
+        if let Some(egress) = &self.egress {
+            map.insert("egress".into(), json!(egress));
         }
         if with_sig {
             map.insert("sig".into(), json!(self.sig));
@@ -936,6 +979,7 @@ pub fn append(head: Option<&Record>, entry: &Entry, signer: &dyn Signer, ref_key
         outcome: entry.outcome,
         cost: entry.cost.clone(),
         links: entry.links.clone(),
+        egress: entry.egress.clone(),
         prev,
         sig: String::new(),
         summary: Some(summary),

@@ -53,6 +53,8 @@ fn entry(rng: &mut Rng, time: u64, i: usize) -> Entry {
         resource: (rng.below(3) != 0).then(|| format!("file:/docs/檔案-{i}.txt")),
         cost: (rng.below(4) == 0).then(|| Cost { currency: "TWD".to_string(), minor: rng.below(1 << 40) }),
         links: if rng.below(3) == 0 { Links { job: Some(format!("job-{}", rng.below(99))), ..Links::default() } } else { Links::default() },
+        // From the index, not the generator, so the rest of each chain is what it was before `egress` existed.
+        egress: [None, Some("none"), Some("home"), Some("service:gemini"), Some("host:openmausbot-tools")][i % 5].map(str::to_string),
     }
 }
 
@@ -314,4 +316,34 @@ fn no_float_reaches_a_record() {
     let mut too_big = record.clone();
     too_big.seq = records::MAX_INT + 1;
     assert_eq!(kind(records::canonical_bytes(&too_big, false)), (Kind::Malformed, None));
+}
+
+#[test]
+fn egress_is_signed_optional_and_says_what_left() {
+    let records = chain(21, 10); // index i carries: nothing, none, home, service:gemini, host:..., and again
+    let device = signer().device();
+    let said: Vec<Option<&str>> = records.iter().map(|r| r.egress.as_deref()).collect();
+    assert_eq!(&said[..5], &[None, Some("none"), Some("home"), Some("service:gemini"), Some("host:openmausbot-tools")]);
+    let left: Vec<bool> = records.iter().map(records::left_devices).collect();
+    assert_eq!(&left[..5], &[false, false, false, true, true]); // "does not say" is not "left"
+    for record in &records {
+        records::verify_record(record, Some(&device)).unwrap();
+        let bytes = String::from_utf8(records::canonical_bytes(record, false).unwrap()).unwrap();
+        assert_eq!(bytes.contains("\"egress\""), record.egress.is_some()); // absent is left out, never null
+        assert_eq!(Record::from_value(&record.to_value()).unwrap(), *record);
+        // Changing, adding or removing it breaks the signature.
+        let mut edited = record.clone();
+        edited.egress = if record.egress.as_deref() == Some("none") { None } else { Some("none".to_string()) };
+        assert_eq!(kind(records::verify_record(&edited, Some(&device))), (Kind::BadSignature, None));
+        // Redaction keeps it.
+        assert_eq!(records::redact(record).egress, record.egress);
+    }
+    for bad in ["", "cloud", "service:", "host:", "service:Gemini", "None", "service:a b"] {
+        let mut value = records[3].to_value();
+        value["egress"] = serde_json::json!(bad);
+        assert_eq!(kind(Record::from_value(&value)), (Kind::Malformed, None), "{bad:?}");
+    }
+    let mut value = records[3].to_value();
+    value["egress"] = Value::Null;
+    assert_eq!(kind(Record::from_value(&value)), (Kind::Malformed, None));
 }

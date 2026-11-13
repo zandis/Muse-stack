@@ -1926,7 +1926,7 @@ def cmd_records(args: argparse.Namespace) -> int:
     try:
         from muse.records import commands
     except ImportError as exc:
-        _err(f"Error: records need the `cryptography` package ({type(exc).__name__}).")
+        _err(f"Error: records need the `cryptography` package ({type(exc).__name__}). Install it with: pip install 'muse-stack[records]'")
         return 1
     try:
         if args.records_command == "verify":
@@ -1934,12 +1934,13 @@ def cmd_records(args: argparse.Namespace) -> int:
         if args.records_command == "seal":
             return commands.seal(_env())
         if args.records_command == "list":
-            return commands.list_records(_env(), args.since, args.action, args.cost_only, args.json)
+            return commands.list_records(_env(), args.since, args.action, args.cost_only, args.json,
+                                         left_device=args.left_device)
         if args.records_command == "export":
             return commands.export_file(_env(), args.file, args.since, args.action, args.cost_only, args.redact_summaries)
         return commands.check_file(args.file, args.device, as_json=args.json)
     except ImportError as exc:  # cryptography is imported on first signature
-        _err(f"Error: records need the `cryptography` package ({type(exc).__name__}).")
+        _err(f"Error: records need the `cryptography` package ({type(exc).__name__}). Install it with: pip install 'muse-stack[records]'")
         return 1
 
 
@@ -1957,6 +1958,8 @@ def register_records_commands(sub: Any) -> None:
 
     ls = rsub.add_parser("list", help="records, newest first")
     filters(ls)
+    ls.add_argument("--left-device", action="store_true",
+                    help="only records whose content left your devices: sent to an outside service or given to a host bot")
     ls.add_argument("--json", action="store_true")
     ex = rsub.add_parser("export", help="write a file someone else can check (never overwrites)")
     ex.add_argument("file", metavar="FILE")

@@ -489,3 +489,70 @@ def test_the_worked_example_in_the_format_document_is_what_the_code_produces():
         assert f"`{prefix}`" in doc, prefix
     for kind in KINDS:
         assert f"`{kind}`" in doc, kind
+
+
+# ---------------------------------------------------------------- egress: where the content went
+
+
+BASE = {"time": T0, "actor": "helper", "action": "llm.call", "outcome": "ok", "summary": "Asked a question"}
+
+
+def test_egress_is_optional_and_a_record_without_it_is_byte_for_byte_what_it_was():
+    plain = records.append(None, BASE, SEED, REF)
+    assert "egress" not in plain and b"egress" not in fmt.canonical_bytes(plain)
+    # The chain of the worked example was made before `egress` existed; its bytes are pinned in the document.
+    assert not any("egress" in r for r in vectors.make_chain(vectors.ENTRIES))
+    with_egress = records.append(None, {**BASE, "egress": "service:gemini"}, SEED, REF)
+    assert with_egress["egress"] == "service:gemini"
+    assert b'"egress":"service:gemini"' in fmt.canonical_bytes(with_egress)
+    assert with_egress["sig"] != plain["sig"] and records.hash(with_egress) != records.hash(plain)
+    records.verify_record(with_egress)
+    assert records.verify_chain([with_egress]) == 1
+
+
+@pytest.mark.parametrize("value", ["none", "home", "service:gemini", "service:nvidia_nim", "host:openmausbot-tools", "service:" + "a" * 64])
+def test_egress_values_that_are_allowed(value):
+    record = records.append(None, {**BASE, "egress": value}, SEED, REF)
+    records.verify_record(record)
+    assert fmt.left_devices(record) == value.startswith(("service:", "host:"))
+
+
+@pytest.mark.parametrize("value", ["", "None", "cloud", "service:", "host:", "service:Gemini", "service:a b", "service:" + "a" * 65,
+                                   "device:phone", None, 3, ["home"]])
+def test_egress_values_that_are_refused(value):
+    assert kind_of(records.append, None, {**BASE, "egress": value}, SEED, REF) == ("malformed", None)
+    good = records.append(None, {**BASE, "egress": "home"}, SEED, REF)
+    assert kind_of(records.verify_record, {**good, "egress": value}) == ("malformed", None)
+
+
+def test_egress_is_signed_so_it_cannot_be_changed_added_or_removed():
+    chain = vectors.make_chain(vectors.EGRESS_ENTRIES)
+    assert records.verify_chain(chain) == len(chain)
+    sent = chain[1]
+    assert sent["egress"] == "service:gemini"
+    assert kind_of(records.verify_record, {**sent, "egress": "none"}) == ("bad_signature", None)
+    assert kind_of(records.verify_record, {k: v for k, v in sent.items() if k != "egress"}) == ("bad_signature", None)
+    unsaid = chain[4]
+    assert "egress" not in unsaid
+    assert kind_of(records.verify_record, {**unsaid, "egress": "none"}) == ("bad_signature", None)
+    assert kind_of(records.verify_chain, chain[:1] + [{**sent, "egress": "home"}] + chain[2:]) == ("bad_signature", 1)
+    # Redaction hides the summary, not where the content went.
+    redacted = records.redact(sent)
+    assert redacted["egress"] == "service:gemini" and "summary" not in redacted
+    records.verify_record(redacted)
+
+
+def test_left_devices_is_true_only_for_a_service_or_a_host_bot():
+    chain = vectors.make_chain(vectors.EGRESS_ENTRIES)
+    assert [r.get("egress") for r in chain] == ["none", "service:gemini", "home", "host:openmausbot-tools", None]
+    assert [fmt.left_devices(r) for r in chain] == [False, True, False, True, False]  # "does not say" is not "left"
+
+
+def test_the_format_document_defines_egress_and_lists_the_action_names():
+    doc = (ROOT / "docs" / "spec" / "interfaces" / "record-format.md").read_text(encoding="utf-8")
+    for value in ("`none`", "`home`", "`service:<id>`", "`host:<name>`"):
+        assert value in doc, value
+    assert "### 1.2 Where the content went (`egress`)" in doc and "and `links` and `egress` when present" in doc
+    for action in ("home.pause", "home.resume", "card.create", "card.answer", "app.create", "app.update", "app.remove", "app.rotate",
+                   "key.store", "job.queue", "job.cancel", "skill.run", "llm.call", "files.write"):
+        assert f"`{action}`" in doc, action

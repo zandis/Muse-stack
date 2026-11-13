@@ -324,6 +324,34 @@ def test_records_list_filters(capsys, monkeypatch):
     assert code == 2 and "--since" in err
 
 
+def test_records_list_left_device(capsys):
+    h = HomeRecords(clock=Clock())
+    assert run(["records", "list", "--left-device"], capsys)[1] == "No records yet.\n"
+    h.write("home.pause", "Paused the queue", egress="none")
+    h.write("llm.call", "Asked Gemini a question", actor="helper", egress="service:gemini")
+    h.write("llm.call", "Answered on the home", actor="helper", egress="home")
+    h.write("skill.run", "Ran a skill for a host bot", actor="helper", mandate="device:bot-tools", egress="host:bot-tools")
+    h.write("files.write", "Wrote a file", actor="helper")  # an older writer: it does not say
+    everything = run(["records", "list"], capsys)[1]
+    assert everything.count("#") == 5 and "sent to gemini" in everything and "given to the host bot bot-tools" in everything
+    assert "sent to your home" in everything and "Paused the queue  (home.pause, by you)" in everything
+    code, out, _ = run(["records", "list", "--left-device"], capsys)
+    assert code == 0 and out.count("#") == 2 and "Asked Gemini" in out and "Ran a skill" in out
+    assert "Paused" not in out and "Answered on the home" not in out and "Wrote a file" not in out
+    assert "1 record does not say where the content went" in out
+    code, out, _ = run(["records", "list", "--left-device", "--json"], capsys)
+    assert [r["egress"] for r in json.loads(out)] == ["service:gemini", "host:bot-tools"]
+    assert run(["records", "list", "--left-device", "--action", "skill"], capsys)[1].count("#") == 1
+    assert commands.make_filter(None, None, False, left_device=False) is None
+
+
+def test_pause_and_resume_say_that_nothing_left(capsys):
+    run(["pause"], capsys)
+    run(["resume"], capsys)
+    assert [(r["action"], r["egress"]) for r in HomeRecords().records()] == [("home.pause", "none"), ("home.resume", "none")]
+    assert home.record_pause(None, True)["summary"] == "Paused the queue"  # the function the home API uses too
+
+
 def test_export_and_check_file(capsys, tmp_path):
     for _ in range(3):
         run(["pause"], capsys)
