@@ -166,6 +166,7 @@ def run(
     clock: Callable[[], float] = time.time,
     sleep: Callable[[float], None] = time.sleep,
     post: Callable[..., Any] = http_post,
+    background: bool = False,
 ) -> Result:
     """Run a skill once. Never raises for a skill's or the router's failure: the Result says what happened.
 
@@ -175,6 +176,8 @@ def run(
     out_dir     the output folder (need `files.write: [output]`); default MUSE_HOME/skills-out/<name>/
     task        the tier for steps that name none (default: the skill's `tier_default`)
     wait_up_to  the longest Retry-After (seconds) the runner will sit out, inside the time budget; 0 = never wait
+    background  send as the background app `skills-background`, which the router holds back while allowance is
+                needed elsewhere (spare-allowance chores); ignored for a run with a money budget
     """
     env = os.environ if environ is None else environ
     events: list[dict[str, Any]] = []
@@ -218,7 +221,7 @@ def run(
     meter = Meter(job_budget, clock=clock, started=started)
     paid = job_budget.paid_usd > 0
     try:
-        token = app_mod.ensure_app(app_mod.app_for(paid), env)
+        token = app_mod.ensure_app(app_mod.app_for(paid, background), env)
     except Exception as exc:
         return failed(f"Could not prepare the skills app on the router ({type(exc).__name__}).", name)
     waits = {"n": 0}
@@ -239,7 +242,7 @@ def run(
     def attempt(number: int) -> tuple[Context, Any, BaseException | None]:
         client = Client(
             proxy_url(env), token, meter, default_task=tier, privacy=cls, raise_steps=number - 1, allow_paid=paid,
-            on_event=emit, on_deferred=on_deferred, refresh_token=lambda: app_mod.ensure_app(app_mod.app_for(paid), env),
+            on_event=emit, on_deferred=on_deferred, refresh_token=lambda: app_mod.ensure_app(app_mod.app_for(paid, background), env),
             post=post,
         )
         workspace.proposed.clear()

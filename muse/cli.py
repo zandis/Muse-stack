@@ -1905,6 +1905,10 @@ def register_skills_commands(sub: Any) -> None:
     from muse.skills import cli as skills_cli
 
     skills_cli.register(sub, _env)
+    # `muse chores list|add|show|run-now|pause|resume|edit|rm|tick` (logic lives in muse/skills/chores.py)
+    from muse.skills import chores as chores_cli
+
+    chores_cli.register(sub, _env)
 
 
 # ===== END skills =====
