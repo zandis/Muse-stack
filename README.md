@@ -212,6 +212,21 @@ python -m muse.home --fake --tcp 4181 --state cards        # canned data for bui
 - **Cards** are the questions the home asks before it acts (save a file, send a message, spend, grant a permission, use a one-off credit, send something private, install a skill). They wait in `~/.muse/cards.sqlite`, expire after 24 hours (5 minutes for a payment), and can be answered once. `muse.home.cards.CardStore` is what other code on the home uses to ask and wait.
 - The fake home has six states (`normal`, `used`, `paused`, `cards`, `empty`, `error`) and signs in with the fixed token it prints. `muse dash` is unchanged and still serves its own read-only page.
 
+### Host bots
+
+Muse can sit underneath a bot you already run, through two doors: the bot's OpenAI-compatible engine setting (with an app key of its own) and the Muse tools server, a Model Context Protocol server the bot starts as `python -m muse.mcp`. See [docs/hosts/README.md](docs/hosts/README.md) for what Muse does and does not control there, and [docs/hosts/openmausbot.md](docs/hosts/openmausbot.md) for the first host.
+
+```bash
+muse hosts setup openmausbot       # the host's own app key (shown once), a tools token in a 0600 file, and what to paste
+muse hosts show openmausbot        # print what to paste again; no secret in it
+muse hosts check openmausbot ~/.openmausbot/config.json   # read-only: which engines go through Muse and which do not
+muse mcp serve --token-file PATH   # the tools server on stdin/stdout (a host starts this; needs `pip install -e '.[mcp]'`)
+```
+
+- Tools: `allowance_status`, `pause_status`, `suggest_service`, `ask_approval`, `check_approval`, `check_permission` (advisory until permissions exist), `record_action` and `list_skills` / `run_skill` (answer "not built" for now), `queue_job`, `job_status`. No `pay`, `pause` or `resume`.
+- The tools server talks only to the home control API with a device token; it holds no provider key. Muse controls model use, spending and its own tools; it cannot stop a host's own shell or file tools.
+- No host has been installed or run with Muse yet. Host settings are dated and say where they were read.
+
 ## Trust layer
 
 `muse/trust` holds what the bot and later data sales are built on: an encrypted
@@ -453,6 +468,7 @@ It reads `LITELLM_MASTER_KEY` from the environment or from `.env`. It does not c
 | `scripts/smoke_test.py` | Health check plus one call per configured alias |
 | `scripts/validate_config.py` | The CI checks |
 | `muse/home/` | The home control API: server, device tokens, cards, the fake home |
+| `muse/mcp/` | The Muse tools server for host bots (MCP over stdio), host settings and the read-only host check |
 | `docs/spec/interfaces/` | `home-api.v1.yaml` (OpenAPI) and `card.schema.json` |
 | `scripts/verify_litellm.py` | Checks the installed LiteLLM and the pinned image (read-only, no keys) |
 | `requirements/proxy.lock`, `requirements/dev.lock` | Hash-locked installs: LiteLLM with its dependencies, and the test tools |
