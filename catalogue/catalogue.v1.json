@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
   "schema": "catalogue/schema/catalogue.v1.schema.json",
-  "generated_at": "2026-11-12",
-  "catalogue_date": "2026-11-12",
+  "generated_at": "2026-11-13",
+  "catalogue_date": "2026-11-13",
   "release": {
     "status": "draft",
     "released_on": null
@@ -36,7 +36,7 @@
   },
   "counts": {
     "ai_services": 15,
-    "other_allowances": 5,
+    "other_allowances": 6,
     "subscriptions": 3
   },
   "ai_services": [
@@ -2203,6 +2203,115 @@
         "https://docs.cdp.coinbase.com/x402/core-concepts/facilitator"
       ],
       "notes": null
+    },
+    {
+      "id": "line-messaging-api",
+      "name": {
+        "en": "LINE Official Account messages (Taiwan, free plan)",
+        "zh-TW": "LINE 官方帳號訊息（台灣，輕用量方案）"
+      },
+      "kind": "messaging",
+      "provider": "LINE",
+      "good_for": {
+        "en": "A LINE Official Account can answer people through the Messaging API. Replies to a person's own message are not counted; messages the account sends first are, and the free plan in Taiwan includes 200 of those a month.",
+        "zh-TW": "LINE 官方帳號可以透過 Messaging API 回覆訊息。回覆對方傳來的訊息不計入則數；由帳號主動發出的訊息才計入，台灣的輕用量（免費）方案每月有 200 則。"
+      },
+      "tier": "free",
+      "allowance": {
+        "status": "verified",
+        "kinds": [
+          "monthly"
+        ],
+        "one_off": false,
+        "limits": [
+          {
+            "window": "month",
+            "limit": 200,
+            "unit": "pushed_messages",
+            "scope": "Taiwan light plan (輕用量, NT$0 a month): push, multicast, broadcast and narrowcast messages, counted once per person reached. Reply messages are not counted.",
+            "condition": null,
+            "headline": true,
+            "status": "verified"
+          }
+        ],
+        "reset": {
+          "rule": "calendar_month",
+          "tz": null,
+          "note": {
+            "en": "Counted per month; plan fees are charged on the 1st. The time zone the month turns over in was not found on the pages read.",
+            "zh-TW": "以月計算；方案費用在每月 1 日扣款。所讀頁面沒有說明換月依據的時區。"
+          }
+        }
+      },
+      "read_remaining": {
+        "method": "unknown",
+        "endpoint": null,
+        "fields": [],
+        "note": "LINE's pricing page names two Messaging API calls for this month's limit and this month's sent count (GET /v2/bot/message/quota and GET /v2/bot/message/quota/consumption in the reference). The full address was not read, so no endpoint is recorded."
+      },
+      "connection": {
+        "method": "none",
+        "key_url": "https://manager.line.biz/",
+        "auth_url": null,
+        "env_names": [],
+        "steps": [
+          {
+            "id": "create-account",
+            "title": {
+              "en": "Create a LINE Official Account",
+              "zh-TW": "建立 LINE 官方帳號"
+            },
+            "detail": {
+              "en": "Register for a LINE Business ID with your LINE account or an email address, then fill in the form for a LINE Official Account.",
+              "zh-TW": "用你的 LINE 帳號或電子郵件註冊 LINE Business ID，再填寫建立 LINE 官方帳號的表單。"
+            }
+          },
+          {
+            "id": "enable-messaging-api",
+            "title": {
+              "en": "Switch on the Messaging API",
+              "zh-TW": "啟用 Messaging API"
+            },
+            "detail": {
+              "en": "In LINE Official Account Manager, enable the Messaging API for the account and choose a provider. The provider cannot be changed afterwards.",
+              "zh-TW": "在 LINE Official Account Manager 為該帳號啟用 Messaging API，並選擇一個 provider。選定後就不能更改。"
+            }
+          },
+          {
+            "id": "check-channel",
+            "title": {
+              "en": "Check the channel in the LINE Developers Console",
+              "zh-TW": "在 LINE Developers Console 確認頻道"
+            },
+            "detail": {
+              "en": "Log in to the LINE Developers Console with the same account and check that a Messaging API channel now exists under that provider.",
+              "zh-TW": "用同一個帳號登入 LINE Developers Console，確認該 provider 底下已經有一個 Messaging API 頻道。"
+            }
+          }
+        ],
+        "how": {
+          "en": "Needs your own LINE Official Account with the Messaging API switched on. Muse does not connect to it yet.",
+          "zh-TW": "需要你自己的 LINE 官方帳號，並啟用 Messaging API。Muse 目前還不會連接它。"
+        },
+        "minutes_estimate": null,
+        "card_required": "unknown",
+        "phone_required": "unknown",
+        "usable_on_phone": "unknown"
+      },
+      "terms": {
+        "one_account_per_person": "unknown",
+        "aggregation_or_reselling": "unknown",
+        "automation_of_console": "unknown",
+        "hosted_in": "unknown"
+      },
+      "checked_on": "2026-11-13",
+      "confidence": "M",
+      "source_urls": [
+        "https://developers.line.biz/en/docs/messaging-api/pricing/",
+        "https://tw.linebiz.com/column/LINEOA-2026-Price-Plan/",
+        "https://developers.line.biz/en/docs/messaging-api/getting-started/"
+      ],
+      "notes": "Read on 2026-11-13. LINE Developers \"Messaging API pricing\": reply messages are not counted towards the plan's message count; push, multicast, broadcast and narrowcast messages are. A message is counted once per person it is sent to, whatever the number of message objects, and not at all if the person blocked the account. Over the limit, the API returns an error and the message is not sent. The plan table on that page is Japan's; plans differ by country. LINE Biz-Solutions Taiwan, \"2026年 LINE 官方帳號方案價格調整\" (dated 2026-09-01): the price plan took effect on 2026-11-01; the light plan stays at NT$0 with 200 free messages a month and cannot buy more; the medium plan is NT$1,000 for 3,000 and the high plan NT$1,400 for 6,000 (prices before tax). The same page lists the Messaging API's Reply API, one-to-one chat, auto-replies and the welcome message as free of charge. Messaging API channels can no longer be created directly in the LINE Developers Console (since 2024-09-04); they are created by enabling the Messaging API on an Official Account. Not confirmed: whether a card or a phone number is needed, and LINE's terms on automation and reselling."
     }
   ],
   "subscriptions": [
@@ -2273,5 +2382,15 @@
       "notes": "No official Google page describing a prefilled-question link was found, so the plain page is opened."
     }
   ],
-  "changes": []
+  "changes": [
+    {
+      "date": "2026-11-13",
+      "change": "added",
+      "section": "other_allowances",
+      "id": "line-messaging-api",
+      "field": null,
+      "from": null,
+      "to": null
+    }
+  ]
 }

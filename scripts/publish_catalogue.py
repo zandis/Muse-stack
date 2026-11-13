@@ -141,6 +141,24 @@ def _policy_key(entry: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _rest(entry: Mapping[str, Any]) -> dict[str, Any]:
+    """The entry without the facts that _limits_key, _policy_key and the date and confidence records already cover."""
+    out = json.loads(json.dumps({k: v for k, v in entry.items() if k not in ("checked_on", "confidence", "handoff_only")}))
+    allowance = out.get("allowance")
+    if isinstance(allowance, dict):
+        allowance.pop("limits", None)
+        allowance.pop("status", None)
+        if isinstance(allowance.get("reset"), dict):
+            allowance["reset"].pop("rule", None)
+    for group in ("policy", "terms"):
+        if isinstance(out.get(group), dict):
+            out[group] = {"note": out[group].get("note")}
+    if isinstance(out.get("connection"), dict):
+        for key in ("card_required", "phone_required"):
+            out["connection"].pop(key, None)
+    return out
+
+
 def _record(date: str, change: str, section: str, entry_id: str, field: str | None = None, old: Any = None, new: Any = None) -> dict[str, Any]:
     return {"date": date, "change": change, "section": section, "id": entry_id, "field": field, "from": old, "to": new}
 
@@ -171,8 +189,9 @@ def diff_entries(old: Mapping[str, Any], new: Mapping[str, Any], date: str) -> l
                 records.append(_record(date, "date_changed", section, entry_id, "checked_on", a.get("checked_on"), b.get("checked_on")))
             if a.get("confidence") != b.get("confidence"):
                 records.append(_record(date, "confidence_changed", section, entry_id, "confidence", a.get("confidence"), b.get("confidence")))
-            other = sorted(k for k in set(a) | set(b) if a.get(k) != b.get(k) and k not in ("checked_on", "confidence"))
-            # allowance, policy, terms and connection are named above when one of their compared facts changed.
+            # Whatever else differs (wording, steps, notes, models) is named, without its text.
+            ra, rb = _rest(a), _rest(b)
+            other = sorted(k for k in set(ra) | set(rb) if ra.get(k) != rb.get(k))
             if other:
                 records.append(_record(date, "details_changed", section, entry_id, ", ".join(other)))
     return records

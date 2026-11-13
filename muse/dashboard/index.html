@@ -338,7 +338,7 @@ var UI = {
     add_title: 'Add a helper', add_sub: 'Ranked by how much you gain per minute of setup. Best first.', add_best: 'Best next step',
     add_none: 'You have connected every helper available.', add_run: 'Connect it with:',
     oa_title: 'Other allowances', oa_flag: '(shown, not managed yet)', oa_sub: 'Shown only. Muse cannot manage these for you yet.', oa_tag: 'Shown, not managed yet',
-    oa_storage: 'Storage', oa_compute: 'Compute and hosting', oa_chain: 'Blockchain and transactions',
+    oa_storage: 'Storage', oa_compute: 'Compute and hosting', oa_chain: 'Blockchain and transactions', oa_messaging: 'Messaging',
     sub_title: 'Your subscriptions', sub_flag: '(hand-off only)', sub_sub: 'Muse never signs in to these. It only opens them with your question.', sub_tag: 'Hand-off only', sub_open: 'Open',
     conn_oauth: 'One tap', conn_key: 'Paste a key', min: 'about {0} min', steps: '{0} steps',
     good: 'Good for', checked: 'Catalogue checked {0}', conf: 'confidence {0}',
@@ -349,7 +349,7 @@ var UI = {
     add_title: '新增幫手', add_sub: '依「每分鐘設定換到多少額度」排序，最划算的在最上面。', add_best: '最划算',
     add_none: '你已經接上所有可接的幫手了。', add_run: '用這個指令連接：',
     oa_title: '其他額度', oa_flag: '（僅顯示，尚未管理）', oa_sub: '只顯示，Muse 還不能代你管理。', oa_tag: '僅顯示，尚未管理',
-    oa_storage: '儲存空間', oa_compute: '運算與主機', oa_chain: '區塊鏈與交易',
+    oa_storage: '儲存空間', oa_compute: '運算與主機', oa_chain: '區塊鏈與交易', oa_messaging: '訊息傳送',
     sub_title: '你的訂閱', sub_flag: '（只能交接）', sub_sub: 'Muse 不會登入這些帳號，只會帶著你的問題幫你打開它們。', sub_tag: '只能交接', sub_open: '打開',
     conn_oauth: '點一下就好', conn_key: '貼上金鑰', min: '約 {0} 分鐘', steps: '{0} 個步驟',
     good: '適合', checked: '目錄核對日期 {0}', conf: '把握程度 {0}',
@@ -865,7 +865,7 @@ var otherOpen = false;
 function otherSection(list) {
   var rows = list.filter(function (r) { return r && typeof r === 'object'; });
   if (!rows.length) return null;
-  var kinds = ['storage', 'compute', 'chain'], inner = [h('p', {class: 'meta', text: T('oa_sub')})];
+  var kinds = ['storage', 'compute', 'chain', 'messaging'], inner = [h('p', {class: 'meta', text: T('oa_sub')})];
   kinds.forEach(function (k) {
     var g = rows.filter(function (r) { return r.kind === k; });
     if (!g.length) return;
