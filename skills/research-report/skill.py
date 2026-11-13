@@ -177,7 +177,7 @@ def run(ctx: Any) -> dict[str, Any]:
                 stopped = True
                 break
             try:
-                reply = usage.ask("extract", extract.messages(sub, [by_n[n] for n in batch]), task="light",
+                reply = usage.ask("extract", extract.messages(question, sub, [by_n[n] for n in batch]), task="light",
                                   max_tokens=extract.MAX_OUTPUT_TOKENS)
             except ctx.llm.BudgetExceeded:
                 stopped = True

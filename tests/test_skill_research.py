@@ -174,6 +174,8 @@ def test_plan_by_rules_uses_hints_then_the_questions_own_parts_then_fixed_angles
     angles = plan.by_rules("Lease terms", [], False)
     assert angles[0] == "Lease terms" and len(angles) == 3 and all(a.startswith("Lease terms") for a in angles)
     assert plan.by_rules("第三季的營收以及下一季的重點", [], True) == ["第三季的營收", "下一季的重點"]
+    assert plan.by_rules("租約的租金、押金和滯納金？", [], True) == ["租約的租金", "押金", "滯納金"]
+    assert plan.by_rules("Lease: rent, deposit and late fee?", [], False) == ["Lease: rent", "deposit", "late fee"]
     assert len(plan.by_rules("營收", [], True)) == 3
 
 

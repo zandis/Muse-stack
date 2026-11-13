@@ -35,10 +35,12 @@ def batches(numbers: list[int]) -> list[list[int]]:
     return [numbers[i:i + BATCH] for i in range(0, len(numbers), BATCH)]
 
 
-def messages(sub_question: str, passages: list[dict[str, Any]]) -> list[dict[str, str]]:
+def messages(question: str, sub_question: str, passages: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """The passages, the sub-question, and the whole question for context (a sub-question may say "it")."""
     numbered = "\n\n".join(f"[{p['n']}] {p['text']}" for p in passages)
+    context = "" if sub_question == question else f"\nIt is one part of this larger question: {question}"
     return [{"role": "system", "content": SYSTEM},
-            {"role": "user", "content": f"Passages:\n\n{numbered}\n\nQuestion: {sub_question}\n\nJSON:"}]
+            {"role": "user", "content": f"Passages:\n\n{numbered}\n\nQuestion: {sub_question}{context}\n\nJSON:"}]
 
 
 def read(raw: str, given: dict[int, str]) -> tuple[list[dict[str, Any]], int, str]:

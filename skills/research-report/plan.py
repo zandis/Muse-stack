@@ -91,7 +91,7 @@ def by_rules(question: str, outline: list[str], zh: bool) -> list[str]:
     """Sub-questions without a model: the outline hints, else the question's own parts, else a few fixed angles."""
     if outline:
         return _clean([f"{question}：{h}" if zh else f"{question}: {h}" for h in outline])
-    parts = _clean([p for p in (_SPLIT_ZH if zh else _SPLIT_EN).split(question) if len(p.strip()) >= (3 if zh else 12)])
+    parts = _clean([p for p in (_SPLIT_ZH if zh else _SPLIT_EN).split(question) if len(p.strip()) >= (2 if zh else 4)])
     if len(parts) >= MIN_SUBS:
         return parts
     facets = FACETS_ZH if zh else FACETS_EN
