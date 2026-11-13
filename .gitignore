@@ -24,3 +24,11 @@ core/target/
 
 # Local agent worktrees (never committed).
 .claude/worktrees/
+
+# Muse app (app/): installed packages and build output (app/pnpm-lock.yaml and app/src-tauri/Cargo.lock are committed).
+app/node_modules/
+app/dist/
+app/test-results/
+app/playwright-report/
+app/src-tauri/target/
+app/src-tauri/gen/
