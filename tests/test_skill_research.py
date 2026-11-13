@@ -210,15 +210,15 @@ def test_end_to_end_report_with_tiers_handoff_header_usage_and_a_proposed_file(e
     # Tiers per step, and the hand-off suggestion on the heavy call only.
     sent = chats(proxy)
     steps = [step_of(r) for r in sent]
-    assert steps[0] == "plan" and steps[-1] == "synthesise" and steps.count("synthesise") == 1 and steps.count("extract") >= 3
-    assert all(r["task"] == "light" for r in sent[:-1]) and sent[-1]["task"] == "heavy"
+    assert steps[0] == "plan" and steps[-1] == "synthesise" and steps.count("synthesise") == 1 and steps.count("extract") == 3  # one call per sub-question
+    assert sent[0]["task"] == "light" and all(r["task"] == "everyday" for r in sent[1:-1]) and sent[-1]["task"] == "heavy"
     assert sent[-1]["headers"].get("x-muse-handoff") == "suggest"
     assert all("x-muse-handoff" not in r["headers"] for r in sent[:-1])
     assert all(r["privacy"] == "standard" and "x-muse-allow-paid" not in r["headers"] for r in sent)
     # The heavy step sees claims and source numbers, never the documents again.
     heavy = sent[-1]["messages"][1]["content"]
     assert "18,500" in heavy and CANARY not in heavy and "Harbour Street" not in heavy
-    assert all(r["max_tokens"] == 300 for r in sent[:-1]) and sent[-1]["max_tokens"] == 700
+    assert sent[0]["max_tokens"] == 300 and all(r["max_tokens"] == 1200 for r in sent[1:-1]) and sent[-1]["max_tokens"] == 700
 
     # Per-step usage adds up to the job's.
     usage = o["usage"]

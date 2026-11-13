@@ -73,9 +73,9 @@ def faithful(request: dict) -> str:
                                    for line in lines)
 
 
-def scripted(proxy, *, empty_every: int = 0, empty_ids: set[int] | None = None, stay_empty: bool = False) -> dict:
-    """Plan, extract, synthesise. `empty_every=3`: every third light extract call is empty (a third of them).
-    `stay_empty`: the larger retry one tier up is empty too."""
+def scripted(proxy, *, empty_every: int = 0, stay_empty: bool = False, first: str = "everyday") -> dict:
+    """Plan, extract, synthesise. `empty_every=3`: every third first-try extract call (task `first`, the extract
+    tier) is empty. `stay_empty`: the larger retry one tier up is empty too."""
     seen = {"light": 0, "empty": 0}
 
     def respond(request: dict):
@@ -85,7 +85,7 @@ def scripted(proxy, *, empty_every: int = 0, empty_ids: set[int] | None = None, 
         if system.startswith("You plan"):
             return chat(json.dumps({"subquestions": PLAN}), task=task)
         if system.startswith("You read"):
-            if task == "light":
+            if task == first:
                 seen["light"] += 1
                 if empty_every and (seen["light"] - 1) % empty_every == 0:
                     seen["empty"] += 1
@@ -111,7 +111,7 @@ def chats(proxy) -> list[dict]:
 # ================================================================ 1. empty answers
 
 
-def test_a_third_of_light_calls_empty_is_recovered_and_counted(env, proxy, docs):
+def test_a_third_of_extract_calls_empty_is_recovered_and_counted(env, proxy, docs):
     seen = scripted(proxy, empty_every=3)
     result = research(env, docs)
     o = result.output
@@ -123,8 +123,8 @@ def test_a_third_of_light_calls_empty_is_recovered_and_counted(env, proxy, docs)
     extract = o["usage"]["extract"]
     assert extract["recovered"] == seen["empty"] and extract["unanswered"] == 0 and extract["empty"] == seen["empty"]
     # The recovery calls: one tier up, four times the room, and counted against the job's budget like any call.
-    retries = [r for r in chats(proxy) if r["messages"][0]["content"].startswith("You read") and r["task"] == "everyday"]
-    assert len(retries) == seen["empty"] and all(r["max_tokens"] == 1200 for r in retries)
+    retries = [r for r in chats(proxy) if r["messages"][0]["content"].startswith("You read") and r["task"] == "heavy"]
+    assert len(retries) == seen["empty"] and all(r["max_tokens"] == 4096 for r in retries)  # four times 1200, bounded
     assert sum(u["requests"] for u in o["usage"].values()) == result.used["requests"] == len(chats(proxy))
     assert result.used["empty_answers"] == seen["empty"]
 
@@ -146,10 +146,10 @@ def test_answers_that_stay_empty_are_not_read_never_did_not_answer(env, proxy, d
 
 
 def test_the_retry_is_not_sent_when_it_would_eat_the_request_kept_for_the_report(env, proxy, docs):
-    scripted(proxy, empty_every=1, stay_empty=True)  # every light extract call is empty
+    scripted(proxy, empty_every=1, stay_empty=True)  # every extract call is empty
     result = research(env, docs, budget={"requests": 2})  # plan skipped; one extract, then only the report's request is left
     sent = chats(proxy)
-    assert [r["task"] for r in sent] == ["light"] and result.used["requests"] == 1
+    assert [r["task"] for r in sent] == ["everyday"] and result.used["requests"] == 1
     o = result.output
     assert o["not_read"] == [] and [s["state"] for s in o["subquestions"]] == ["unanswered", "unread"]
     assert o["usage"]["extract"]["unanswered"] == 1 and result.status == "partial"

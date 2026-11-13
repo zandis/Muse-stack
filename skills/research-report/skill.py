@@ -7,7 +7,7 @@ is the step the router may hold back or offer to hand off.
 
   plan        light, 1 call    the question becomes 2 to 6 sub-questions (plan.py; rules when the reply is unusable)
   gather      no model         passages per sub-question from the named folders (gather.py; embeddings optional)
-  extract     light, many      claims as verbatim quotes; a claim whose quote is not in its passage, or whose numbers
+  extract     everyday, 1/sub  claims as verbatim quotes; a claim whose quote is not in its passage, or whose numbers
                                are not in its quote, is dropped at once (extract.py, quotes.py)
   synthesise  heavy, 1 call    the report, written from the verified claims only (report.py), each sentence citing
                                claim numbers, sent with `x-muse-handoff: suggest`
@@ -44,7 +44,7 @@ SYNTH_REQUESTS = 1  # kept back for the report while passages are being read
 MAX_CLAIMS = 36
 MAX_REASONS = 12
 STEPS = ("plan", "gather", "extract", "synthesise")
-TIER = {"plan": "light", "gather": "embed", "extract": "light", "synthesise": "heavy"}
+TIER = {"plan": "light", "gather": "embed", "extract": extract.TIER, "synthesise": "heavy"}
 
 
 # ---------------------------------------------------------------- small helpers
@@ -169,7 +169,7 @@ def run(ctx: Any) -> dict[str, Any]:
         ctx.note("No passage in the folders you named is about this, so no report was written.")
         return _output(state, "not_found", "", zh)
 
-    # ---- 3. extract (light, many small calls). Each claim is checked at once; a failing one is dropped.
+    # ---- 3. extract (one everyday call per sub-question). Each claim is checked at once; a failing one is dropped.
     by_n = {p["n"]: p for p in found.passages}
     seen: dict[tuple[int, int, str], dict[str, Any]] = {}
     stopped = False
@@ -184,7 +184,7 @@ def run(ctx: Any) -> dict[str, Any]:
                 stopped = True
                 break
             try:
-                reply = usage.ask("extract", extract.messages(question, sub, [by_n[n] for n in batch], zh), task="light",
+                reply = usage.ask("extract", extract.messages(question, sub, [by_n[n] for n in batch], zh), task=extract.TIER,
                                   max_tokens=extract.MAX_OUTPUT_TOKENS, keep_requests=SYNTH_REQUESTS)
             except ctx.llm.BudgetExceeded:
                 stopped = True

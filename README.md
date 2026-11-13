@@ -98,8 +98,13 @@ response headers go with it:
   `cerebras/`. It drops it for `nvidia_nim/` and `novita/` (Muse renders
   `drop_params: true`, so it would silently do nothing), so those have no
   setting. Lower effort is a request to think less, not a limit: Cerebras
-  says the levels do not reserve an exact token budget. Not yet observed on
-  real keys.
+  says the levels do not reserve an exact token budget. `low` is the lowest
+  value either provider documents for gpt-oss: Groq lists `none` only for
+  another model, and Cerebras says gpt-oss-120b does not support `none`.
+  LiteLLM 1.108.5 does not check the value for `groq/` or `cerebras/` (it
+  passes `none` and `minimal` on unchanged, so the provider would see them),
+  which is why the catalogue only accepts low, medium and high. Not yet
+  observed on real keys.
 
 The shipped floor is 1024 on the gpt-oss deployments. That figure is not from
 any provider's documentation. It is the owner's observation on real keys: empty

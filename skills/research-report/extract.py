@@ -1,4 +1,11 @@
-"""Step 3, extract: many small `light` calls, each reading a couple of passages for one sub-question.
+"""Step 3, extract: one `everyday` call per sub-question, reading all of its passages (at most gather.PER_SUB).
+
+Until 2026-11-13 this was many `light` calls of two passages each, at the light ceiling of 300 output tokens.
+In the first full real run 22% of research-report calls came back empty (a reasoning model spent the 300
+tokens on hidden reasoning), at 11.7 calls a run. The offline experiment on the shipped task set (fake models,
+docs/chores-check.md) measured both shapes: one call per sub-question with room to answer took 5.6 calls a run
+instead of 8.3 and about 15% fewer tokens, and was right as often (57 of 66 against 56, with a model that
+finds every fact). So this shape won. Whether real everyday models are as reliable is not yet measured.
 
 The model returns claims as verbatim quotes: {"quote": exact words from passage n, "n": n, "says": the fact in
 the report's language}. Every claim is checked at once (quotes.py): the quote must really be in passage n, and
@@ -18,9 +25,10 @@ from typing import Any
 from . import answer as reader
 from . import quotes
 
-BATCH = 2  # passages in one call
-MAX_OUTPUT_TOKENS = 300  # the ceiling of a light step (the router may raise it to a reasoning model's floor)
-MAX_PER_CALL = 4
+BATCH = 4  # passages in one call: all the passages gathered for one sub-question (gather.PER_SUB)
+MAX_OUTPUT_TOKENS = 1200  # the everyday ceiling: room for six quoted claims, and for a reasoning model's thinking
+TIER = "everyday"
+MAX_PER_CALL = 6
 
 SYSTEM = """You read numbered passages from the person's own documents and pull out the facts that help answer one question.
 
@@ -31,7 +39,7 @@ Rules:
   "quote": a short excerpt copied word for word from ONE passage (a few words up to one sentence; never changed or translated),
   "n": the number of that passage,
   "says": the fact the quote states, written in {language}, with names, numbers and dates exactly as in the quote.
-- At most 4 claims. If the passages hold nothing that helps, return an empty list.
+- At most 6 claims. If the passages hold nothing that helps, return an empty list.
 - Reply with one JSON object and nothing else, in this shape:
 {{"claims": [{{"quote": "exact words from the passage", "n": 3, "says": "the fact"}}]}}"""
 

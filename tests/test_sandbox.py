@@ -422,7 +422,7 @@ def test_the_shipped_research_report_recovers_empty_answers_the_same_way_sandbox
         if system.startswith("You plan"):
             return chat(json.dumps({"subquestions": ["What is the monthly rent?", "When does the lease end?"]}))
         if system.startswith("You read"):
-            if request["task"] == "light":  # every first try is empty: the reasoning took the whole allowance
+            if request["task"] == "everyday":  # every first try is empty: the reasoning took the whole allowance
                 return chat("", **{"x-muse-answer": "empty-reasoning"})
             given = re.findall(r"^\[(\d+)\] (.*?)(?=^\[\d+\] |\Z)", user.split("\n\nQuestion:")[0], flags=re.S | re.M)
             claims = [{"quote": q, "n": int(n), "says": q} for n, text in given for q in quotes if q in text]
