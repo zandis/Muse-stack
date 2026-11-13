@@ -114,6 +114,8 @@ The report is filled from what the child said it applied, in a frame sent after 
 
 `muse.sandbox.probe()` returns `Capabilities`; `muse doctor` prints it. Nothing is inferred from version numbers: bubblewrap counts only if a Python child really came up inside it with the options a run uses, Landlock only if a read was really denied, seccomp only if a socket was really refused.
 
+For debugging only: `MUSE_SANDBOX_DEBUG=1` in Muse's own environment lets the child's standard error through to the terminal (normally it goes nowhere). A skill can then print whatever it read, so do not leave it set.
+
 `run_skill(..., token=..., policy=Policy(authorize=fn))`: an optional permission token is accepted and handed, with the action (`llm.ask`, `llm.embed`, `files.propose`) and a few facts, to `authorize` in the parent before each thing done on the skill's behalf. Nothing checks tokens here; the permission compiler plugs in at that point.
 
 ## 5. Platform matrix
