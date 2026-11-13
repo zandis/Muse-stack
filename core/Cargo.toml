@@ -15,7 +15,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 sha2 = "0.10"
 # Vault (src/vault.rs). Pinned exactly, at the versions `age` itself resolves, so
-# each primitive is compiled once. See docs/spec/interfaces/vault-format.md section 13.
+# each primitive is compiled once. See docs/spec/interfaces/vault-format.md section 17.
 age = { version = "=0.12.1", default-features = false }
 argon2 = { version = "=0.5.3", default-features = false, features = ["alloc"] }
 bech32 = "=0.11.1"
