@@ -354,6 +354,7 @@ Authenticated by a device token sent as `Authorization: Bearer`. In v1 the token
 | `POST /v1/keys/{provider}` | Store a key (sent inside the Link's encrypted channel); the only call that accepts one |
 | `GET /v1/jobs`, `POST /v1/jobs`, `GET /v1/jobs/{id}`, `DELETE /v1/jobs/{id}` | Jobs. Prompts are accepted and never returned |
 | `GET /v1/cards`, `GET /v1/cards/{id}`, `POST /v1/cards/{id}/answer` | Approvals: the cards waiting for the person, and their answers |
+| `POST /v1/cards` | A device asks the person a question (added 13 November 2026 for the Muse tools server, part 5): one waiting card, by the card store's rules; at most 20 waiting per device; the asking device cannot answer it |
 | `GET /v1/apps`, `POST /v1/apps`, `PATCH /v1/apps/{name}`, `DELETE /v1/apps/{name}`, `POST /v1/apps/{name}/rotate` | The apps that share the router; a new app token is returned once |
 | `POST /v1/pause`, `POST /v1/resume` | The one switch |
 | `GET /v1/mandates/artifacts` | Per-target state from the compiler (answers 501 until the compiler exists) |
