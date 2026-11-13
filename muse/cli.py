@@ -1114,7 +1114,7 @@ def register_connect_commands(sub: Any) -> None:
     c.add_argument("--no-write", action="store_true", help="with `local`: show what was found without writing the catalogue")
     c.add_argument("--json", action="store_true", help="with no helper name: print the suggestions as JSON")
     c.set_defaults(func=cmd_connect)
-    r = sub.add_parser("resources", help="storage, compute and chain allowances, and your subscriptions (read-only)")
+    r = sub.add_parser("resources", help="storage, compute, chain and messaging allowances, and your subscriptions (read-only)")
     r.add_argument("--lang", metavar="LANG", help="en or zh-TW")
     r.add_argument("--json", action="store_true")
     r.set_defaults(func=cmd_resources)
@@ -1123,10 +1123,95 @@ def register_connect_commands(sub: Any) -> None:
 def cmd_catalog_check(args: argparse.Namespace) -> int:
     from muse import catalog_check
 
-    return catalog_check.run(
-        pages=args.pages, want_leads=args.leads, max_age_days=args.max_age_days, save=not args.no_save,
-        as_json=args.json, fetch=catalog_check.fetch_https, environ=_env(),
-    )
+    env = _env()
+    report = None
+    if args.report is not None:
+        report = Path(args.report).expanduser() if args.report else catalog_check.report_path(env)
+    try:
+        return catalog_check.run(
+            pages=args.pages, want_leads=args.leads, max_age_days=args.max_age_days, save=not args.no_save,
+            as_json=args.json, fetch=catalog_check.fetch_https, environ=env,
+            report_file=report, max_pages=args.max_pages, delay_s=max(0.0, args.delay),
+        )
+    except ValueError as err:
+        _err(f"muse catalog check: {err}")
+        return 2
+
+
+def _publisher() -> Any:
+    """scripts/publish_catalogue.py, loaded from the checkout (the generator is a repository tool)."""
+    import importlib.util
+
+    path = paths.REPO_ROOT / "scripts" / "publish_catalogue.py"
+    if not path.is_file():
+        raise FileNotFoundError("scripts/publish_catalogue.py is not in this installation; run this from a checkout of the repository")
+    spec = importlib.util.spec_from_file_location("muse_publish_catalogue", path)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["muse_publish_catalogue"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def cmd_catalog_export(args: argparse.Namespace) -> int:
+    try:
+        pub = _publisher()
+    except FileNotFoundError as err:
+        _err(f"muse catalog export: {err}")
+        return 2
+    return pub.run(out_dir=Path(args.out).expanduser() if args.out else pub.OUT_DIR, check=args.check, date=args.date, release=args.release)
+
+
+def cmd_catalog_show(args: argparse.Namespace) -> int:
+    from muse import catalog
+
+    found = [e for group in catalog.public_entries(catalog.load_catalog()).values() for e in group if e["id"] == args.id]
+    if not found:
+        _err(f"muse catalog show: no entry called {args.id!r}. `muse resources` and `muse connect` list what is in the catalogue.")
+        return 1
+    lang = catalog.normalise_lang(args.lang) if args.lang else catalog.default_lang(_env())
+    for entry in found:
+        if args.json:
+            print(json.dumps(entry, indent=2, ensure_ascii=False))
+            continue
+        name = entry["name"] if isinstance(entry["name"], str) else catalog.pick(entry["name"], lang)
+        print(f"{name}  ({entry['id']}, {entry['kind']})")
+        good = entry.get("good_for")
+        if isinstance(good, dict):
+            print(f"  {catalog.pick(good, lang)}")
+        elif good:
+            print(f"  good for: {', '.join(good)}")
+        if "tier" in entry:
+            print(f"  tier: {entry['tier']}")
+        allowance = entry.get("allowance")
+        if allowance is not None:
+            if not allowance["limits"]:
+                print("  allowance: not confirmed (the catalogue holds no verified number)")
+            for item in allowance["limits"]:
+                extra = "; ".join(str(item[k]) for k in ("scope", "condition") if item[k])
+                print(f"  allowance: {item['limit']:,} {item['unit']} per {item['window']} [{item['status']}]" + (f" ({extra})" if extra else ""))
+            print(f"  resets: {allowance['reset']['rule']}")
+        conn = entry.get("connection")
+        if conn is not None:
+            minutes = conn["minutes_estimate"]
+            print(f"  connect: {conn['method']}" + (f", about {minutes['minutes']} min (an estimate)" if minutes else "")
+                  + f"; card needed: {conn['card_required']}; phone needed: {conn['phone_required']}")
+            if conn["env_names"]:
+                print(f"  variables: {', '.join(conn['env_names'])}")
+            for n, step in enumerate(conn["steps"], start=1):
+                print(f"    {n}. {catalog.pick(step['title'], lang)}: {catalog.pick(step['detail'], lang)}")
+        policy = entry.get("policy")
+        if policy is not None:
+            print(f"  trains on inputs: {policy['trains_on_inputs']}; human review: {policy['human_review']}; region: {policy['region']}")
+        if "open" in entry:
+            for kind, spec in entry["open"].items():
+                print(f"  opens ({kind}): {spec['url']}")
+        print(f"  checked {entry['checked_on'] or 'never'}, confidence {entry['confidence'] or '?'}")
+        for url in entry["source_urls"]:
+            print(f"  source: {url}")
+        if entry.get("notes"):
+            print(f"  notes: {entry['notes']}")
+    return 0
 
 
 def register_catalog_commands(sub: Any) -> None:
@@ -1138,7 +1223,22 @@ def register_catalog_commands(sub: Any) -> None:
     k.add_argument("--leads", action="store_true", help="also list names on a public lead list that the catalogue lacks")
     k.add_argument("--no-save", action="store_true", help="with --pages: do not remember the page fingerprints")
     k.add_argument("--json", action="store_true")
+    k.add_argument("--report", nargs="?", const="", default=None, metavar="FILE",
+                   help="also write a small JSON summary (default file: catalog-check.json in the Muse home folder)")
+    k.add_argument("--max-pages", type=int, default=None, metavar="N", help="with --pages: fetch at most N pages, those checked longest ago first")
+    k.add_argument("--delay", type=float, default=1.0, metavar="SECONDS", help="with --pages: pause between requests to the same site (default 1)")
     k.set_defaults(func=cmd_catalog_check)
+    x = csub.add_parser("export", help="write the published catalogue (catalogue/*.json) from config/; --check only compares")
+    x.add_argument("--out", metavar="DIR", help="where to write (default: catalogue/ in the repository)")
+    x.add_argument("--check", action="store_true", help="write nothing; exit 1 if the published files are out of date")
+    x.add_argument("--date", metavar="YYYY-MM-DD", help="generated_at (default: the newest checked_on)")
+    x.add_argument("--release", action="store_true", help="mark the document released; refused until the owner has chosen a licence")
+    x.set_defaults(func=cmd_catalog_export)
+    s = csub.add_parser("show", help="one catalogue entry as it is published")
+    s.add_argument("id", help="an entry id, e.g. openrouter or line-messaging-api")
+    s.add_argument("--json", action="store_true")
+    s.add_argument("--lang", metavar="LANG", help="en or zh-TW")
+    s.set_defaults(func=cmd_catalog_show)
 
 
 # ===== END catalogue v2 =====

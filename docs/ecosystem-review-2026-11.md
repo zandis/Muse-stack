@@ -294,6 +294,11 @@ Suggested order for the next twelve weeks:
 - Any reliable figure for what patients are paid for data or what buyers pay.
 - Speed of local models on a 2 OCPU ARM VM (the figure given is an estimate).
 
+### Corrections
+
+- **2026-11-13, Biscuit release date.** This review's notes recorded Biscuit 6.0 as released on 2026-11-11. That is wrong. The crates.io record for `biscuit-auth` (read 2026-11-13, <https://crates.io/api/v1/crates/biscuit-auth>) shows 6.0.0 published on 2025-07-16, and it is the latest stable release. The release of 2026-11-11 is 7.0.0-alpha.1, a pre-release that is not used. "Biscuit 6.0" in part 4 stands; only the date was wrong. `docs/spec/interfaces/permission-token.md` pins 6.0.0.
+- **2026-11-13, Hugging Face.** Part 3.1 lists Hugging Face as "a second no-pasting provider". The sign-in flow and the `inference-api` scope are confirmed, but a free account has no included inference credits today (<https://huggingface.co/docs/inference-providers/pricing>: Free Users, monthly credits "None"). It was therefore not added to the catalogue as a free helper. See `docs/catalogue.md`.
+
 ---
 
 ## 11. Main sources

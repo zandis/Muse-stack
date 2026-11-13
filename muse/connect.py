@@ -145,6 +145,7 @@ CONNECT_STRINGS: dict[str, dict[str, str]] = {
         "res_kind_storage": "Storage",
         "res_kind_compute": "Compute and hosting",
         "res_kind_chain": "Blockchain and transactions",
+        "res_kind_messaging": "Messaging",
         "res_none": "No other allowances are in the catalogue yet.",
         "sub_title": "Your subscriptions (hand-off only)",
         "sub_sub": "Muse never signs in to these. It only opens them with your question.",
@@ -236,6 +237,7 @@ CONNECT_STRINGS: dict[str, dict[str, str]] = {
         "res_kind_storage": "儲存空間",
         "res_kind_compute": "運算與主機",
         "res_kind_chain": "區塊鏈與交易",
+        "res_kind_messaging": "訊息傳送",
         "res_none": "目錄裡還沒有其他額度。",
         "sub_title": "你的訂閱（只能交接）",
         "sub_sub": "Muse 不會登入這些帳號，只會帶著你的問題幫你打開它們。",
@@ -987,7 +989,7 @@ def run_resources(io: ConnectIO, lang: str, *, as_json: bool = False) -> int:
     io.say(ct("res_sub", lang))
     if not cat.resources:
         io.say(ct("res_none", lang))
-    for kind in ("storage", "compute", "chain"):
+    for kind in catalog.RESOURCE_KINDS:
         group = [r for r in cat.resources if r.kind == kind]
         if not group:
             continue

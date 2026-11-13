@@ -16,7 +16,7 @@ from muse import catalog, cli
 from muse.catalog import CATALOG_PATH, RESOURCES_DIR
 from muse.status import build_snapshot
 
-TODAY = date(2026, 11, 12)
+TODAY = date(2026, 11, 13)
 
 
 def real() -> dict:
@@ -52,7 +52,7 @@ def test_loader_types():
     assert orr.reset["rule"] == "utc_day" and orr.confidence == "H"
     assert cat.provider("voyage").one_off is True and cat.provider("gemini").one_off is False
     assert cat.provider("cloudflare").also_env == ("CLOUDFLARE_ACCOUNT_ID",)
-    assert {r.kind for r in cat.resources} == {"storage", "compute", "chain"} and all(not r.managed for r in cat.resources)
+    assert {r.kind for r in cat.resources} == {"storage", "compute", "chain", "messaging"} and all(not r.managed for r in cat.resources)
     assert {s.id for s in cat.subscriptions} == {"chatgpt", "claude", "gemini"} and all(s.handoff_only for s in cat.subscriptions)
     assert cat.provider("deepseek").terms_flags["hosted_in"] == "cn"
 
@@ -241,6 +241,47 @@ def test_resource_files_must_match_their_kind(tmp_path):
     assert has(catalog.validate_catalog(CATALOG_PATH, base, TODAY), "chain.yaml", "kind: chain")
 
 
+def test_messaging_is_a_resource_kind_and_its_file_is_optional(tmp_path):
+    assert catalog.RESOURCE_KINDS == ("storage", "compute", "chain", "messaging") and catalog.OPTIONAL_RESOURCE_KINDS == {"messaging"}
+    base = _resources_copy(tmp_path)
+    assert catalog.validate_catalog(CATALOG_PATH, base, TODAY) == []
+    doc = yaml.safe_load((base / "messaging.yaml").read_text(encoding="utf-8"))
+    doc["resources"][0]["managed"] = True
+    doc["resources"][0]["notes"] = ["a list"]
+    (base / "messaging.yaml").write_text(yaml.safe_dump(doc, allow_unicode=True), encoding="utf-8")
+    problems = catalog.validate_catalog(CATALOG_PATH, base, TODAY)
+    assert has(problems, "line-messaging-api", "managed must be false") and has(problems, "line-messaging-api", "notes: must be text")
+    doc["kind"] = "chat"
+    (base / "messaging.yaml").write_text(yaml.safe_dump(doc, allow_unicode=True), encoding="utf-8")
+    assert has(catalog.validate_catalog(CATALOG_PATH, base, TODAY), "messaging.yaml", "kind: messaging")
+    # an older resources folder without the file is still valid, and simply has no messaging entries
+    (base / "messaging.yaml").unlink()
+    assert catalog.validate_catalog(CATALOG_PATH, base, TODAY) == []
+    assert {r.kind for r in catalog.load_resources(base)} == {"storage", "compute", "chain"}
+    (base / "storage.yaml").unlink()  # the first three are still required
+    assert has(catalog.validate_catalog(CATALOG_PATH, base, TODAY), "storage.yaml", "cannot be read")
+
+
+def test_line_entry_states_only_what_was_read():
+    line = next(r for r in catalog.load_resources() if r.id == "line-messaging-api")
+    assert line.kind == "messaging" and line.managed is False and line.checked_on == "2026-11-13" and line.confidence == "M"
+    head = line.headline()
+    assert (head.window, head.limit, head.unit) == ("month", 200, "pushed_messages") and "Reply messages are not counted" in head.scope
+    assert all(u.startswith(("https://developers.line.biz/", "https://tw.linebiz.com/")) for u in line.source_urls) and len(line.source_urls) == 3
+    assert line.read_remaining["method"] == "unknown" and "endpoint" not in line.read_remaining
+    assert line.connection.method == "none" and line.connection.card_required == "unknown" and line.connection.phone_required == "unknown"
+    assert "2026-11-01" in line.notes and "Not confirmed" in line.notes
+    assert catalog.allowance_text(head, "en") == "200 pushed messages a month" and catalog.allowance_text(head, "zh-TW") == "每月 200 則主動推播訊息"
+    shown = catalog.resource_to_dict(line)
+    assert shown["kind"] == "messaging" and shown["managed"] is False and shown["headline"]["text"]["zh-TW"] == "每月 200 則主動推播訊息"
+
+
+def test_hugging_face_is_not_listed_as_a_free_helper():
+    # Checked 2026-11-13: a free Hugging Face account has no included inference credits (docs/catalogue.md).
+    assert catalog.load_catalog().provider("huggingface") is None
+    assert "Not added: Hugging Face" in (CATALOG_PATH.parents[1] / "docs" / "catalogue.md").read_text(encoding="utf-8")
+
+
 # ---------------------------------------------------------------- suggestions
 
 
@@ -393,7 +434,7 @@ def test_snapshot_additions(_isolated_muse_home: Path):
     assert ids[0] == "openrouter" and "groq" not in ids and ids[-1] == "local"
     first = snap["suggestions"][0]
     assert first["text"]["en"]["gain"] == "adds roughly 50 requests a day" and "每天" in first["text"]["zh-TW"]["gain"]
-    assert {r["kind"] for r in snap["resources"]} == {"storage", "compute", "chain"} and all(r["managed"] is False for r in snap["resources"])
+    assert {r["kind"] for r in snap["resources"]} == {"storage", "compute", "chain", "messaging"} and all(r["managed"] is False for r in snap["resources"])
     assert [s["id"] for s in snap["subscriptions"]] == ["chatgpt", "claude", "gemini"] and all(s["handoff_only"] for s in snap["subscriptions"])
     text = json.dumps(snap)
     assert "token" not in " ".join(k for s in snap["subscriptions"] for k in s)  # a link only: no token, login or quota

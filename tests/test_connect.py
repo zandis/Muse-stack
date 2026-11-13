@@ -700,5 +700,5 @@ def test_resources_command(capsys):
     assert "你的訂閱（只能交接）" in capsys.readouterr().out
     assert cli.main(["resources", "--json"]) == 0
     data = json.loads(capsys.readouterr().out)
-    assert {r["kind"] for r in data["resources"]} == {"storage", "compute", "chain"} and all(r["managed"] is False for r in data["resources"])
+    assert {r["kind"] for r in data["resources"]} == {"storage", "compute", "chain", "messaging"} and all(r["managed"] is False for r in data["resources"])
     assert all(s["handoff_only"] for s in data["subscriptions"])

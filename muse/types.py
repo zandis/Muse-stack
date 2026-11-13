@@ -191,10 +191,10 @@ class ResourceReset(TypedDict):
 
 
 class ResourceItem(TypedDict):
-    """A storage, compute or chain allowance. Shown only: Muse does not manage it."""
+    """A storage, compute, chain or messaging allowance. Shown only: Muse does not manage it."""
 
     id: str
-    kind: str  # storage | compute | chain
+    kind: str  # storage | compute | chain | messaging
     name: dict[str, str]
     provider: str
     summary: dict[str, str]

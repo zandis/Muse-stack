@@ -468,7 +468,8 @@ def scenario_catalogue_v2() -> None:
     problems = catalog.validate_catalog()
     check(not problems, "catalogue v2: " + "; ".join(problems[:5]) + (f" (+{len(problems) - 5} more)" if len(problems) > 5 else ""))
     loaded = catalog.load_catalog()
-    check({r.kind for r in loaded.resources} == {"storage", "compute", "chain"}, "storage, compute and chain each need an entry")
+    kinds = {r.kind for r in loaded.resources}
+    check({"storage", "compute", "chain"} <= kinds <= set(catalog.RESOURCE_KINDS), "storage, compute and chain each need an entry; messaging is optional")
     check(all(not r.managed for r in loaded.resources), "other resources are shown, not managed")
     check(all(s.handoff_only for s in loaded.subscriptions) and loaded.subscriptions, "subscriptions are hand-off only")
     for provider in loaded.ai_providers():
