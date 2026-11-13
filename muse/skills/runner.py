@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from muse import paths, policy
+from muse.sandbox import policy as sandbox_policy
 from muse.skills import app as app_mod
 from muse.skills import loader
 from muse.skills.format import TIERS, Skill
@@ -59,6 +60,7 @@ class Result:
     skill: str = ""
     privacy: str = ""
     workspace: Workspace | None = field(default=None, repr=False)
+    sandbox: dict[str, Any] | None = None  # how isolated the run was (muse.sandbox.Report.public()); None = the sandbox was not involved
 
     @property
     def exit_code(self) -> int:
@@ -66,9 +68,12 @@ class Result:
 
     def public(self) -> dict[str, Any]:
         """Everything as plain data. `output` is the skill's answer and may hold the person's content."""
-        return {"skill": self.skill, "status": self.status, "output": self.output, "notes": list(self.notes),
-                "check": self.check, "used": self.used, "options": self.options, "refusal": self.refusal,
-                "privacy": self.privacy, "writes": [w.public() for w in self.writes], "events": self.events}
+        out = {"skill": self.skill, "status": self.status, "output": self.output, "notes": list(self.notes),
+               "check": self.check, "used": self.used, "options": self.options, "refusal": self.refusal,
+               "privacy": self.privacy, "writes": [w.public() for w in self.writes], "events": self.events}
+        if self.sandbox is not None:
+            out["sandbox"] = self.sandbox
+        return out
 
 
 class SkillStop(Exception):
@@ -145,6 +150,9 @@ def _safe_facts(facts: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _where(exc: BaseException) -> str:
+    remote = getattr(exc, "sandbox_where", None)  # an error raised inside the sandbox: the child reported file:line
+    if isinstance(remote, str):
+        return remote
     frames = traceback.extract_tb(exc.__traceback__)
     return f"{Path(frames[-1].filename).name}:{frames[-1].lineno}" if frames else ""
 
@@ -177,6 +185,11 @@ def run(
     sleep: Callable[[float], None] = time.sleep,
     post: Callable[..., Any] = http_post,
     background: bool = False,
+    sandbox: str | None = None,
+    sandbox_limits: Any = None,
+    permission_token: str | None = None,
+    _executor: Any = None,
+    _sandbox_decided: bool = False,
 ) -> Result:
     """Run a skill once. Never raises for a skill's or the router's failure: the Result says what happened.
 
@@ -188,6 +201,10 @@ def run(
     wait_up_to  the longest Retry-After (seconds) the runner will sit out, inside the time budget; 0 = never wait
     background  send as the background app `skills-background`, which the router holds back while allowance is
                 needed elsewhere (spare-allowance chores); ignored for a run with a money budget
+    sandbox     `off`, `auto` or `require` (default: MUSE_SANDBOX, else `off`). Anything but `off` runs the skill's
+                code in a separate locked-down process (muse/sandbox, docs/sandbox.md). A skill that does not ship
+                with Muse always runs with `require`, whatever is asked for here.
+    sandbox_limits, permission_token   passed on to muse.sandbox.run_skill (a `Policy`; an optional permission token)
     """
     env = os.environ if environ is None else environ
     events: list[dict[str, Any]] = []
@@ -211,10 +228,20 @@ def run(
         found = loader.find(skill, env) if isinstance(skill, str) else skill
         loader.require_ready(found)
         if found.needs.net:
-            raise loader.LoaderError(f"skill '{found.name}' asks for internet access of its own; that needs the sandbox, "
-                                     "which is not built yet, so it cannot run")
-        entry, check = loader.entry_points(found)
-    except loader.LoaderError as exc:
+            raise loader.LoaderError(f"skill '{found.name}' asks for internet access of its own; that needs the sandbox "
+                                     "to hold it to a list of hosts, which it cannot do yet, so it cannot run")
+        if not _sandbox_decided:
+            mode = sandbox_policy.mode_for(found.source, sandbox, env)
+            if mode != "off":
+                from muse import sandbox as sandbox_mod  # the sandbox runs this same function, with `_executor` set
+
+                return sandbox_mod.run_skill(
+                    found, inputs, roots=folders, budget=budget, privacy=privacy, token=permission_token,
+                    policy=sandbox_limits, mode=mode, on_event=on_event, apply_writes=apply_writes, out_dir=out_dir,
+                    task=task, environ=environ, wait_up_to=wait_up_to, clock=clock, sleep=sleep, post=post,
+                    background=background)[0]
+        entry, check = loader.entry_points(found) if _executor is None else (None, None)
+    except (loader.LoaderError, ValueError) as exc:
         return failed(str(exc), skill if isinstance(skill, str) else skill.name)
     name = found.name
     try:
@@ -248,6 +275,11 @@ def run(
     emit("start", skill=name, version=found.version, privacy=cls, task=tier, source=found.source,
          budget_requests=job_budget.requests, budget_tokens=job_budget.tokens, budget_seconds=job_budget.seconds,
          budget_paid_usd=job_budget.paid_usd)
+    if _executor is not None:
+        try:  # start the sandboxed process and load the skill in it; a refusal is one plain sentence
+            _executor.start(found, job_budget, workspace, data_dir, env, emit)
+        except loader.LoaderError as exc:
+            return failed(str(exc), name)
 
     def attempt(number: int) -> tuple[Context, Any, BaseException | None]:
         client = Client(
@@ -256,6 +288,8 @@ def run(
             post=post,
         )
         workspace.proposed.clear()
+        if _executor is not None:
+            return _executor.attempt(number, inputs or {}, client, workspace, cls, emit)
         ctx = Context(found, inputs or {}, client, workspace, data_dir, cls, number, emit)
         try:
             return ctx, entry(ctx), None
@@ -279,7 +313,7 @@ def run(
 
     def run_check(ctx: Context, output: Any) -> dict[str, Any]:
         try:
-            reasons = _reasons(check(output, ctx))
+            reasons = _reasons(check(output, ctx) if _executor is None else _executor.check(ctx, output))
         except Exception as exc:
             reasons = [f"the check itself stopped with an error ({type(exc).__name__})"]
         state = {"status": "failed" if reasons else "passed", "reasons": reasons}

@@ -16,8 +16,9 @@ from muse.skills import loader, runner
 from muse.skills.format import PRIVACY, TIERS, Skill, needs_in_words
 
 STATE_WORDS = {"ready": "ready", "not-approved": "not approved", "changed": "changed since approval"}
-CAVEAT = ("Until Muse's sandbox is built, this list is what the skill declares and what Muse checks on the paths it "
-          "hands out. A skill is Python code that runs as you, so approve only code you trust.")
+CAVEAT = ("A skill of your own runs only inside Muse's sandbox, which holds it to this list where this computer can "
+          "(`muse doctor` says whether it can; where it cannot, the skill is refused). The sandbox has not had an outside "
+          "security review yet, so approve only code you trust.")
 
 
 def _say(text: str = "") -> None:
@@ -137,6 +138,14 @@ def grey_line(used: Mapping[str, Any]) -> str:
     return f"Answered by {who}. {spent}"
 
 
+def sandbox_line(report: Mapping[str, Any]) -> str:
+    """One honest line about isolation, from the run's own report (muse.sandbox.Report.public())."""
+    if report.get("ran") != "sandboxed":
+        return "Ran without isolation" + (f" ({report['reason']})." if report.get("reason") else ".")
+    head = "Ran isolated" if report.get("isolated") else "Ran in a separate process, NOT fully isolated"
+    return f"{head}: {', '.join(report.get('layers') or [])}."
+
+
 def option_lines(options: list[Mapping[str, Any]]) -> list[str]:
     lines = []
     for option in options:
@@ -178,7 +187,7 @@ def cmd_run(args: argparse.Namespace, env: Mapping[str, str]) -> int:
         _say("")
     budget = {"paid_usd": args.pay} if args.pay is not None else None
     result = runner.run(skill, inputs, budget=budget, privacy=args.privacy, folders=args.folder or [], out_dir=args.out,
-                        task=args.task, environ=env)
+                        task=args.task, environ=env, sandbox=getattr(args, "sandbox", None))
     if result.writes and result.status in ("done", "partial"):
         agreed = bool(args.yes)
         if not agreed and not args.json and sys.stdin.isatty():
@@ -203,6 +212,8 @@ def cmd_run(args: argparse.Namespace, env: Mapping[str, str]) -> int:
         if write.applied:
             _say(f"Wrote {write.path}")
     _say(grey_line(result.used))
+    if result.sandbox is not None and result.sandbox.get("ran") != "refused":
+        _say(sandbox_line(result.sandbox))
     for note in result.notes:
         _say(f"Note: {note}")
     if result.status == "needs_choice":
@@ -243,6 +254,10 @@ def register(sub: Any, env: Callable[[], Mapping[str, str]]) -> None:
     rn.add_argument("--task", choices=TIERS, help="how strong a model its steps use by default (see `muse rules`)")
     rn.add_argument("--privacy", choices=("public",) + PRIVACY, help="the privacy class for everything it sends")
     rn.add_argument("--pay", type=float, metavar="USD", help="let this one run spend up to this much (default: nothing)")
+    rn.add_argument("--sandbox", choices=("off", "auto", "require"),
+                    help="run its code in a locked-down process: auto = use what this computer has and say so; require = "
+                         "refuse unless files and network are both isolated (default: MUSE_SANDBOX, else off; a skill of "
+                         "your own always runs with require)")
     rn.add_argument("--yes", action="store_true", help="write the files it proposes without asking")
     rn.add_argument("--json", action="store_true", help="print the whole result as JSON")
     bind(rn, cmd_run)
