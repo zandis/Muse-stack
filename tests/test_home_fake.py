@@ -75,7 +75,12 @@ def test_every_get_answers_in_every_state_with_the_real_shapes(start, state):
     assert all("payload" not in j and "prompt" not in j for j in jobs)
     apps_ = f.get("/v1/apps")["apps"]
     assert all("token_sha256" not in a for a in apps_)
-    assert_error(*f.client.call("GET", "/v1/mandates/artifacts"), 501, "not_built")
+    status, mandates = f.client.call("GET", "/v1/mandates/artifacts")
+    assert status in (200, 503), mandates  # 503 `unavailable` without biscuit-python on the home
+    if status == 200:
+        assert "mandates" in mandates and mandates["enforcement"]["router"] == "enforce"
+    else:
+        assert_error(status, mandates, 503, "unavailable")
     shown = f.get("/v1/receipts")
     assert shown["verify"]["ok"] is True and shown["verify"]["size"] == len(shown["records"]) and shown["order"] == "newest_first"
     assert (state == "empty") == (not shown["records"])

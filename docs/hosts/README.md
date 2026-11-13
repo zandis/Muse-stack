@@ -65,7 +65,7 @@ The role limits what the token can do **to the home**. It does not limit the bot
 | Running skills, asked about each time | `check_permission` answers `ask` |
 | No files of its own | `check_permission` answers `ask` for a path; skills reach your files only through folders you put on the skill list by name |
 
-`check_permission` then answers from that permission (`basis: "permission"`, and `allow`, `ask` or `deny`). A host with no permission gets the interim rule, labelled `basis: "interim rule"` in every answer. Either way the answer is **advice** for the host's own shell and file tools: Muse cannot block them. A host can also ask for a permission through the home (`POST /v1/mandates` from its device makes a card you approve); it can never issue or stop one itself.
+`check_permission` then answers from that permission (`basis: "permission"`, and `allow`, `ask` or `deny`). A host with no permission gets the interim rule, labelled `basis: "interim rule"` in every answer. Either way the answer is **advisory** for the host's own shell and file tools: Muse cannot block them. A host can also ask for a permission through the home (`POST /v1/mandates` from its device makes a card you approve); it can never issue or stop one itself.
 
 ## The tools
 
