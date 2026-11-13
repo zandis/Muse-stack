@@ -256,6 +256,9 @@ impl Pairing {
 
 // ---------------------------------------------------------------- inviter
 
+/// Issues a mandate token for a newly paired device (or declines with `None`).
+pub type MandateIssuer = dyn Fn(&DeviceEntry) -> Option<String>;
+
 /// What the inviting device needs to let the new device in.
 pub struct InviterContext<'a, S: VaultStore> {
     /// The open vault. A slot is added for the new device.
@@ -267,7 +270,7 @@ pub struct InviterContext<'a, S: VaultStore> {
     /// Issues the new device's own mandate token, if the caller can.
     /// TODO(permissions): until device mandates are issued at pairing, pass
     /// `None`; the new device then has its registry role only.
-    pub mandate: Option<&'a dyn Fn(&DeviceEntry) -> Option<String>>,
+    pub mandate: Option<&'a MandateIssuer>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

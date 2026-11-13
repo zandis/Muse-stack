@@ -171,9 +171,8 @@ pub async fn read_frame<R: AsyncRead + Unpin>(reader: &mut R) -> Result<Frame, F
 /// Like [`read_frame`], but a clean end of stream before the first byte is `Ok(None)`.
 pub async fn read_frame_or_end<R: AsyncRead + Unpin>(reader: &mut R) -> Result<Option<Frame>, FrameError> {
     let mut first = [0u8; 1];
-    match reader.read(&mut first).await.map_err(io_error)? {
-        0 => return Ok(None),
-        _ => {}
+    if reader.read(&mut first).await.map_err(io_error)? == 0 {
+        return Ok(None);
     }
     let mut head = [0u8; HEADER_LEN];
     head[0] = first[0];

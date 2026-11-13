@@ -232,7 +232,7 @@ async fn malformed_oversized_and_truncated_frames_are_refused_without_reaching_t
         let frame = raw_exchange(&client, &bytes, true).await.expect("an answer");
         assert!(matches!(frame.kind, FrameType::Refusal | FrameType::Response));
     }
-    assert_eq!(handler.calls.load(Ordering::SeqCst) <= 40, true);
+    assert!(handler.calls.load(Ordering::SeqCst) <= 40);
     // After all that the same connection still serves a proper request.
     assert_eq!(client.request("POST", "/v1/echo", b"ok").await.unwrap().body, b"ok");
     home.endpoint.close().await;
