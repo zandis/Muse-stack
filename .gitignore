@@ -21,3 +21,6 @@ venv/
 
 # Rust core build output (core/Cargo.lock is committed).
 core/target/
+
+# Local agent worktrees (never committed).
+.claude/worktrees/
