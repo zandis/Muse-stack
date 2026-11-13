@@ -88,6 +88,37 @@ def test_status_is_the_snapshot_plus_api_version(rig):
     assert rig.last_headers["content-type"] == "application/json; charset=utf-8"
 
 
+def test_status_uses_the_settings_in_the_env_file_as_muse_status_does_and_never_holds_the_keys(rig, monkeypatch):
+    from muse.status import build_snapshot
+
+    monkeypatch.delenv("MUSE_DAILY_PAID_CAP_USD", raising=False)
+    rig.env_file.write_text(
+        "MUSE_DEFAULT_PRIVACY=private\nMUSE_DAILY_PAID_CAP_USD=2.50\nMUSE_TZ=Asia/Taipei\nOLLAMA_API_BASE=http://127.0.0.1:11434\n"
+        f"GROQ_API_KEY={KEY_CANARY}\nMUSE_QUEUE_APP_TOKEN=sk-muse-app-CANARYtoken0123456789abcdef\nMY_SERVICE_SECRET=hunter2\n"
+        f"SOME_OTHER_VALUE={KEY_CANARY}2\n", encoding="utf-8")
+    snap = rig.ok("GET", "/v1/status")
+    merged = build_snapshot(environ=keys.export_env())  # what `muse status` builds, from the environment that holds the keys
+    for key in ("providers", "aliases", "paid", "suggestions"):
+        assert snap[key] == json.loads(json.dumps(merged[key])), key
+    assert snap["paid"]["cap_usd"] == 2.5  # from the file; the process environment has no cap set
+    assert next(p for p in snap["providers"] if p["id"] == "groq")["configured"] is True  # known by name, never by value
+    assert next(p for p in snap["providers"] if p["id"] == "ollama")["configured"] is True  # a local model's address is a setting
+    assert KEY_CANARY not in json.dumps(snap) and "CANARY" not in json.dumps(snap)
+    settings = rig.home.settings_env()
+    assert settings["MUSE_DEFAULT_PRIVACY"] == "private" and settings["MUSE_DAILY_PAID_CAP_USD"] == "2.50"
+    assert settings["OLLAMA_API_BASE"] == "http://127.0.0.1:11434"
+    assert settings["MUSE_TZ"] == "UTC"  # the process's own value wins, as in keys.export_env
+    for name in ("GROQ_API_KEY", "MUSE_QUEUE_APP_TOKEN", "MY_SERVICE_SECRET", "SOME_OTHER_VALUE"):
+        assert name not in settings, name  # a named key, a name that says secret, a value shaped like a key
+    assert "CANARY" not in json.dumps(settings) and "hunter2" not in json.dumps(settings)
+    assert not any(isinstance(v, (str, dict)) and "CANARY" in json.dumps(v) for v in vars(rig.home).values())  # nothing kept on the home
+    # A job queued without a privacy class takes the file's default.
+    assert rig.ok("POST", "/v1/jobs", {"prompt": "x", "alias": "cheap"}, status=201)["job"]["privacy"] == "private"
+    # A skill run's environment has the settings and no provider key.
+    run_env = rig.home.run_env()
+    assert run_env["MUSE_DEFAULT_PRIVACY"] == "private" and "GROQ_API_KEY" not in run_env and "MUSE_QUEUE_APP_TOKEN" not in run_env
+
+
 def test_status_failure_is_a_plain_503_without_the_exception(rig, caplog):
     def boom():
         raise RuntimeError(f"cannot open ledger {ERR_CANARY}")

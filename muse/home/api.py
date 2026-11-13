@@ -6,8 +6,14 @@ The contract is `docs/spec/interfaces/home-api.v1.yaml`; a test walks `ROUTES`
 and fails if the two disagree.
 
 Rules every handler keeps:
-  * A reply never holds a provider key, a prompt, a result, or exception text.
-    The only secrets that ever leave are a NEW app token, once, on create/rotate.
+  * A reply never holds a provider key, a prompt, a queued job's result, or
+    exception text. The only secrets that ever leave are a NEW app token, once,
+    on create/rotate. The one reply that holds the person's content is a skill
+    run's answer (`GET /v1/skills/runs/{id}`), returned to the device that
+    started the run or to one that sees everything.
+  * The home records what it does (muse/records). A record that cannot be
+    written never stops or undoes the action: the reply says `recorded: false`
+    and only the type of the failure is logged.
   * Errors have one shape: {"error": {"code", "message", "retry_after"?}}.
     Messages are fixed plain sentences written here; text from an exception or
     from the request is never copied into one.
@@ -239,21 +245,25 @@ class Home:
         return paths.home(self.environ)
 
     def settings_env(self) -> dict[str, str]:
-        """The process environment plus the settings kept in the home's `.env` and keychain, WITHOUT the secrets.
+        """The process environment plus the SETTINGS kept in the home's `.env` file, without the secrets in it.
 
-        `muse status` builds its screen from the merged environment (`keys.export_env`), which holds
-        every provider key. This is that same environment with each stored secret left out: a setting
-        such as MUSE_DEFAULT_PRIVACY, MUSE_TZ or MUSE_DAILY_PAID_CAP_USD is kept; a key, token or
-        anything shaped like one that came from the key store is not. Whether a key is configured
-        is still answered by asking the key store by name, which returns yes or no and no value.
-        A value that is already in this process's own environment stays as it is. Built afresh on
-        each call and never kept, so the server holds no stored key between requests."""
+        `muse status` builds its screen from the merged environment (`keys.export_env`: process, keychain
+        and `.env`), which holds every provider key. The server must not carry those around, so this is
+        the same merge with the secrets left out:
+          * a setting from `.env` such as MUSE_DEFAULT_PRIVACY, MUSE_TZ, MUSE_DAILY_PAID_CAP_USD or a local
+            model's address is kept, as `muse status` would see it;
+          * a named key (anything in keys.KNOWN_KEYS), a name that says it is a secret, or a value shaped
+            like one, is not copied. The keychain holds only named keys, so it is not read at all;
+          * a value already in this process's own environment wins, as in `keys.export_env`.
+        Whether a key is configured is still answered by asking the key store by name (yes or no, never
+        a value). Built afresh on each call and never kept, so the server holds no stored key between
+        requests."""
         from muse import keys
         from muse.catalog import looks_secret
 
         own = self.env
         out = dict(own)
-        for name, value in keys.export_env(self.environ).items():  # holds secrets: read, filtered, dropped
+        for name, value in keys._dotenv_items(self.environ).items():  # noqa: SLF001 - the file's lines; secrets are dropped just below
             if str(own.get(name, "")).strip():
                 continue  # the process's own value, already in `out`
             if name in keys.KNOWN_KEYS or _SECRET_NAME.search(name) or looks_secret(value):
@@ -267,9 +277,10 @@ class Home:
         from muse import keys
         from muse.skills import app as skills_app
 
-        env = self.settings_env()
-        merged = keys.export_env(self.environ)
-        for name in skills_app.TOKEN_VARS.values():
+        tokens = set(skills_app.TOKEN_VARS.values())
+        env = {name: value for name, value in self.settings_env().items() if name not in keys.KNOWN_KEYS or name in tokens}
+        merged = keys.export_env(self.environ)  # holds every stored key for a moment: two names are taken, the rest dropped
+        for name in tokens:
             if str(merged.get(name, "")).strip():
                 env[name] = merged[name]
         return env
@@ -284,7 +295,9 @@ class Home:
             return self._snapshot_fn()
         from muse.status import build_snapshot
 
-        return dict(build_snapshot(environ=self.environ))
+        # With the settings from `.env` (privacy default, time zone, paid cap, local model addresses), as
+        # `muse status` shows them, and without the keys: see settings_env.
+        return dict(build_snapshot(environ=self.settings_env()))
 
     def is_paused(self) -> bool:
         from muse import queue
@@ -348,11 +361,11 @@ class Home:
     def default_route(self, allow_paid: bool) -> tuple[str | None, str]:
         from muse import queue, rules
 
-        task, _ = rules.load_rules(self.env).default_for(queue.app_for(allow_paid))
+        task, _ = rules.load_rules(self.settings_env()).default_for(queue.app_for(allow_paid))
         return task, "auto"
 
     def default_privacy(self) -> str | None:
-        return self.env.get("MUSE_DEFAULT_PRIVACY", "").strip().lower() or None
+        return self.settings_env().get("MUSE_DEFAULT_PRIVACY", "").strip().lower() or None
 
     # ---- records (muse/records): what was done in the person's name through this home
 
