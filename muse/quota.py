@@ -457,6 +457,18 @@ def classify_failure(
         until = max(resets)
         kind = "exhausted" if until - now > LONG_RETRY_AFTER else "cooldown"
         return _block("upstream", kind, until, "429 rate limit; x-ratelimit-reset", now)
+    # A 429 that says "quota" or "limit" and names no clock (no Retry-After,
+    # no "try again in", no reset header) is treated as used-up until the
+    # estimated daily reset. A daily cap whose wording matches nothing above
+    # was being retried every minute. A bare 429, with neither word, stays
+    # at 60 seconds: an RPM blip must not freeze the upstream until midnight.
+    if re.search(r"\b(?:quota|limit)\b", text):
+        return _block(
+            "upstream", "exhausted", _daily_reset(provider_id, now),
+            "429 mentions quota or limit but names no clock; reset time estimated "
+            + ("(midnight Pacific)" if provider_id == "gemini" else "(UTC midnight)"),
+            now,
+        )
     return _block("upstream", "cooldown", now + DEFAULT_COOLDOWN_SECONDS,
                   "429 rate limit; no reset given (estimated 60 s)", now)
 

@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "match": "5290d3f6af4a50d75bf99b67820164ac3bf7bab5722acfc358b0e3fe8b1894bb",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "body_sha256": "96c9c41d247fbba816a2d6417cbceac0e51237c63581461c8db8dc2d0b8e9782",
+    "model": "groq-tpd",
+    "max_tokens": 32,
+    "messages": 1
+  },
+  "response": {
+    "status": 429,
+    "elapsed_ms": 0,
+    "headers": [
+      [
+        "server",
+        "BaseHTTP/0.6 Python/3.12.3"
+      ],
+      [
+        "date",
+        "Fri, 13 Nov 2026 16:41:16 GMT"
+      ],
+      [
+        "content-type",
+        "application/json"
+      ],
+      [
+        "retry-after",
+        "411"
+      ]
+    ],
+    "body": "{\"error\": {\"message\": \"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_x` on tokens per day (TPD): Limit 200000, Used 193487, Requested 7464. Please try again in 6m50.832s.\", \"type\": \"rate_limit\", \"code\": 429}}"
+  }
+}

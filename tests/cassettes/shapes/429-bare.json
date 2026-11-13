@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "match": "84f2e62fbdb5e10bdf2e665e512825d067e3842ab3029212cbdb0d2172c9beb2",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "body_sha256": "52534510c77bd03b682fa5fa015b3b414356bc47d7a8d1494f38eb12630c32a9",
+    "model": "bare",
+    "max_tokens": 32,
+    "messages": 1
+  },
+  "response": {
+    "status": 429,
+    "elapsed_ms": 0,
+    "headers": [
+      [
+        "server",
+        "BaseHTTP/0.6 Python/3.12.3"
+      ],
+      [
+        "date",
+        "Fri, 13 Nov 2026 16:41:16 GMT"
+      ],
+      [
+        "content-type",
+        "application/json"
+      ]
+    ],
+    "body": "{\"error\": {\"message\": \"too many requests\", \"code\": 429}}"
+  }
+}

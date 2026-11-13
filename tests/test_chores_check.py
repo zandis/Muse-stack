@@ -434,3 +434,48 @@ def test_the_shipped_set_runs_end_to_end_for_both_skills_against_the_fake_router
         assert s["own_passed_but_wrong"] == 6 and set(s["by_kind"]) == KINDS
     assert out.count("CAVEAT: the skill's own check passed answers that were wrong 6 time(s)") == 2
     assert "Overall G1 line (every skill that ran): yes - not every skill has 50 completed runs yet. Spent: US$0.000000." in out
+
+
+def test_record_and_replay_together_is_refused(env, tasks_dir, capsys):
+    assert check(env, tasks_dir, "--replay", "a", "--record", "b") == cc.EXIT_USAGE
+    assert "not both" in capsys.readouterr().err
+
+
+def test_replay_of_a_missing_directory_is_refused(env, tasks_dir, capsys, tmp_path):
+    missing = tmp_path / "no-such-cassettes"
+    assert check(env, tasks_dir, "--yes", "--replay", str(missing)) == cc.EXIT_USAGE
+    assert "No cassette directory" in capsys.readouterr().err
+
+
+def test_record_then_replay_does_not_call_the_router_again(env, proxy, tasks_dir, tmp_path):
+    """The gate can be repeated from cassettes. The second run never reaches the router."""
+    from muse import cassette
+
+    route(proxy)
+    recorded = tmp_path / "tapes"
+    report_a = tmp_path / "first.json"
+    report_b = tmp_path / "second.json"
+    code = check(
+        env, tasks_dir, "--yes", "--quiet", "--record", str(recorded),
+        "--only", "files-answer", "--sample", "1", "--seed", "0",
+        "--report", str(report_a), "--csv", str(tmp_path / "a.csv"),
+    )
+    files = list(recorded.glob("*.json"))
+    assert files, code
+    text = "\n".join(path.read_text(encoding="utf-8") for path in files)
+    assert "authorization" not in text.lower() and "Bearer" not in text
+    assert cassette.secret_problems(recorded) == []
+    sent = len(proxy.requests)
+    assert sent >= 1
+    first = json.loads(report_a.read_text(encoding="utf-8"))
+    assert first["options"]["record"] == str(recorded)
+    again = check(
+        env, tasks_dir, "--yes", "--quiet", "--replay", str(recorded),
+        "--only", "files-answer", "--sample", "1", "--seed", "0",
+        "--report", str(report_b), "--csv", str(tmp_path / "b.csv"),
+    )
+    assert again == code
+    assert len(proxy.requests) == sent
+    second = json.loads(report_b.read_text(encoding="utf-8"))
+    assert second["options"]["replay"] == str(recorded)
+    assert {k: v["outcome"] for k, v in first["runs"].items()} == {k: v["outcome"] for k, v in second["runs"].items()}

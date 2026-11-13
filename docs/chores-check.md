@@ -32,7 +32,11 @@ Each command prints what it will send and waits for `y`. Add `--yes` for an unat
 
 The worst case is each skill's own budget times the runs: 12 requests and 60,000 tokens for `files-answer`, 40 and 150,000 for `research-report`. It is a ceiling, not an estimate. By design, a `files-answer` run that passes first time makes 1 chat call and up to 3 embedding calls; a `research-report` run makes up to 17 (1 plan, up to 3 embedding, up to 12 extract, 1 heavy), and a failed check doubles that once. How much real models use has not been measured before the first run on the VM; the report says.
 
-Useful options: `--only files-answer`, `--runs N` (repeat every task N times), `--seed S` (which sample), `--privacy private`, `--delay SECONDS` (pause between runs, default 2), `--max-wait SECONDS` (longest `Retry-After` to sit out, default 60), `--stop-after N` (stop a skill after N deferred runs in a row, default 5), `--keep-outputs`, `--report PATH`, `--csv PATH`.
+Useful options: `--only files-answer`, `--runs N` (repeat every task N times), `--seed S` (which sample), `--privacy private`, `--delay SECONDS` (pause between runs, default 2), `--max-wait SECONDS` (longest `Retry-After` to sit out, default 60), `--stop-after N` (stop a skill after N deferred runs in a row, default 5), `--keep-outputs`, `--report PATH`, `--csv PATH`, `--record DIR`, `--replay DIR`.
+
+## Offline
+
+`--record DIR` writes a cassette for each exchange with the router while the check still uses that router. `--replay DIR` answers the same calls from those cassettes: the router is not contacted, and no provider quota is used. Record on a machine that has the keys, review the files (they hold response text, never the prompt and never a key), then replay that directory for a later run of the same sample. The two flags together are refused. The workflow, and how a replay can guard a no-regression check, is in [testing/fidelity-and-replay.md](testing/fidelity-and-replay.md).
 
 ## What it does to stay free and polite
 
@@ -97,4 +101,4 @@ See [evals/chores/README.md](../evals/chores/README.md): two folders of fictiona
 - **The expected facts are strict in one way and lenient in another.** A right answer worded differently (a date in another format that the task does not list) scores as wrong; an answer that mentions the right number in a wrong sentence scores as right.
 - **Cross-language tasks mostly fail the own check by design**: the check compares words, so an answer in one language citing a passage in another shares too few. They are in the set to show the size of that gap.
 - **Free allowances change.** Providers change limits and models; compare nights with the CSV rather than trusting one run.
-- **Not run here.** The harness has only been run against the fake router in the tests. No real provider has been called by it yet.
+- **A full run on real providers** is written up in `docs/reviews/gate1-full-2026-11-13.md` (about 900 requests, and the free allowances ran out). Repeat a recorded sample with `--replay` so a later check of the same tasks spends nothing.

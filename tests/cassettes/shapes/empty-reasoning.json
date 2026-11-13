@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "match": "df651e7baebb0c18f2e8175ced87be364f68cd5aabd42a091014878dfbecc09c",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "body_sha256": "e884435624bad43d29f4ad7c5da50be01f7ea1d3d928a92a920ffb5630242080",
+    "model": "empty-model",
+    "max_tokens": 32,
+    "messages": 1
+  },
+  "response": {
+    "status": 200,
+    "elapsed_ms": 0,
+    "headers": [
+      [
+        "server",
+        "BaseHTTP/0.6 Python/3.12.3"
+      ],
+      [
+        "date",
+        "Fri, 13 Nov 2026 16:41:16 GMT"
+      ],
+      [
+        "content-type",
+        "application/json"
+      ]
+    ],
+    "body": "{\"id\": \"chatcmpl-fake\", \"object\": \"chat.completion\", \"created\": 0, \"model\": \"fake\", \"choices\": [{\"index\": 0, \"message\": {\"role\": \"assistant\", \"content\": \"\", \"reasoning_content\": \"thinking it over\"}, \"finish_reason\": \"length\"}], \"usage\": {\"prompt_tokens\": 11, \"completion_tokens\": 23, \"total_tokens\": 34, \"completion_tokens_details\": {\"reasoning_tokens\": 16}}}"
+  }
+}

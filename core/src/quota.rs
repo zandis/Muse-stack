@@ -737,8 +737,48 @@ pub fn classify_failure(
         let kind = if until - now > LONG_RETRY_AFTER { "exhausted" } else { "cooldown" };
         return Ok(Some(block("upstream", kind, until, "429 rate limit; x-ratelimit-reset", now)));
     }
+    // "quota" or "limit" as a whole word, and no clock above: a daily cap
+    // whose wording matched nothing else was retried every minute. A bare
+    // 429 (neither word) stays at 60s.
+    if names_quota_or_limit(text) {
+        return Ok(Some(block(
+            "upstream",
+            "exhausted",
+            daily_reset(&provider_id, now)?,
+            format!(
+                "429 mentions quota or limit but names no clock; reset time estimated {}",
+                if provider_id == "gemini" { "(midnight Pacific)" } else { "(UTC midnight)" }
+            ),
+            now,
+        )));
+    }
     Ok(Some(block(
         "upstream", "cooldown", now + DEFAULT_COOLDOWN_SECONDS,
         "429 rate limit; no reset given (estimated 60 s)", now,
     )))
+}
+
+/// Python `\b(?:quota|limit)\b` on the already-lowercased body. ASCII words
+/// only: `quotaId` and `unlimited` do not match.
+fn names_quota_or_limit(text: &str) -> bool {
+    fn word(text: &str, needle: &str) -> bool {
+        let bytes = text.as_bytes();
+        let needle = needle.as_bytes();
+        let mut i = 0;
+        while i + needle.len() <= bytes.len() {
+            if &bytes[i..i + needle.len()] == needle {
+                let before = i == 0 || !is_word_byte(bytes[i - 1]);
+                let after = i + needle.len() == bytes.len() || !is_word_byte(bytes[i + needle.len()]);
+                if before && after {
+                    return true;
+                }
+            }
+            i += 1;
+        }
+        false
+    }
+    fn is_word_byte(b: u8) -> bool {
+        b.is_ascii_alphanumeric() || b == b'_'
+    }
+    word(text, "quota") || word(text, "limit")
 }

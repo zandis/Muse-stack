@@ -60,6 +60,11 @@ The application comes from muse/auth.py through `metadata.user_api_key_metadata`
 from a request body). Every stage carries `litellm_call_id`; per-request
 rationing notes are kept in memory under it for the response headers.
 
+`MUSE_PROVIDER_MODE=record|replay` (muse/cassette.py) sends the provider call
+to a local proxy instead of the deployment's own base URL. `live` (the
+default, and any other value) leaves the base URL alone. Replay that cannot
+start raises, so the call is not sent on to a real provider.
+
 Failure policy: any error in quota bookkeeping or rationing is caught, counted
 in `errors` and ignored (LiteLLM's default routing continues), except that a
 failed rationing step still removes paid deployments: when in doubt, do not
@@ -1022,10 +1027,18 @@ class MuseHook(CustomLogger):
         # The output floor for this deployment, before the paid hold so the hold counts the raised cap.
         raised = self._output_floor(info, kwargs, call_type, call_id)
 
+        # Record/replay sits on this one call, after the floor, so the cassette
+        # sees the cap the provider will see. Live mode returns without touching
+        # api_base. The returned dict is what LiteLLM sends, so a reroute has to
+        # be returned or the original base URL is what gets called.
+        from muse import cassette
+
+        routed = cassette.reroute(kwargs, self.env)
+
         # The paid cap, atomically across workers, right before money is spent.
         if ration.is_paid(info):
             await self._hold_paid(info, kwargs, call_id)
-        return kwargs if raised else None
+        return kwargs if raised or routed else None
 
     def _output_floor(self, info: Mapping[str, Any], kwargs: dict, call_type: Any, call_id: str | None) -> bool:
         """Raise this attempt's output cap to the chosen deployment's floor. True when it changed.
