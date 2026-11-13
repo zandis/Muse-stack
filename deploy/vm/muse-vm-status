@@ -1,0 +1,224 @@
+#!/usr/bin/env python3
+"""Print this VM's state as JSON, for the always-on helper's card in Devices.
+
+    muse-vm-status            # JSON on standard output
+    muse-vm-status --pretty   # the same, indented
+
+Standard library only, read-only, no network, no secrets. It reads what the
+other deploy/vm jobs leave behind:
+
+    MUSE_VM_STATE/samples/*.jsonl        one line a minute from muse-vm-monitor
+    MUSE_VM_STATE/idle-guard.json        the idle guard's current state
+    MUSE_VM_STATE/backup/last.json       the last backup
+    MUSE_VM_STATE/update/last.json       the last update check
+    MUSE_VM_STATE/catalog-check.status.json
+    /var/lib/muse-setup/{DONE,FAILED}    how first boot ended
+
+What the numbers mean:
+
+- last_7_days: percentiles over the samples of the last 7 days. Oracle's rule
+  (Always Free resources page) reclaims an instance when CPU at the 95th
+  percentile, network use and memory use are ALL under 20% for 7 days. The page
+  gives a percentile only for CPU; this reports mean and 95th percentile for
+  each. Network percent is measured against an assumed bandwidth of 1 Gbps per
+  OCPU (MUSE_NET_BANDWIDTH_MBPS overrides); what Oracle divides by is not
+  stated on that page, so treat the network figure as an estimate.
+- allowance: A1 Flex is free for the first 1,500 OCPU-hours and 9,000 GB-hours
+  a month. Used = minutes sampled this month / 60 x OCPUs (or x GB). It is an
+  estimate from this VM's own samples, not Oracle's bill; the OCI Console
+  (Billing, Cost Analysis) is the authority.
+"""
+
+from __future__ import annotations
+
+import calendar
+import json
+import os
+import socket
+import sys
+import time
+from pathlib import Path
+
+OCPU_HOURS_FREE = 1500
+GB_HOURS_FREE = 9000
+IDLE_PCT = 20.0
+WEEK_S = 7 * 24 * 3600
+
+
+def percentile(values: list[float], pct: float) -> float | None:
+    """Nearest-rank percentile; None for no data."""
+    if not values:
+        return None
+    ordered = sorted(values)
+    rank = max(1, min(len(ordered), int(-(-pct * len(ordered) // 100))))
+    return ordered[rank - 1]
+
+
+def read_json(path: Path) -> dict | None:
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
+def read_conf(path: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return out
+    for line in lines:
+        if line and not line.startswith("#") and "=" in line:
+            key, _, value = line.partition("=")
+            out[key.strip()] = value.strip()
+    return out
+
+
+def load_samples(directory: Path, since: float) -> list[dict]:
+    out: list[dict] = []
+    for path in sorted((directory / "samples").glob("*.jsonl")):
+        try:
+            with open(path, encoding="utf-8") as handle:
+                for line in handle:
+                    try:
+                        row = json.loads(line)
+                    except ValueError:
+                        continue
+                    if isinstance(row, dict) and isinstance(row.get("t"), (int, float)) and row["t"] >= since:
+                        out.append(row)
+        except OSError:
+            continue
+    return out
+
+
+def summarise(values: list[float]) -> dict[str, float | None]:
+    if not values:
+        return {"mean": None, "p95": None, "max": None}
+    return {"mean": round(sum(values) / len(values), 2), "p95": round(percentile(values, 95) or 0.0, 2), "max": round(max(values), 2)}
+
+
+def week(samples: list[dict], now: float, bandwidth_bps: float) -> dict:
+    rows = [s for s in samples if s["t"] >= now - WEEK_S]
+    cpu = [float(s.get("cpu", 0.0)) for s in rows]
+    mem = [float(s.get("mem", 0.0)) for s in rows]
+    net = [100.0 * float(s.get("net_bps", 0.0)) / bandwidth_bps for s in rows] if bandwidth_bps > 0 else []
+    out = {
+        "samples": len(rows),
+        "coverage_pct": round(100.0 * len(rows) / (WEEK_S / 60), 1),
+        "cpu_pct": summarise(cpu),
+        "memory_pct": summarise(mem),
+        "network_pct": summarise(net),
+        "network_pct_is_estimate": True,
+    }
+    below = {
+        "cpu": cpu != [] and (percentile(cpu, 95) or 0.0) < IDLE_PCT,
+        "network": net != [] and (percentile(net, 95) or 0.0) < IDLE_PCT,
+        "memory": mem != [] and (percentile(mem, 95) or 0.0) < IDLE_PCT,
+    }
+    out["oracle_idle_rule"] = {
+        "threshold_pct": IDLE_PCT,
+        "below_threshold": below,
+        # Oracle reclaims only when all three are low; too few samples means "not known".
+        "would_count_as_idle": (all(below.values()) if rows else None),
+    }
+    return out
+
+
+def allowance(samples: list[dict], now: float, ocpus: float, memory_gb: float) -> dict:
+    year, month = time.gmtime(now)[:2]
+    start = calendar.timegm((year, month, 1, 0, 0, 0))
+    days = calendar.monthrange(year, month)[1]
+    end = start + days * 86400
+    minutes = sum(1 for s in samples if start <= s["t"] < end)
+    hours = minutes / 60.0
+    remaining = max(0.0, (end - now) / 3600.0)
+    return {
+        "month": f"{year:04d}-{month:02d}",
+        "hours_running_this_month": round(hours, 1),
+        "ocpu_hours_used": round(hours * ocpus, 1),
+        "ocpu_hours_free": OCPU_HOURS_FREE,
+        "ocpu_hours_projected": round((hours + remaining) * ocpus, 1),
+        "gb_hours_used": round(hours * memory_gb, 1),
+        "gb_hours_free": GB_HOURS_FREE,
+        "gb_hours_projected": round((hours + remaining) * memory_gb, 1),
+        "within_free_allowance": (hours + remaining) * ocpus <= OCPU_HOURS_FREE and (hours + remaining) * memory_gb <= GB_HOURS_FREE,
+        "method": "estimate from this VM's own minute samples; Oracle's Cost Analysis is the authority",
+    }
+
+
+def uptime(proc: Path, now: float) -> dict:
+    try:
+        seconds = float((proc / "uptime").read_text().split()[0])
+    except (OSError, ValueError, IndexError):
+        return {"running_since": None, "uptime_s": None}
+    return {"running_since": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - seconds)), "uptime_s": int(seconds)}
+
+
+def setup_state(directory: Path) -> dict:
+    if (directory / "FAILED").exists():
+        try:
+            detail = (directory / "FAILED").read_text(encoding="utf-8").strip()[:300]
+        except OSError:
+            detail = ""
+        return {"state": "failed", "detail": detail}
+    if (directory / "DONE").exists():
+        return {"state": "done"}
+    return {"state": "unknown"}
+
+
+def release(environ: dict[str, str]) -> str | None:
+    root = Path(environ.get("MUSE_ROOT", "/opt/muse/current"))
+    try:
+        return os.path.basename(os.path.realpath(root)) if root.is_symlink() else None
+    except OSError:
+        return None
+
+
+def status(environ: dict[str, str], now: float | None = None) -> dict:
+    now = time.time() if now is None else now
+    conf = read_conf(Path(environ.get("MUSE_VM_CONF", "/etc/muse/vm.conf")))
+    merged = {**conf, **environ}
+    directory = Path(merged.get("MUSE_VM_STATE", "/var/lib/muse/vm"))
+    proc = Path(merged.get("MUSE_PROC_ROOT", "/proc"))
+    try:
+        ocpus = float(merged.get("MUSE_OCPUS", "2"))
+        memory_gb = float(merged.get("MUSE_MEMORY_GB", "12"))
+        bandwidth = float(merged.get("MUSE_NET_BANDWIDTH_MBPS", "") or ocpus * 1000) * 1e6
+    except ValueError:
+        ocpus, memory_gb, bandwidth = 2.0, 12.0, 2e9
+    year, month = time.gmtime(now)[:2]
+    month_start = calendar.timegm((year, month, 1, 0, 0, 0))
+    samples = load_samples(directory, min(now - WEEK_S, month_start))
+    return {
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+        "hostname": socket.gethostname(),
+        "release": release(merged),
+        "setup": setup_state(Path(merged.get("MUSE_SETUP_DIR", "/var/lib/muse-setup"))),
+        **uptime(proc, now),
+        "shape": {"ocpus": ocpus, "memory_gb": memory_gb},
+        "last_7_days": week(samples, now, bandwidth),
+        "idle_guard": read_json(directory / "idle-guard.json"),
+        "allowance": allowance(samples, now, ocpus, memory_gb),
+        "backup": read_json(directory / "backup" / "last.json"),
+        "update": read_json(directory / "update" / "last.json"),
+        "catalog_check": read_json(directory / "catalog-check.status.json"),
+        "os_updates": {
+            "automatic_security_updates": Path("/etc/apt/apt.conf.d/52muse-unattended-upgrades").exists(),
+            "reboot_time": merged.get("MUSE_OS_REBOOT_TIME", "03:30"),
+            "reboot_required": Path("/var/run/reboot-required").exists(),
+        },
+    }
+
+
+def main(argv: list[str]) -> int:
+    if "-h" in argv or "--help" in argv:
+        print(__doc__.strip())
+        return 0
+    doc = status(dict(os.environ))
+    print(json.dumps(doc, indent=2 if "--pretty" in argv else None, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

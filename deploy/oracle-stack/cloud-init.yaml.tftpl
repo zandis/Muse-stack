@@ -1,0 +1,93 @@
+#cloud-config
+# Muse always-on helper: first boot.
+#
+# This file is deliberately short (instance metadata is size-limited). It only
+# 1. writes the helper's settings (none is a secret: user data can be read by
+#    any process on the VM and is stored in the stack's state),
+# 2. downloads ONE fixed Muse release over https and checks its SHA-256,
+#    refusing to go on if it does not match (never a branch, never "latest"),
+# 3. hands over to deploy/vm/bootstrap.sh inside that verified release.
+#
+# No key or password is created here. The proxy master key is made later, on
+# the VM, by bootstrap.sh, and never printed. There is no `set -x` anywhere.
+
+timezone: ${time_zone}
+ssh_pwauth: false
+disable_root: true
+${users_block}
+
+write_files:
+  - path: /etc/muse/vm.conf
+    owner: root:root
+    permissions: "0644"
+    content: |
+      # Settings for the Muse helper. Written at first boot. No secrets here.
+      MUSE_USER=muse
+      MUSE_BASE=/opt/muse
+      MUSE_ROOT=/opt/muse/current
+      MUSE_STATE_ROOT=/var/lib/muse
+      MUSE_HOME=/var/lib/muse/home
+      MUSE_VM_STATE=/var/lib/muse/vm
+      MUSE_ENV_FILE=/var/lib/muse/muse.env
+      MUSE_TZ=${time_zone}
+      MUSE_OS_REBOOT_TIME=03:30
+      MUSE_TESTER_SSH=${tester_ssh}
+      MUSE_OCPUS=${ocpus}
+      MUSE_MEMORY_GB=${memory_gb}
+      MUSE_BACKUP=${backup}
+      MUSE_BACKUP_BUCKET=${backup_bucket}
+      MUSE_BACKUP_NAMESPACE=${backup_namespace}
+      MUSE_BACKUP_KEEP=${backup_keep}
+      MUSE_BACKUP_INCLUDE_KEYS=0
+      MUSE_BACKUP_RECIPIENT=
+      MUSE_IDLE_GUARD=${idle_guard}
+      MUSE_IDLE_GUARD_TARGET_PCT=25
+      MUSE_UPDATE_MANIFEST_URL=${update_manifest_url}
+      MUSE_UPDATE_PUBKEY=${update_public_key}
+
+  - path: /usr/local/sbin/muse-first-boot
+    owner: root:root
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      # Fetch the pinned Muse release, verify it, run its first-boot script.
+      # Safe to run again. Leaves /var/lib/muse-setup/FAILED on any failure.
+      set -euo pipefail
+      VERSION='${muse_version}'
+      URL='${release_url}'
+      SHA='${release_sha256}'
+      SETUP=/var/lib/muse-setup
+      RELEASES=/opt/muse/releases
+      mkdir -p "$SETUP" "$RELEASES"
+      fail() {
+        printf 'step=fetch\nreason=%s\n' "$1" > "$SETUP/FAILED"
+        echo "ERROR: $1" >&2
+        exit 1
+      }
+      case "$VERSION" in
+        main|master|latest|stable|HEAD|head|dev|develop|nightly|edge|"") fail "not a fixed release: '$VERSION'" ;;
+      esac
+      echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.+-][0-9A-Za-z.]+)?$' || fail "not a fixed release: '$VERSION'"
+      echo "$SHA" | grep -Eq '^[0-9a-f]{64}$' || fail "the release has no pinned SHA-256"
+      case "$URL" in https://*) ;; *) fail "the release address is not https" ;; esac
+      if [ ! -f "$RELEASES/$VERSION/deploy/vm/bootstrap.sh" ]; then
+        work="$(mktemp -d)"
+        curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+             --retry 5 --retry-delay 10 --max-time 600 --output "$work/release.tar.gz" -- "$URL" \
+          || fail "could not download the release"
+        echo "$SHA  $work/release.tar.gz" | sha256sum --check --status \
+          || fail "the downloaded release does not match its pinned SHA-256; refusing to continue"
+        listing="$(tar -tzf "$work/release.tar.gz")" || fail "the release archive cannot be read"
+        if echo "$listing" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then fail "the release archive holds an unsafe path"; fi
+        [ "$(echo "$listing" | cut -d/ -f1 | sort -u | wc -l)" -eq 1 ] || fail "the release archive must hold one top-level folder"
+        mkdir "$work/x"
+        tar -xzf "$work/release.tar.gz" -C "$work/x" --no-same-owner --no-same-permissions
+        rm -rf "$RELEASES/$VERSION"
+        mv "$work/x"/* "$RELEASES/$VERSION"
+        rm -rf "$work"
+      fi
+      rm -f "$SETUP/FAILED"
+      exec /bin/bash "$RELEASES/$VERSION/deploy/vm/bootstrap.sh"
+
+runcmd:
+  - [/usr/local/sbin/muse-first-boot]

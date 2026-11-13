@@ -1,0 +1,36 @@
+# Looks for a new Muse release in the signed manifest named by
+# MUSE_UPDATE_MANIFEST_URL. Disabled until both that address and
+# MUSE_UPDATE_PUBKEY are set. Runs as root because it installs under
+# @MUSE_BASE@ and restarts services; it never touches MUSE_HOME.
+[Unit]
+Description=Muse update check
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-@MUSE_CONF@
+Environment=PATH=/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/bin/bash @MUSE_ROOT@/deploy/vm/muse-update.sh
+TimeoutStartSec=60min
+MemoryMax=2G
+CPUQuota=100%
+TasksMax=256
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=@PROTECT_HOME@
+ReadWritePaths=@MUSE_BASE@ @MUSE_STATE@ /etc/systemd/system
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+UMask=0022

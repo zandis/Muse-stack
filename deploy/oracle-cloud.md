@@ -2,10 +2,15 @@
 
 The first host can be any small Linux box with Docker. This note is the later move to an Oracle Cloud Always Free Ampere VM in `us-sanjose-1`.
 
+Two ways to set the VM up:
+
+- **One button, no terminal:** [deploy/oracle-stack/README.md](oracle-stack/README.md). A Resource Manager stack creates the VM (2 OCPU and 12 GB), a network with no inbound rule, and a private bucket for encrypted backups; first boot installs a pinned, checksum-verified Muse release. Not yet tried on a real account.
+- **By hand, over SSH:** the rest of this page and `deploy/oracle-a1-setup.sh`.
+
 ## Shape
 
 - Image: Ubuntu 22.04 or 24.04, **aarch64**. Canonical's Ampere images are the ones that match.
-- Shape: `VM.Standard.A1.Flex`. Always Free quota is up to 4 OCPU and 24 GB RAM, shared by every A1 instance in the tenancy. Capacity in popular regions is often unavailable; 1 OCPU and 6 GB is enough for this proxy and is a reasonable thing to request if a larger shape fails with "out of host capacity".
+- Shape: `VM.Standard.A1.Flex`. The Always Free allowance is 2 OCPU and 12 GB of memory (1,500 OCPU hours and 9,000 GB hours a month), shared by every A1 instance in the tenancy; it was 4 and 24 before mid-2026, and an instance larger than 2 / 12 on a free-only account is no longer covered. Source: Oracle's [Always Free Resources](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm) page, read on 13 November 2026. Capacity in popular regions is often unavailable; 1 OCPU and 6 GB is enough for this proxy and is a reasonable thing to request if a larger shape fails with "out of host capacity".
 - The LiteLLM image in `docker-compose.yml` is `ghcr.io/berriai/litellm:v1.108.5`, pinned by the digest of its multi-arch index, which includes `linux/arm64` (`sha256:23192ecdb958f1a822947a44333dc4bb8fd5921c40a04e9cc502578e2a21c5bb`). Do not switch it to `docker.io/litellm/litellm`: those tags are amd64-only and the pull fails on this VM with `no matching manifest for linux/arm64`.
 - Postgres in `docker-compose.spend.yml` uses `postgres:16-alpine`, which is also multi-arch. Skip that file until you actually want spend logs. The proxy does not need a database to route.
 
@@ -29,8 +34,16 @@ The repository is private, so the VM needs its own read-only access to clone
 it: create a key on the VM (`ssh-keygen -t ed25519`) and add the public half
 under the repository's Settings, Deploy keys, without write access.
 
-Always Free note: Oracle may reclaim an instance it considers idle. Check the
-current rule in Oracle's Always Free documentation.
+Always Free note: Oracle may reclaim an instance it considers idle: over 7 days,
+CPU (95th percentile), network and memory use all under 20%. The stack's idle
+guard and what Oracle's page does and does not say about it are described in
+[deploy/oracle-stack/README.md](oracle-stack/README.md), "Idle guard".
+
+`./deploy/oracle-a1-setup.sh --services` also installs the background services
+the stack uses (`deploy/vm/units`): the home control API on a Unix socket, the
+queue, a timer that runs `muse chores tick` every minute, the weekly catalogue
+check, and the sampler with the idle guard. They are hardened system units that
+run as you. Without the flag the script does exactly what it did before.
 
 ## Boot
 
