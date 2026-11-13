@@ -69,6 +69,7 @@ DEFAULT_STOP_AFTER = 5
 DEFAULT_DELAY = 1.0
 TIMEOUT = 90.0
 FREE_TIERS = {"free", "local"}
+PAID_TIERS = {"paid", "metered"}
 SAFE_HEADER = re.compile(r"^[A-Za-z0-9_.@/:,;>\-]{1,120}$")
 
 _sleep: Callable[[float], None] = time.sleep  # tests replace this
@@ -540,7 +541,7 @@ def item_messages(item: Mapping[str, Any]) -> list[dict[str, str]]:
 
 
 def load_items(directories: Iterable[Path]) -> list[dict[str, Any]]:
-    """Every item in `items*.jsonl` under the directories, in file order. A broken line stops the run."""
+    """Every item in `items*.jsonl` under the directories, light before everyday, zh-TW first. A broken line stops the run."""
     items: list[dict[str, Any]] = []
     seen: set[str] = set()
     for directory in directories:
@@ -559,6 +560,7 @@ def load_items(directories: Iterable[Path]) -> list[dict[str, Any]]:
                     raise SystemExit(f"{path}:{number}: id {item['id']} is used twice")
                 seen.add(item["id"])
                 items.append(item)
+    items.sort(key=lambda i: (i["lang"] != "zh-TW", TIERS.index(i["tier"])))  # stable: zh-TW light, zh-TW everyday, then the control
     return items
 
 
@@ -582,13 +584,18 @@ def choose_items(items: list[dict[str, Any]], args: argparse.Namespace) -> list[
         groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
         for item in out:
             groups.setdefault((item["lang"], item["tier"]), []).append(item)
-        picked: list[dict[str, Any]] = []
-        total = len(out)
-        for key in sorted(groups):
-            share = max(1, round(args.sample * len(groups[key]) / total))
-            picked.extend(rng.sample(groups[key], min(share, len(groups[key]))))
-        rng.shuffle(picked)
-        keep = {i["id"] for i in picked[:args.sample]}
+        exact = {name: args.sample * len(group) / len(out) for name, group in groups.items()}
+        share = {name: max(1, int(exact[name])) for name in groups}  # every set and tier gets at least one item
+        for name in sorted(groups, key=lambda g: (int(exact[g]) - exact[g], g)):  # largest remainder first
+            if sum(share.values()) >= args.sample:
+                break
+            if share[name] < len(groups[name]):
+                share[name] += 1
+        while sum(share.values()) > args.sample:  # a very small K: take back from the largest groups
+            share[max(sorted(share), key=lambda g: share[g])] -= 1
+        keep: set[str] = set()
+        for name in sorted(groups):
+            keep.update(i["id"] for i in rng.sample(groups[name], min(share[name], len(groups[name]))))
         out = [i for i in out if i["id"] in keep]
     if args.limit:
         out = out[:args.limit]
@@ -710,7 +717,7 @@ def suggest(report: Mapping[str, Any], routing_path: Path | None = None) -> str:
                 lines.append(f"    best alias: {best} (already the alias for {tier} in config/routing.yaml)")
             else:
                 lines.append(f"    best alias: {best}")
-                edits += [f"    {tier}:", f"      alias: {best}" + (f"        # now: {now}" if now else "")]
+                edits += [f"  {tier}:", f"    alias: {best}" + (f"        # now: {now}" if now else "")]
         if deployments:
             best_dep, cell = deployments[0]
             lines.append(f"    best single model: {best_dep} {_pct(cell['rate'])}. routing.yaml names aliases, not models; to prefer this model, "
@@ -844,8 +851,10 @@ def local_view(env: Mapping[str, str]) -> dict[str, dict[str, Any]]:
     for entry in config.get("model_list") or []:
         name, info = str(entry["model_name"]), entry.get("model_info") or {}
         slot = view.setdefault(name, {"kind": "alias" if name in alias_meta else "deployment", "mode": str(info.get("mode", "chat")),
-                                      "tiers": set(), "providers": set(), "priced": False, "floor": 0})
+                                      "tiers": set(), "providers": set(), "priced": False, "floor": 0, "unpaid": set()})
         slot["tiers"].add(str(info.get("muse_tier", "unknown")))
+        if str(info.get("muse_tier")) not in PAID_TIERS:  # what is left when the proxy's paid gate removes paid and metered tiers
+            slot["unpaid"].add("priced" if "muse_price_in" in info else str(info.get("muse_tier", "unknown")))
         slot["providers"].add(str(info.get("provider", "?")))
         slot["priced"] = slot["priced"] or "muse_price_in" in info
         slot["floor"] = max(slot["floor"], int(info.get("muse_min_output_tokens") or 0))
@@ -862,27 +871,35 @@ def local_view(env: Mapping[str, str]) -> dict[str, dict[str, Any]]:
         slot["reach"] = sorted(reach - {name})
     for name, slot in view.items():
         tiers, providers, priced, floor = set(slot["tiers"]), set(slot["providers"]), slot["priced"], slot["floor"]
+        unpaid = set(slot["unpaid"])
         for other in slot.get("reach", []):
             tiers |= view[other]["tiers"]
+            unpaid |= view[other]["unpaid"]
             providers |= view[other]["providers"]
             priced = priced or view[other]["priced"]
             floor = max(floor, view[other]["floor"])
         slot["status"] = status_of(tiers, priced)
+        # For an app that may not pay, the proxy removes paid and metered deployments before routing.
+        slot["status_no_paid"] = status_of(unpaid - {"priced"}, "priced" in unpaid) if unpaid else "paid"
         slot["all_providers"], slot["all_floor"] = sorted(providers), floor
     return view
 
 
 def status_of(tiers: set[str], priced: bool) -> str:
     """free: only free or local tiers. trial: also a trial allowance. paid: can reach a paid or metered provider."""
-    if priced or tiers & {"paid", "metered"}:
+    if priced or tiers & PAID_TIERS:
         return "paid"
     if not tiers or tiers - FREE_TIERS - {"trial"}:
         return "unknown"
     return "trial" if "trial" in tiers else "free"
 
 
-def pick_targets(model_ids: list[str], view: Mapping[str, Mapping[str, Any]], args: argparse.Namespace) -> list[dict[str, Any]]:
-    """Chat aliases the proxy lists; with --deployments also each pinned chat deployment; `auto` only when named."""
+def pick_targets(model_ids: list[str], view: Mapping[str, Mapping[str, Any]], args: argparse.Namespace, no_paid: bool = False) -> list[dict[str, Any]]:
+    """Chat aliases the proxy lists; with --deployments also each pinned chat deployment; `auto` only when named.
+
+    `no_paid`: the key in use belongs to an app that may not pay, so the proxy
+    removes paid deployments itself and an alias is judged by what is left.
+    """
     only = [n.strip() for n in (args.only or "").split(",") if n.strip()]
     listed = list(dict.fromkeys(model_ids))
     targets: list[dict[str, Any]] = []
@@ -891,7 +908,8 @@ def pick_targets(model_ids: list[str], view: Mapping[str, Mapping[str, Any]], ar
         slot = view.get(name)
         if not slot:
             return {"name": name, "kind": "unknown", "status": "unknown", "providers": [], "floor": 0}
-        return {"name": name, "kind": slot["kind"], "status": slot["status"], "providers": slot["all_providers"], "floor": slot["all_floor"]}
+        return {"name": name, "kind": slot["kind"], "status": slot["status_no_paid" if no_paid else "status"],
+                "providers": slot["all_providers"], "floor": slot["all_floor"]}
 
     for name in listed:
         slot = view.get(name)
@@ -1005,15 +1023,29 @@ def write_report(report: Mapping[str, Any], path: Path) -> None:
     os.replace(tmp, path)
 
 
-def find_auth(env: Mapping[str, str]) -> tuple[str | None, str]:
-    """(bearer, a label that is safe to print). The eval app token when set, else the master key."""
+def find_auth(env: Mapping[str, str]) -> tuple[str | None, str, bool]:
+    """(bearer, a label that is safe to print, whether this key's app may NOT pay).
+
+    The eval app token when MUSE_EVAL_APP_TOKEN is set, else the master key. The
+    master key is the owner, who may pay; an app token is looked up in the apps
+    file (by hash) to see whether its app may.
+    """
     token = str(env.get("MUSE_EVAL_APP_TOKEN", "")).strip()
     if token:
-        return token, "app token from MUSE_EVAL_APP_TOKEN"
+        try:
+            from muse import apps
+
+            app = apps.find_by_token(token, env)
+        except Exception:
+            app = None
+        if app is None:
+            return token, "app token from MUSE_EVAL_APP_TOKEN (app not found in the apps file)", False
+        pays = "may pay" if app.allow_paid else "may not pay"
+        return token, f"app token from MUSE_EVAL_APP_TOKEN (app '{app.name}', {app.priority}, {pays})", not app.allow_paid
     master = str(env.get("LITELLM_MASTER_KEY", "")).strip()
     if master:
-        return master, "master key (LITELLM_MASTER_KEY)"
-    return None, "no key found"
+        return master, "master key (LITELLM_MASTER_KEY)", False
+    return None, "no key found", False
 
 
 def merged_env(environ: Mapping[str, str] | None) -> dict[str, str]:
@@ -1027,7 +1059,7 @@ def merged_env(environ: Mapping[str, str] | None) -> dict[str, str]:
 
 
 def run(args: argparse.Namespace, env: Mapping[str, str], items: list[dict[str, Any]]) -> int:
-    bearer, auth_label = find_auth(env)
+    bearer, auth_label, no_paid = find_auth(env)
     proxy = Proxy(args.proxy_url, bearer)
     report_path = Path(args.report)
     by_id = {i["id"]: i for i in items}
@@ -1037,7 +1069,7 @@ def run(args: argparse.Namespace, env: Mapping[str, str], items: list[dict[str, 
         print(f"Could not list models at {proxy.url}/v1/models ({auth_label}). Run `muse up`, and check the key.", file=sys.stderr)
         return 2
     view = local_view(env)
-    targets = pick_targets(model_ids, view, args)
+    targets = pick_targets(model_ids, view, args, no_paid)
     if not targets:
         print("No chat target to evaluate. The proxy lists: " + (", ".join(model_ids) or "nothing"), file=sys.stderr)
         return 2
@@ -1077,12 +1109,14 @@ def run(args: argparse.Namespace, env: Mapping[str, str], items: list[dict[str, 
             if args.resume and n < len(items):
                 line += f" ({len(items) - n} already answered)"
         else:
-            line = "LEFT OUT: it can reach a paid provider (or is unknown); pass --allow-paid to include it"
+            line = "LEFT OUT: it can reach a paid provider (or is unknown); see docs/evals.md, or pass --allow-paid"
         print(f"  {t['name']:<34} {t['kind']:<10} {t['status']:<7} {line}  [{reach}]")
     print(f"  at most {len(included)} targets x {len(items)} items = {total} requests in all, and at most {tokens} tokens"
           f" (2 tokens per input character plus the output cap, a high estimate).")
     print("  A request answered 429 is sent once more after its Retry-After, so at most "
           f"{2 * total} HTTP calls. One at a time, {args.delay:g} s apart, temperature 0.")
+    if no_paid:
+        print("  This app may not pay: the proxy removes paid providers from an alias before routing, so aliases are judged by their free members.")
     if any(t["status"] == "trial" for t in included):
         print("  trial: this target can use a provider's trial allowance, which may not renew.")
     if any(t["status"] in ("paid", "unknown") for t in included):
