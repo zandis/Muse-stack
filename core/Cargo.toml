@@ -23,3 +23,12 @@ unicode-normalization = "0.1"
 # Only to cross-check the hand-ported Pacific DST rule against tzdata (tests/pacific_tzdata.rs).
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 chrono-tz = { version = "0.10", default-features = false, features = ["std"] }
+
+# The records tests verify tens of thousands of Ed25519 signatures; unoptimised
+# curve arithmetic makes them take minutes. Only these two dependencies are
+# affected, and only in dev and test builds.
+[profile.dev.package.curve25519-dalek]
+opt-level = 3
+
+[profile.dev.package.sha2]
+opt-level = 3

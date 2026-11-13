@@ -195,6 +195,22 @@ An app asks for a task with the header `x-muse-task: <task>` and any model name,
 
 **Exact repeats** (off unless `MUSE_CACHE=exact`): an identical request (same alias, messages and output settings, temperature 0 or a task marked `deterministic`) is answered from a cache without contacting anyone (`x-muse-cache: hit`, `x-muse-provider: cache`), recorded in the ledger as `cached` at zero cost, and not counted against quotas or app caps. The privacy class and the app's default class are part of the key. Public and standard answers are kept in `~/.muse/cache.sqlite` (0600) so every worker shares them; private and local answers are kept in memory only and never written to disk. `MUSE_CACHE_TTL_S` (default 3600) and `MUSE_CACHE_MAX_ENTRIES` (default 1000) bound it.
 
+### Records
+
+Muse keeps a signed record of what is done in your name on this computer: one append-only chain per device, each entry signed with the device's key and linked to the one before it, so a changed, removed or reordered entry is detected. Today the chain holds what you do to the home yourself (`muse pause` and `muse resume` each leave a record); the helper's actions, permissions and payments will write to the same chain as those parts are built.
+
+```bash
+muse records list                         # newest first; --since 7d, --action files, --cost-only, --json
+muse records verify                       # "All records check out (N records)", the last seal, and this device's key
+muse records seal                         # sign a checkpoint over every record so far
+muse records export FILE                  # a file someone else can check; same filters; --redact-summaries leaves the text out
+muse records check-file FILE              # check an export, yours or anyone's; --device KEY to require a particular signer
+```
+
+A record holds the time, who acted, the action's name, the permission it ran under, the outcome, the cost, and a short summary. It never holds content: what was acted on is stored as a keyed reference that means nothing without a key that stays on your devices, and a summary that looks like it contains a key or token is refused. An export checks out with nothing but the file, and a filtered export proves each of its records belongs to the sealed set. What a check cannot tell the reader is whose key signed it (show them the key from `muse records verify`) or whether newer records exist.
+
+Files: `~/.muse/records.sqlite` and `~/.muse/device.key` (the signing key; both 0600). Deleting `device.key` starts a new chain under a new key. A seal is kept only on this computer for now, so records removed from the end before any seal, or a whole file replaced by an older copy, cannot be noticed yet; keeping seals somewhere else is planned. A problem writing a record never stops `pause` or `resume`. The format, with a worked example and what an export reveals, is in [docs/spec/interfaces/record-format.md](docs/spec/interfaces/record-format.md); the same rules are in the Rust core (`core/src/records.rs`), and `core/conformance/records.json` holds the cases both must answer alike. No outside security review has been done. Needs the `cryptography` package (in the `dev` and `trust` extras).
+
 ## Trust layer
 
 `muse/trust` holds what the bot and later data sales are built on: an encrypted

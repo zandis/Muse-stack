@@ -464,3 +464,28 @@ def test_export_refuses_a_checkpoint_that_is_not_over_the_records():
     cp = records.checkpoint([records.hash(r) for r in chain[:4]] + ["00" * 32], T0, SEED)
     assert kind_of(seal.export, chain, cp) == ("root_mismatch", None)
     assert kind_of(seal.export, chain[:3], cp) == ("size_mismatch", None)
+
+
+# ---------------------------------------------------------------- the format document
+
+
+def test_the_worked_example_in_the_format_document_is_what_the_code_produces():
+    doc = (ROOT / "docs" / "spec" / "interfaces" / "record-format.md").read_text(encoding="utf-8")
+    chain = vectors.make_chain(vectors.ENTRIES)
+    record = chain[1]
+    hashes = [records.hash(r) for r in chain]
+    cp = records.checkpoint(hashes, T0 + 300_000, SEED)
+    must_appear = [
+        vectors.SEED_A, vectors.REF_KEY, vectors.DEVICE_A, records.genesis(vectors.DEVICE_A), hashes[0], record["resource"],
+        record["summary_salt"], record["summary_hash"], fmt.canonical_bytes(record).decode("utf-8"), fmt.signing_digest(record).hex(),
+        record["sig"], hashes[1], record["summary"], cp["root"], cp["sig"], records.leaf_hash(hashes[1]),
+        *records.inclusion_proof(hashes, 1), f"({len(fmt.canonical_bytes(record))} bytes",
+        f"{len(vectors.build()):,} cases", f"tolerance of {records.TIME_TOLERANCE_MS:,} ms", "`record-format/1`",
+    ]
+    missing = [text for text in must_appear if text not in doc]
+    assert missing == []
+    assert json.dumps(vectors.ENTRIES[1]["summary"], ensure_ascii=False) in doc
+    for prefix in fmt.KEY_PREFIXES:
+        assert f"`{prefix}`" in doc, prefix
+    for kind in KINDS:
+        assert f"`{kind}`" in doc, kind

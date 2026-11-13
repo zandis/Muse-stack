@@ -21,7 +21,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-from typing import Any, Callable
+from typing import Any
 
 from muse.records import format as fmt
 from muse.records import jcs, merkle, seal
@@ -31,7 +31,7 @@ SEED_A = bytes(range(32)).hex()
 SEED_B = bytes(range(32, 64)).hex()
 REF_KEY = bytes(range(64, 96)).hex()
 REF_KEY_2 = bytes(range(96, 128)).hex()
-T0 = 1_794_000_000_000  # 2026-11-06T16:00:00Z in milliseconds
+T0 = 1_794_000_000_000  # milliseconds; 2026-11-06T21:20:00Z
 L_ORDER = 2**252 + 27742317777372353535851937790883648493
 
 
@@ -996,6 +996,3 @@ def render(vectors: list[dict[str, Any]] | None = None) -> str:
     """The text of core/conformance/records.json (same layout as the other areas)."""
     lines = [json.dumps(x, ensure_ascii=True, allow_nan=False, separators=(", ", ": ")) for x in (build() if vectors is None else vectors)]
     return "[\n" + ",\n".join(lines) + "\n]\n"
-
-
-Replay = Callable[[str, dict[str, Any]], dict[str, Any]]
