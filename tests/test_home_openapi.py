@@ -27,7 +27,7 @@ def test_every_route_is_in_the_file_and_every_listed_route_is_served(spec):
     listed = documented(spec)
     assert served - listed == set(), "served but missing from home-api.v1.yaml"
     assert listed - served == set(), "in home-api.v1.yaml but not served"
-    assert len(api.route_table()) == len(served) == 20  # no route is declared twice
+    assert len(api.route_table()) == len(served) == 21  # no route is declared twice
 
 
 def test_a_route_added_to_the_table_would_fail_this_test(spec, monkeypatch):
@@ -42,7 +42,7 @@ def test_the_table_is_exactly_the_architecture_list_plus_today(spec):
     assert sorted(api.route_table()) == sorted([
         ("GET", "/v1/status"), ("GET", "/v1/catalogue"), ("POST", "/v1/connect/{provider}"), ("POST", "/v1/keys/{provider}"),
         ("GET", "/v1/jobs"), ("POST", "/v1/jobs"), ("GET", "/v1/jobs/{id}"), ("DELETE", "/v1/jobs/{id}"),
-        ("GET", "/v1/cards"), ("GET", "/v1/cards/{id}"), ("POST", "/v1/cards/{id}/answer"),
+        ("GET", "/v1/cards"), ("POST", "/v1/cards"), ("GET", "/v1/cards/{id}"), ("POST", "/v1/cards/{id}/answer"),
         ("POST", "/v1/pause"), ("POST", "/v1/resume"),
         ("GET", "/v1/apps"), ("POST", "/v1/apps"), ("PATCH", "/v1/apps/{name}"), ("DELETE", "/v1/apps/{name}"),
         ("POST", "/v1/apps/{name}/rotate"), ("GET", "/v1/receipts"), ("GET", "/v1/mandates/artifacts"),
@@ -80,7 +80,7 @@ def test_path_parameters_are_declared(spec):
 
 
 def test_bodies_are_documented_where_the_server_takes_one(spec):
-    takes_body = {("POST", "/v1/keys/{provider}"), ("POST", "/v1/jobs"), ("POST", "/v1/cards/{id}/answer"), ("POST", "/v1/apps"),
+    takes_body = {("POST", "/v1/keys/{provider}"), ("POST", "/v1/jobs"), ("POST", "/v1/cards"), ("POST", "/v1/cards/{id}/answer"), ("POST", "/v1/apps"),
                   ("PATCH", "/v1/apps/{name}")}
     for path, item in spec["paths"].items():
         for method, op in item.items():
@@ -139,6 +139,11 @@ def test_the_card_schema_is_the_one_file(spec):
     assert schema["$defs"]["ref"]["pattern"] == cards.REF_RE.pattern and props["id"]["pattern"] == cards.ID_RE.pattern
     kinds = [rule["if"]["properties"]["kind"]["const"] for rule in schema["allOf"] if "kind" in rule["if"]["properties"]]
     assert sorted(set(kinds)) == sorted(cards.KINDS)
+    new = spec["components"]["schemas"]["NewCard"]["properties"]
+    assert sorted(new["kind"]["enum"]) == sorted(cards.KINDS) and new["ttl_s"]["maximum"] == cards.MAX_TTL_S
+    assert (new["title"]["maxLength"], new["thing"]["maxLength"], new["where"]["maxLength"], new["under"]["maxLength"]) == (
+        cards.MAX_TITLE, cards.MAX_THING, cards.MAX_WHERE, cards.MAX_UNDER)
+    assert f"at most {api.MAX_PENDING_PER_DEVICE} cards" in spec["paths"]["/v1/cards"]["post"]["description"]
 
 
 def test_app_and_status_shapes_match_what_is_served(spec):

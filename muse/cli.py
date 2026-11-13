@@ -1830,6 +1830,7 @@ def build_parser() -> argparse.ArgumentParser:
     register_skills_commands(sub)
     register_records_commands(sub)
     add_permissions_parser(sub)
+    register_host_commands(sub)
     return p
 
 
@@ -2248,6 +2249,18 @@ def add_permissions_parser(sub: Any) -> None:
 
 
 # ===== END permissions =====
+
+
+# ===== BEGIN host adapter: `muse mcp serve`, `muse hosts list|setup|show|check` (own block; logic lives in muse/mcp/) =====
+
+
+def register_host_commands(sub: Any) -> None:
+    from muse.mcp import cli as host_cli
+
+    host_cli.register(sub, _env, _base_v1)
+
+
+# ===== END host adapter =====
 
 
 def main(argv: list[str] | None = None) -> int:

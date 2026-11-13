@@ -356,12 +356,12 @@ def test_bad_answers_change_nothing(rig, body):
     assert rig.ok("GET", f"/v1/cards/{card}")["card"]["status"] == "pending"
 
 
-def test_card_lookups_that_fail_and_cards_cannot_be_created_over_the_api(rig):
+def test_card_lookups_that_fail(rig):  # creating a card over the API: see tests/test_mcp_home_cards.py
     for bad in ("0" * 16, "nope", "0" * 12):
         rig.fails("GET", f"/v1/cards/{bad}", None, 404, "not_found")
         rig.fails("POST", f"/v1/cards/{bad}/answer", {"decision": "approve"}, 404, "not_found")
     rig.fails("GET", "/v1/cards?status=open", None, 400, "invalid_request")
-    rig.fails("POST", "/v1/cards", {"kind": "save_file", "title": "x", "thing": "y"}, 405, "method_not_allowed")
+    rig.fails("PUT", "/v1/cards", {"kind": "save_file", "title": "x", "thing": "y"}, 405, "method_not_allowed")
     card = rig.card()
     rig.fails("DELETE", f"/v1/cards/{card}", None, 405, "method_not_allowed")
     rig.fails("GET", f"/v1/cards/{card}/answer", None, 405, "method_not_allowed")

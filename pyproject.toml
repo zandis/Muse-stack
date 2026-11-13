@@ -17,6 +17,8 @@ pdf = ["pypdf>=4"]
 # Signed permission tokens (muse/permissions). Pinned exactly: 0.4.0 wraps biscuit-auth 6.0.0,
 # the release core/Cargo.toml pins, so both sides run the same engine against the same vectors.
 permissions = ["biscuit-python==0.4.0"]
+# The Muse tools server for host bots (python -m muse.mcp). The proxy lock already pins this same version.
+mcp = ["mcp==2.3.0"]
 dev = ["pytest>=8", "cryptography>=42"]
 
 [project.scripts]
