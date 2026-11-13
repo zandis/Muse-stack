@@ -432,8 +432,10 @@ def test_an_answer_that_fails_twice_is_marked(env, proxy, docs):
     result = ask(env, "How much is the monthly rent?", docs)
     assert result.status == "needs_choice" and result.options == [] and len(chats(proxy)) == 2
     assert result.check == {"status": "failed", "reasons": [
-        "the answer is empty", "the answer makes no verified claims (no quote from a passage stood)"]}
+        "the answer makes no verified claims (no quote from a passage stood)",
+        "sentence 1: cites claim 0, which does not exist", "sentence 2: cites claim 0, which does not exist"]}
     assert result.output["not_found"] is False  # nothing verified is not the same as "not in your files"
+    assert result.output["written"] == "unverified" and "Mr Lin" in result.output["answer"]  # shown, marked not checked
 
 
 def empty_length(task: str) -> tuple:

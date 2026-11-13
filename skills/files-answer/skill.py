@@ -256,7 +256,10 @@ def _output(base: dict[str, Any], parsed: dict[str, Any], kept: list[dict[str, A
     written = "none"
     if not_found:
         body = _not_found(zh)
-    elif claims:
+    elif not claims:  # nothing verified: the model's own words are kept, for the person to see as NOT checked
+        body = _remap(parsed["answer"], ids).strip()
+        written = "unverified" if body else "none"
+    else:
         body = _remap(parsed["answer"], ids).strip()
         found = quotes.sentences(body.splitlines())
         if body and any(s["cites"] for s in found) and not quotes.statement_problems(found, quotes_by_id, question):
