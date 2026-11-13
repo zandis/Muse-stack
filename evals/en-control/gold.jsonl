@@ -1,0 +1,20 @@
+{"id": "en-cls-01", "output": "bill"}
+{"id": "en-cls-02", "output": "family"}
+{"id": "en-cls-03", "output": "travel"}
+{"id": "en-ext-01", "output": "{\"store\": \"Good Day Stationery\", \"date\": \"2025-03-14\", \"total\": 165}"}
+{"id": "en-ext-02", "output": "{\"restaurant\": \"Foothill Kitchen\", \"time\": \"18:30\", \"people\": 4}"}
+{"id": "en-ext-03", "output": "{\"order_id\": \"A20251105-031\", \"shipping\": 60, \"total\": 1940}"}
+{"id": "en-yn-01", "output": "{\"answer\": \"no\", \"reason\": \"Saturday is at the weekend.\"}"}
+{"id": "en-pick-01", "output": "B"}
+{"id": "en-norm-01", "output": "2025-03-05"}
+{"id": "en-norm-02", "output": "+886227123456"}
+{"id": "en-cite-01", "output": "{\"answer\": \"The deposit is 32,000 and is returned within 14 days of moving out.\", \"sources\": [2], \"not_found\": false}"}
+{"id": "en-cite-02", "output": "{\"answer\": \"One month's written notice is needed.\", \"sources\": [3], \"not_found\": false}"}
+{"id": "en-cite-03", "output": "{\"answer\": \"A membership can be paused at most twice a year.\", \"sources\": [2], \"not_found\": false}"}
+{"id": "en-nf-01", "output": "{\"answer\": \"\", \"sources\": [], \"not_found\": true}"}
+{"id": "en-nf-02", "output": "{\"answer\": \"\", \"sources\": [], \"not_found\": true}"}
+{"id": "en-sum-01", "output": "- Two work-from-home days a week will be trialled from next month\n- Staff pick their days, but Wednesday is an office day for all\n- The trial runs three months; a survey decides what happens next"}
+{"id": "en-sum-02", "output": "- Return approved: send the item back within seven days, postage paid by the shop\n- Refund to the original card within five working days of receipt"}
+{"id": "en-rw-01", "output": "The department meeting has moved to next Monday at 10 am, still in room 1 on the seventh floor."}
+{"id": "en-math-01", "output": "80"}
+{"id": "en-math-02", "output": "495"}
