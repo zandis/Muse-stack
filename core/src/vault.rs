@@ -423,8 +423,10 @@ pub struct PrfSlotInfo {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecoveryPolicy {
     /// Keep the same 24 words where that is safe. They are replaced anyway
-    /// when the device that created them is no longer in the vault, because
-    /// that device may have kept them (see `RecoveryKey::to_pending`).
+    /// when the device slot that created them is no longer in the vault
+    /// (it is the one being removed, or the vault was restored from a
+    /// backup), because that device may have kept them (see
+    /// `RecoveryKey::to_pending`).
     Keep,
     /// Make new words. The old ones stop opening the vault (they still open old backups).
     Renew,
@@ -449,8 +451,8 @@ pub struct Vault<S: VaultStore> {
     store: S,
     header: Header,
     keys: Option<Keys>,
-    /// The label of the device slot this vault was opened with ("" otherwise).
-    device_label: String,
+    /// The id of the device slot this vault was opened with ("" otherwise).
+    device_slot: String,
     auto_lock_secs: Option<u64>,
     last_activity: u64,
 }
@@ -525,7 +527,7 @@ impl<S: VaultStore> Vault<S> {
         let request = Self::enroll_device(&vault_id_hex, device_label, keystore, rng)?;
         let mut device = empty_slot(random_id(rng)?, KIND_DEVICE, device_label, now, &request.public);
         device.keystore_blob = hex(&request.keystore_blob);
-        let mut recovery_entry = recovery_slot(&keys, &vault_id, 1, &recovery, device_label, rng, now)?;
+        let mut recovery_entry = recovery_slot(&keys, &vault_id, 1, &recovery, &device.id, rng, now)?;
         wrap_slot(&mut device, &vault_id, 1, &keys.vmk, rng)?;
         wrap_slot(&mut recovery_entry, &vault_id, 1, &keys.vmk, rng)?;
 
@@ -543,11 +545,12 @@ impl<S: VaultStore> Vault<S> {
         header.mac = header.compute_mac(&keys.header);
         header.validate()?;
         store.apply(vec![StoreOp::PutHeader(header.to_bytes())])?;
+        let device_slot = header.slots[0].id.clone();
         let vault = Vault {
             store,
             header,
             keys: Some(keys),
-            device_label: device_label.to_string(),
+            device_slot,
             auto_lock_secs: None,
             last_activity: now,
         };
@@ -559,7 +562,7 @@ impl<S: VaultStore> Vault<S> {
     pub fn locked(store: S) -> Result<Self, VaultError> {
         let bytes = store.header()?.ok_or(VaultError::NotFound)?;
         let header = Header::parse(&bytes)?;
-        Ok(Vault { store, header, keys: None, device_label: String::new(), auto_lock_secs: None, last_activity: 0 })
+        Ok(Vault { store, header, keys: None, device_slot: String::new(), auto_lock_secs: None, last_activity: 0 })
     }
 
     pub fn open_with_device(store: S, keystore: &dyn DeviceKeyStore) -> Result<Self, VaultError> {
@@ -595,7 +598,7 @@ impl<S: VaultStore> Vault<S> {
             let Ok(plain) = keystore.unwrap(&blob) else { continue };
             let Some(secret) = Secret32::from_slice(&plain) else { continue };
             if let Some(keys) = try_slot(&self.header, slot, &secret) {
-                self.device_label = slot.label.clone();
+                self.device_slot = slot.id.clone();
                 self.keys = Some(keys);
                 return Ok(());
             }
@@ -607,7 +610,7 @@ impl<S: VaultStore> Vault<S> {
         self.keys = None;
         self.reload_header()?;
         let keys = self.header.recovery_slot().and_then(|slot| try_slot(&self.header, slot, &recovery.entropy));
-        self.device_label.clear();
+        self.device_slot.clear();
         self.keys = Some(keys.ok_or(VaultError::OpenFailed)?);
         Ok(())
     }
@@ -621,7 +624,7 @@ impl<S: VaultStore> Vault<S> {
             .iter()
             .find(|s| s.kind == KIND_PRF && s.id == slot_id)
             .and_then(|slot| try_slot(&self.header, slot, prf_output));
-        self.device_label.clear();
+        self.device_slot.clear();
         self.keys = Some(keys.ok_or(VaultError::OpenFailed)?);
         Ok(())
     }
@@ -1057,7 +1060,7 @@ impl<S: VaultStore> Vault<S> {
         // Recovery: keep the words only if the device that made them is still here.
         let at = header.slots.iter().position(|s| s.kind == KIND_RECOVERY).ok_or(VaultError::Malformed("recovery slot"))?;
         let issuer = header.slots[at].issuer.clone();
-        let issuer_present = !issuer.is_empty() && header.slots.iter().any(|s| s.kind == KIND_DEVICE && s.label == issuer);
+        let issuer_present = !issuer.is_empty() && header.slots.iter().any(|s| s.kind == KIND_DEVICE && s.id == issuer);
         let mut new_recovery = None;
         if policy == RecoveryPolicy::Keep && issuer_present {
             let slot = &mut header.slots[at];
@@ -1069,7 +1072,7 @@ impl<S: VaultStore> Vault<S> {
             slot.check_box = hex(&seal(&new.words, &nonce, &word_check_aad(&vault_id, &slot.id, epoch), &table));
         } else {
             let recovery = RecoveryKey::generate(rng)?;
-            header.slots[at] = recovery_slot(&new, &vault_id, epoch, &recovery, &self.device_label, rng, now)?;
+            header.slots[at] = recovery_slot(&new, &vault_id, epoch, &recovery, &self.device_slot, rng, now)?;
             new_recovery = Some(recovery);
         }
         for slot in header.slots.iter_mut() {
@@ -1134,7 +1137,7 @@ impl<S: VaultStore> Vault<S> {
         let mut header = self.header.clone();
         let at = header.slots.iter().position(|s| s.kind == KIND_RECOVERY).ok_or(VaultError::Malformed("recovery slot"))?;
         let recovery = RecoveryKey::generate(rng)?;
-        let mut slot = recovery_slot(keys, &vault_id, header.epoch, &recovery, &self.device_label, rng, now)?;
+        let mut slot = recovery_slot(keys, &vault_id, header.epoch, &recovery, &self.device_slot, rng, now)?;
         wrap_slot(&mut slot, &vault_id, header.epoch, &keys.vmk, rng)?;
         header.slots[at] = slot;
         self.commit_header(header, now)?;
@@ -1286,6 +1289,7 @@ impl<S: VaultStore> Vault<S> {
         let mut slot = empty_slot(random_id(rng)?, KIND_DEVICE, device_label, now, &request.public);
         slot.keystore_blob = hex(&request.keystore_blob);
         wrap_slot(&mut slot, &vault_id, header.epoch, &keys.vmk, rng)?;
+        let device_slot = slot.id.clone();
         header.slots.insert(0, slot);
         header.updated = now;
         header.mac = header.compute_mac(&keys.header);
@@ -1296,7 +1300,7 @@ impl<S: VaultStore> Vault<S> {
             store,
             header,
             keys: Some(keys),
-            device_label: device_label.to_string(),
+            device_slot,
             auto_lock_secs: None,
             last_activity: now,
         })

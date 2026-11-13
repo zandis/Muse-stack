@@ -1320,3 +1320,18 @@ fn stores_apply_batches_whole() {
     store.delete("a").unwrap();
     assert_eq!(store.get("a").unwrap(), None);
 }
+
+#[test]
+fn after_a_restore_the_next_rotation_makes_new_words() {
+    // The device slot that made the words is not in a restored vault (even if
+    // the new device is given the same name), so "keep" is not honoured.
+    let (mut f, ids, archive) = exported("restore then rotate");
+    let keys = other_keystore("replacement");
+    let mut restored = Vault::import(&archive, &f.recovery, MemoryStore::new(), "laptop", &keys, &mut f.rng, NOW).unwrap();
+    let report = restored.rotate(RecoveryPolicy::Keep, &mut f.rng, NOW + 1).unwrap();
+    let new_words = report.new_recovery.expect("new words");
+    let store = restored.into_store();
+    assert_eq!(Vault::open_with_recovery(store.clone(), &f.recovery).unwrap_err(), VaultError::OpenFailed);
+    let reopened = Vault::open_with_recovery(store, &new_words).unwrap();
+    assert_eq!(reopened.get(&ids[0]).unwrap().payload.as_slice(), "烏龍茶".as_bytes());
+}

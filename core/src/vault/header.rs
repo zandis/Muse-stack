@@ -56,7 +56,7 @@ pub struct Slot {
     pub credential_id: String,
     /// prf: the 32-byte PRF input for this slot, hex.
     pub prf_salt: String,
-    /// recovery: the label of the device that created this recovery key.
+    /// recovery: the id of the device slot that created this recovery key.
     pub issuer: String,
     /// recovery: when the person proved they saved the words (Unix seconds); 0 = not yet.
     pub confirmed: u64,
