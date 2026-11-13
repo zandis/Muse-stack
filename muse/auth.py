@@ -118,6 +118,8 @@ def authenticate(
             raise AuthError(403, f"{MARK} an app token cannot switch app with {APP_HEADER}; only the master key can.")
         _permission_gate(app, privacy, environ, now)
         return Identity(app, "app")
+    if token and token.startswith(apps_mod.TOKEN_PREFIX):
+        _removed_with_permission(token, environ)
 
     if not master:
         return Identity(ANONYMOUS, "anonymous")
@@ -140,6 +142,18 @@ def _permission_gate(app: App, privacy: str | None, environ: Mapping[str, str] |
     if asked in order and app.default_privacy in order and order.index(asked) < order.index(app.default_privacy):
         raise AuthError(403, f"{MARK} permission privacy: this app's permission allows the '{app.default_privacy}' class at most; "
                              f"'{asked}' would send data to more services than the person allowed.")
+
+
+def _removed_with_permission(token: str, environ: Mapping[str, str] | None) -> None:
+    """An app key whose entry the compiler removed when its permission stopped or ended gets that answer, not
+    "unknown key" (muse/compiler/gate.py keeps the key's hash, never the key)."""
+    from muse.compiler import gate
+
+    mandate = gate.stopped_key(apps_mod.hash_token(token), environ)
+    if mandate is not None:
+        ids = gate.stopped_ids(environ)
+        why = gate.STOPPED if ids is None or mandate in ids else gate.EXPIRED
+        raise AuthError(403, f"{MARK} permission {why}: {gate.SENTENCES[why]}")
 
 
 def _safe(name: str) -> str:

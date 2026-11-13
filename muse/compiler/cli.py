@@ -132,6 +132,10 @@ def _status(args: argparse.Namespace, env: Mapping[str, str], h: Any) -> int:
     from muse.compiler import guard
     from muse.compiler.core import Compiler
 
+    if not P.available():
+        print("Permissions need the `biscuit-python` package on this computer (pip install 'muse-stack[permissions]'). Until then")
+        print("nothing is checked: skills run as they always did and no router app is made from a permission.")
+        return 0
     compiler = Compiler(env)
     found = compiler.mandates()
     if args.name:

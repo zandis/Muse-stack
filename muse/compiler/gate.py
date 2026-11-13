@@ -11,6 +11,9 @@ small and needs no extra library (the proxy's environment has no Biscuit library
 The signed revocation list (`revocations.json`) stays the record of truth; this file is the copy
 the router can read. `sweep` rebuilds it from the signed list. A file that exists but cannot be
 read refuses every app made from a permission: failing open would un-stop one.
+
+The file also remembers the SHA-256 of each app key removed with its permission (never the key), so a stopped
+key is answered with "the permission was stopped" rather than "unknown key".
 """
 
 from __future__ import annotations
@@ -30,7 +33,7 @@ EXPIRED = "expired"
 NOT_YET = "not_yet_valid"
 UNREADABLE = "unreadable"
 
-_cache: dict[str, tuple[Any, frozenset[str] | None]] = {}
+_cache: dict[str, tuple[Any, Any]] = {}
 _lock = threading.Lock()
 
 
@@ -46,58 +49,89 @@ def _stamp(path: Path) -> Any:
     return (st.st_mtime_ns, st.st_size, st.st_ino)
 
 
-def _parse(text: str) -> dict[str, int]:
+MAX_APP_HASHES = 5000  # removed app keys remembered, so a stopped key gets a clear answer rather than "unknown key"
+
+
+def _parse(text: str) -> tuple[dict[str, int], dict[str, str]]:
+    """(stopped permission id -> when, sha256 of a removed app key -> its permission id)."""
     data = json.loads(text)
     if not isinstance(data, dict) or data.get("v") != 1 or not isinstance(data.get("mandates"), dict):
         raise ValueError("not a stopped list")
     if not all(isinstance(k, str) and isinstance(v, int) and not isinstance(v, bool) for k, v in data["mandates"].items()):
         raise ValueError("not a stopped list")
-    return dict(data["mandates"])
+    keys = data.get("apps", {})
+    if not isinstance(keys, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in keys.items()):
+        raise ValueError("not a stopped list")
+    return dict(data["mandates"]), dict(keys)
 
 
-def stopped_ids(environ: Mapping[str, str] | None = None) -> frozenset[str] | None:
-    """The ids of stopped permissions; an empty set when there is no file; None when the file cannot be read."""
+def _read(environ: Mapping[str, str] | None) -> tuple[frozenset[str], Mapping[str, str]] | None | bool:
+    """Cached by the file's stamp. False: no file. None: a file that cannot be read."""
     path = stopped_path(environ)
     stamp = _stamp(path)
     if stamp is None:
-        return frozenset()
+        return False
     key = str(path)
     with _lock:
         cached = _cache.get(key)
         if cached is not None and cached[0] == stamp:
             return cached[1]
     try:
-        ids: frozenset[str] | None = frozenset(_parse(path.read_text(encoding="utf-8")))
+        ids, hashes = _parse(path.read_text(encoding="utf-8"))
+        got: Any = (frozenset(ids), hashes)
     except (OSError, UnicodeDecodeError, ValueError):
-        ids = None
+        got = None
     with _lock:
-        _cache[key] = (stamp, ids)
-    return ids
+        _cache[key] = (stamp, got)
+    return got
 
 
-def mark_stopped(mandate_ids: Iterable[str], environ: Mapping[str, str] | None = None, now: float | None = None) -> None:
-    """Add ids to the stopped list (it only grows). Written 0600 through a temp file and os.replace.
+def stopped_ids(environ: Mapping[str, str] | None = None) -> frozenset[str] | None:
+    """The ids of stopped permissions; an empty set when there is no file; None when the file cannot be read."""
+    got = _read(environ)
+    if got is False:
+        return frozenset()
+    return None if got is None else got[0]
+
+
+def stopped_key(token_sha256: str, environ: Mapping[str, str] | None = None) -> str | None:
+    """The permission id behind an app key that was removed because its permission stopped or ended, or None."""
+    got = _read(environ)
+    if not got:
+        return None
+    return got[1].get(token_sha256)
+
+
+def mark_stopped(mandate_ids: Iterable[str], environ: Mapping[str, str] | None = None, now: float | None = None,
+                 app_keys: Mapping[str, str] | None = None) -> None:
+    """Add ids to the stopped list (it only grows), and the hashes of app keys about to be removed with them.
+    Written 0600 through a temp file and os.replace.
 
     A file that cannot be read is replaced by one holding the ids given: `sweep` gives every revoked id."""
     path = stopped_path(environ)
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        current: dict[str, int] | None = _parse(path.read_text(encoding="utf-8"))
+        current: tuple[dict[str, int], dict[str, str]] | None = _parse(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        current = {}
+        current = ({}, {})
     except (OSError, UnicodeDecodeError, ValueError):
         current = None
     when = int(time.time() if now is None else now)
-    merged = dict(current or {})
+    merged = dict(current[0] if current else {})
+    hashes = dict(current[1] if current else {})
     for ident in mandate_ids:
         merged.setdefault(ident, when)
-    if current is not None and merged == current and path.is_file():
+    for digest, ident in (app_keys or {}).items():
+        hashes[digest] = ident
+    while len(hashes) > MAX_APP_HASHES:
+        hashes.pop(next(iter(hashes)))
+    if current is not None and (merged, hashes) == current and path.is_file():
         return
     tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(json.dumps({"v": 1, "mandates": merged}, sort_keys=True) + "\n")
+            handle.write(json.dumps({"v": 1, "mandates": merged, "apps": hashes}, sort_keys=True) + "\n")
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(tmp, path)

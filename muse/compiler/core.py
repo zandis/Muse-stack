@@ -484,12 +484,24 @@ class Compiler:
         elif kind == "folder" and ident:
             folders.remove(ident, self.environ, only_mandate=mid)
         elif kind in ("app", ADOPTED) and ident:
-            apps.remove_app(ident, self.environ, only_mandate=mid)
+            self._forget_app(ident, mid)
         elif kind == "consent_record":
             words = {"stopped": "Stopped a permission", "expired": "A permission ended: its time ran out",
                      "missing": "Removed what was left of a permission whose token is gone"}[why]
             if self.record("mandate.revoke", words, actor=actor, mandate=mid, egress="none") is None:
                 raise RuntimeError("no record")
+
+    def _forget_app(self, name: str, mandate_id: str) -> bool:
+        """Remove an app made from a permission, remembering its key's hash first so the router can say why the key
+        stopped working (muse/compiler/gate.py)."""
+        from muse import apps
+
+        app = apps.load_apps(self.environ).get(name)
+        if app is None or app.mandate != mandate_id:
+            return False
+        if app.token_sha256:
+            gate.mark_stopped([], self.environ, self.clock(), app_keys={app.token_sha256: mandate_id})
+        return apps.remove_app(name, self.environ, only_mandate=mandate_id)
 
     # ---------------------------------------------------------------- sweep
 
@@ -523,7 +535,7 @@ class Compiler:
         # Artifacts that name a permission no longer in force, row or no row (a crash between making one and noting it).
         try:
             for app in apps.load_apps(self.environ).values():
-                if app.mandate and app.mandate not in live and apps.remove_app(app.name, self.environ, only_mandate=app.mandate):
+                if app.mandate and app.mandate not in live and self._forget_app(app.name, app.mandate):
                     removed.append(app.mandate)
             for entry in folders.load(self.environ).values():
                 tag = entry.get("mandate")
