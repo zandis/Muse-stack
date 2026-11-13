@@ -14,6 +14,8 @@ dependencies = ["pyyaml>=6"]
 keyring = ["keyring>=24"]
 trust = ["cryptography>=42"]
 pdf = ["pypdf>=4"]
+# The Muse tools server for host bots (python -m muse.mcp). The proxy lock already pins this same version.
+mcp = ["mcp==2.3.0"]
 dev = ["pytest>=8", "cryptography>=42"]
 
 [project.scripts]
