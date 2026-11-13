@@ -19,6 +19,7 @@ pub mod pyjson;
 pub mod pytext;
 pub mod quota;
 pub mod ration;
+pub mod records;
 
 pub use error::PyError;
 pub use pyjson::PyJson;

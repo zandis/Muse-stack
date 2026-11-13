@@ -14,6 +14,10 @@ serde = { version = "1", features = ["derive"] }
 # float_roundtrip: JSON numbers must parse to the exact f64 Python wrote.
 serde_json = { version = "1", features = ["float_roundtrip"] }
 sha2 = "0.10"
+# Records (src/records.rs): Ed25519 signatures, HMAC-SHA-256 references, NFC for signed text.
+ed25519-dalek = { version = "2", default-features = false, features = ["std", "fast", "zeroize"] }
+hmac = "0.12"
+unicode-normalization = "0.1"
 
 [dev-dependencies]
 # Only to cross-check the hand-ported Pacific DST rule against tzdata (tests/pacific_tzdata.rs).

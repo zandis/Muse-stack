@@ -16,7 +16,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 COMMITTED = ROOT / "core" / "conformance"
-AREAS = ("cache.json", "quota.json", "ration.json")
+AREAS = ("cache.json", "quota.json", "ration.json", "records.json")
 
 
 def load_exporter():
@@ -88,6 +88,7 @@ def test_every_ported_function_has_vectors(fresh):
         "ration.json": {"previous_midnight_pacific", "window_bounds", "window_reset", "burn_rate", "pace_position",
                         "pace_release_at", "pace_holds", "options_trailer", "parse_options"},
         "cache.json": {"cacheable", "cache_key"},
+        "records.json": set(__import__("muse.records.vectors", fromlist=["FUNCTIONS"]).FUNCTIONS),
     }
     for name, functions in wanted.items():
         assert {v["fn"] for v in json.loads((fresh / name).read_text(encoding="utf-8"))} == functions

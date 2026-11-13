@@ -43,6 +43,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from muse import cache, quota, ration  # noqa: E402
+from muse.records import vectors as records_vectors  # noqa: E402  (records: both sides are new, so Python is the reference)
 
 DEFAULT_OUT = ROOT / "core" / "conformance"
 TIME_ERRORS = (ValueError, OverflowError, OSError)
@@ -987,7 +988,9 @@ def cache_vectors() -> Area:
 
 def build() -> dict[str, str]:
     """File name -> content for every area."""
-    return {f"{area.name}.json": area.render() for area in (quota_vectors(), ration_vectors(), cache_vectors())}
+    files = {f"{area.name}.json": area.render() for area in (quota_vectors(), ration_vectors(), cache_vectors())}
+    files["records.json"] = records_vectors.render()  # see muse/records/vectors.py; the keys in it are test-only
+    return files
 
 
 def write(out_dir: Path) -> dict[str, str]:
