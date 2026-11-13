@@ -542,3 +542,84 @@ def test_a_cached_answer_is_not_raised_and_has_no_floor_header(h, db):
     assert again["max_tokens"] == 16  # nothing is sent upstream, so nothing is raised
     got = headers_for(h, second, answer(text="4"), R)
     assert got["x-muse-cache"] == "hit" and "x-muse-min-output" not in got
+
+
+# ---------------------------------------------------------------- H1, the first real run: the floor under the light ceiling
+
+
+def test_the_old_floor_never_applied_under_the_light_ceiling_and_the_new_one_does(h):
+    """2026-11-13: gpt-oss carried a floor of 256 while task light capped at 300, so a light call stayed at 300
+    and reasoning used it all. The shipped floor is now 1024: above the ceiling, so it wins for that deployment."""
+    import yaml
+
+    catalog = yaml.safe_load((Path(__file__).resolve().parents[1] / "config" / "providers.yaml").read_text(encoding="utf-8"))
+    floors = {d["id"]: d.get("min_output_tokens") for p in catalog["providers"] for d in p.get("deployments") or []}
+    assert {k: v for k, v in floors.items() if "gpt-oss" in k} == {
+        "groq-gpt-oss-20b": 1024, "groq-gpt-oss-120b": 1024, "novita-gpt-oss-120b": 1024, "nim-gpt-oss-20b": 1024,
+        "cerebras-gpt-oss-120b": 1024}
+    data = pre(h, req(headers={"x-muse-task": "light"}, model="auto", messages=[{"role": "user", "content": "hi"}]))
+    old, out = send(h, dep("o__chat", "reason", floor=256), data)
+    assert old["max_tokens"] == 300 and out is None
+    new, _ = send(h, dep("n__chat", "reason", floor=1024), data)
+    assert new["max_tokens"] == 1024
+    assert headers_for(h, data, answer(), dep("n__chat", "reason", floor=1024))["x-muse-min-output"] == "raised:300->1024;over-ceiling:300"
+
+
+# ---------------------------------------------------------------- the reasoning setting
+
+
+def reasoner(dep_id="g__chat", setting=None):
+    d = dep(dep_id, "groq", floor=1024)
+    d["model_info"]["muse_reasoning"] = setting or {"param": "reasoning_effort", "light": "low", "everyday": "low"}
+    return d
+
+
+def test_reasoning_of_and_apply_reasoning():
+    from muse.hook import apply_reasoning, reasoning_of
+
+    info = reasoner()["model_info"]
+    assert reasoning_of(info, "light") == ("reasoning_effort", "low") and reasoning_of(info, "heavy") is None
+    assert reasoning_of(info, None) is None and reasoning_of({}, "light") is None
+    assert reasoning_of({"muse_reasoning": {"param": "thinking", "light": "low"}}, "light") is None
+    assert reasoning_of({"muse_reasoning": {"param": "reasoning_effort", "light": "none"}}, "light") is None
+    data = {}
+    assert apply_reasoning(data, ("reasoning_effort", "low")) == "low" and data == {"reasoning_effort": "low"}
+    mine = {"reasoning_effort": "high"}
+    assert apply_reasoning(mine, ("reasoning_effort", "low")) is None and mine == {"reasoning_effort": "high"}
+
+
+def test_a_light_call_to_a_reasoning_deployment_is_sent_with_low_effort_and_says_so(h):
+    data = pre(h, req(headers={"x-muse-task": "light"}, model="auto", messages=[{"role": "user", "content": "hi"}]))
+    kwargs, out = send(h, reasoner(), data)
+    assert kwargs["reasoning_effort"] == "low" and out is kwargs and "reasoning_effort" not in data
+    got = headers_for(h, data, answer(), reasoner())
+    assert got["x-muse-reasoning"] == "low" and got["x-muse-min-output"] == "raised:300->1024;over-ceiling:300"
+
+
+def test_the_clients_own_reasoning_choice_wins_and_other_tasks_are_left_alone(h):
+    data = pre(h, req(headers={"x-muse-task": "light"}, model="auto", reasoning_effort="high", messages=[]))
+    kwargs, _ = send(h, reasoner(), data)
+    assert kwargs["reasoning_effort"] == "high" and "x-muse-reasoning" not in headers_for(h, data, answer(), reasoner())
+    heavy = pre(h, req(call_id="c-heavy", headers={"x-muse-task": "heavy"}, model="auto", messages=[]))
+    kwargs, _ = send(h, reasoner(), heavy)
+    assert "reasoning_effort" not in kwargs
+    plain = pre(h, req(call_id="c-plain", headers={"x-muse-task": "light"}, model="auto", messages=[]))
+    kwargs, _ = send(h, U, plain)
+    assert "reasoning_effort" not in kwargs and "x-muse-reasoning" not in headers_for(h, plain, answer(), U)
+
+
+def test_a_fallback_without_the_setting_gets_the_request_back_as_the_client_sent_it(h):
+    data = pre(h, req(headers={"x-muse-task": "light"}, model="auto", messages=[]))
+    kwargs = {**data, "model_info": reasoner()["model_info"]}
+    run(h.async_pre_call_deployment_hook(kwargs, CHAT))
+    assert kwargs["reasoning_effort"] == "low"
+    kwargs["model_info"] = U["model_info"]  # the same dict reused for the next deployment
+    run(h.async_pre_call_deployment_hook(kwargs, CHAT))
+    assert "reasoning_effort" not in kwargs
+    assert "x-muse-reasoning" not in headers_for(h, data, answer(), U)
+
+
+def test_only_chat_calls_get_a_reasoning_setting(h):
+    data = pre(h, req(headers={"x-muse-task": "light"}, model="auto", messages=[]))
+    kwargs, _ = send(h, reasoner(), data, call_type="aembedding")
+    assert "reasoning_effort" not in kwargs

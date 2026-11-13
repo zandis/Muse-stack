@@ -1,6 +1,6 @@
 # Chores check: task sets
 
-Tasks for `scripts/chores_check.py`, the harness behind gate G1 ("at least 80% of runs pass their own check on free allowances with nothing spent"). How to run it and how to read the numbers: [docs/chores-check.md](../../docs/chores-check.md).
+Tasks for `scripts/chores_check.py`, the harness behind gate G1 (since 2026-11-13: "at least 80% of completed runs are right by the expected facts, on free allowances, with nothing spent"; the skills' own check is reported second). How to run it and how to read the numbers: [docs/chores-check.md](../../docs/chores-check.md).
 
 ```
 evals/chores/
@@ -36,7 +36,8 @@ One JSON object per line in `<skill>/tasks.jsonl`. The folder name is the skill'
 
 - `{"any": ["31 August 2033", "August 31, 2033"]}`: one of these strings, ignoring case, spaces and thousands commas;
 - `{"number": 1450}`: this number, however it is written (`1,450`, `1450.00`);
-- `{"regex": "..."}`: a pattern, case-insensitive.
+- `{"regex": "..."}`: a pattern, case-insensitive;
+- typed values, strict on the value and lenient on the form: `{"date": "2031-04-03"}` (also `"year_optional": true`), `{"time": "08:40"}`, `{"amount": 1450}`, `{"count": 3, "unit": "year"}` (units: year, month, week, day, hour, minute, time, person). The forms each one takes are listed in docs/chores-check.md.
 
 A fact may add `"source": "lease.md"` (or a list of acceptable files): the answer must cite that file. For a skill whose output has no `citations` or `sources` list, sources are not scored.
 

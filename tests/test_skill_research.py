@@ -19,7 +19,7 @@ from test_skills_support import chat, env, proxy  # noqa: F401  (fixtures)
 CANARY = "CANARY-FILE-CONTENT-7a31be"
 CANARY_REPLY = "CANARY-MODEL-REPLY-c09d44"
 ROOT = Path(__file__).resolve().parents[1]
-SHARED = ("index.py", "retrieve.py", "textwork.py", "answer.py")
+SHARED = ("index.py", "retrieve.py", "textwork.py", "answer.py", "quotes.py", "recover.py")
 
 
 def module(name: str, skill: str = "research-report"):
@@ -42,17 +42,23 @@ def docs(tmp_path) -> Path:
     return folder
 
 
-# Facts a scripted "small model" finds: (words that must be in the passage, the claim it then makes).
+# Facts a scripted "small model" finds: (the exact words it quotes from a passage, what the claim then says).
 EN_FACTS = [
-    ("18,500", "The monthly rent is 18,500 dollars, due on the 5th of each month."),
-    ("deposit equals", "The deposit equals two months of rent."),
-    ("30 June 2032", "The lease ends on 30 June 2032 and needs 60 days of notice."),
+    ("The monthly rent is 18,500 dollars, due on the 5th of each month", "The monthly rent is 18,500 dollars, due on the 5th of each month."),
+    ("The deposit equals two months of rent", "The deposit equals two months of rent."),
+    ("The lease ends on 30 June 2032 and needs 60 days of notice", "The lease ends on 30 June 2032 and needs 60 days of notice."),
 ]
 ZH_FACTS = [
-    ("4.2 億元", "第三季的營收達到 4.2 億元，比去年同期成長 12%。"),
-    ("海外市場", "主要成長來自海外市場，尤其是日本與東南亞。"),
-    ("物流成本", "下一季的重點是降低物流成本。"),
+    ("第三季的營收達到 4.2 億元，比去年同期成長 12%", "第三季的營收達到 4.2 億元，比去年同期成長 12%。"),
+    ("主要成長來自海外市場", "主要成長來自海外市場，尤其是日本與東南亞。"),
+    ("下一季的重點是降低物流成本", "下一季的重點是降低物流成本。"),
 ]
+
+
+def quoted(request: dict, facts: list[tuple[str, str]] | None = None) -> list[dict]:
+    """The quote claims a faithful small model makes for the passages of one extract request."""
+    return [{"quote": quote, "n": n, "says": says} for n, text in passages_in(request).items()
+            for quote, says in (facts or EN_FACTS) if quote in text]
 EN_PLAN = ["What is the monthly rent and when is it due?", "What does the lease say about the deposit?",
            "When does the lease end and what notice is needed?"]
 ZH_PLAN = ["第三季的營收是多少？", "成長主要來自哪些市場？", "下一季的重點是什麼？"]
@@ -98,9 +104,7 @@ def script(proxy, plan: Any = None, facts: list[tuple[str, str]] | None = None, 
             if extract is not None:
                 made = extract(request)
                 return made if isinstance(made, tuple) else chat(made, task=task)
-            claims = [{"text": claim, "cites": [n]} for n, text in passages_in(request).items()
-                      for needle, claim in (facts or EN_FACTS) if needle in text]
-            return chat(json.dumps({"claims": claims}, ensure_ascii=False), task=task)
+            return chat(json.dumps({"claims": quoted(request, facts)}, ensure_ascii=False), task=task)
         made = (synth or faithful)(request)
         return made if isinstance(made, tuple) else chat(made, task=task)
 
@@ -132,20 +136,26 @@ def test_the_shared_modules_are_exact_copies_of_files_answer():
         assert (ROOT / "skills/research-report" / name).read_bytes() == (ROOT / "skills/files-answer" / name).read_bytes(), name
 
 
-def test_the_citation_rule_agrees_with_the_files_answer_check():
-    verify, fa = module("verify"), module("skill", "files-answer")
-    assert (verify.MIN_SHARE, verify.MIN_SHARE_EACH, verify.MIN_SHARED) == (fa.MIN_SHARE, fa.MIN_SHARE_EACH, fa.MIN_SHARED)
+def test_the_quote_rule_is_the_same_in_both_checks():
+    rr, fa = module("skill"), module("skill", "files-answer")
     passages = {1: "The monthly rent is 18,500 dollars, due on the 5th of each month.", 2: "Water the basil every morning.",
                 3: "第三季的營收達到 4.2 億元，比去年同期成長 12%。"}
-    cases = [("The rent is 18,500 dollars a month.", [1]), ("The rent is 18,500 dollars a month.", [2]),
-             ("The rent is 18,500 dollars a month.", [1, 2]), ("The rent is 18,500 dollars.", []), ("The rent is high.", [9]),
-             ("第三季營收為 4.2 億元。", [3]), ("下一季會擴大招募工程師。", [3]), ("Rent 18,500", [1]), ("...", [1])]
-    for text, cites in cases:
-        output = {"answer": text, "claims": [{"text": text, "cites": cites}], "not_found": False,
-                  "passages": [{"n": n, "text": t} for n, t in passages.items()]}
-        assert (verify.supported(text, cites, passages)[0] == "") == (fa.check(output) == []), (text, cites)
-    assert verify.supported("x y", [], passages) == ("no-cite", 0) and verify.supported("x y", [7], passages) == ("unknown-source", 7)
-    assert verify.supported("Tomatoes love shade in winter months.", [1], passages) == ("weak-overlap", 1)
+    cases = [("The monthly rent is 18,500 dollars", 1, "The rent is 18,500 dollars a month."),  # stands
+             ("The monthly rent is 18,500 dollars", 2, "The rent is 18,500 dollars a month."),  # wrong passage
+             ("The monthly rent is 19,500 dollars", 1, "The rent is 19,500 dollars a month."),  # a changed digit
+             ("The monthly rent is 18,500 dollars", 1, "The rent is 18,900 dollars a month."),  # says a number not quoted
+             ("第三季的營收達到 4.2 億元", 3, "Revenue in Q3 reached 4.2 億元."),  # zh quote, en statement
+             ("營收", 3, "Revenue."), ("The monthly rent", 9, "The rent.")]
+    for quote, n, says in cases:
+        claim = {"id": 1, "quote": quote, "n": n, "says": says, "text": says, "sub": 1, "subs": [1], "cites": [n]}
+        fa_out = {"question": "q", "answer": f"{says} [1]", "claims": [claim], "not_found": False,
+                  "passages": [{"n": k, "text": t} for k, t in passages.items()]}
+        rr_out = {"stage": "claims", "question": "q", "claims": [claim], "not_done": ["the written report"],
+                  "passages": fa_out["passages"]}
+        assert (fa.check(fa_out) == []) == (rr.check(rr_out) == []), (quote, n, says)
+    assert [fa.check({"question": "q", "answer": f"{s} [1]", "claims": [{"id": 1, "quote": q, "n": n, "says": s}],
+                      "passages": [{"n": k, "text": t} for k, t in passages.items()]}) == [] for q, n, s in cases] == [
+        True, False, False, False, True, False, False]
 
 
 # ================================================================ step 1: plan
@@ -200,15 +210,15 @@ def test_end_to_end_report_with_tiers_handoff_header_usage_and_a_proposed_file(e
     # Tiers per step, and the hand-off suggestion on the heavy call only.
     sent = chats(proxy)
     steps = [step_of(r) for r in sent]
-    assert steps[0] == "plan" and steps[-1] == "synthesise" and steps.count("synthesise") == 1 and steps.count("extract") >= 3
-    assert all(r["task"] == "light" for r in sent[:-1]) and sent[-1]["task"] == "heavy"
+    assert steps[0] == "plan" and steps[-1] == "synthesise" and steps.count("synthesise") == 1 and steps.count("extract") == 3  # one call per sub-question
+    assert sent[0]["task"] == "light" and all(r["task"] == "everyday" for r in sent[1:-1]) and sent[-1]["task"] == "heavy"
     assert sent[-1]["headers"].get("x-muse-handoff") == "suggest"
     assert all("x-muse-handoff" not in r["headers"] for r in sent[:-1])
     assert all(r["privacy"] == "standard" and "x-muse-allow-paid" not in r["headers"] for r in sent)
     # The heavy step sees claims and source numbers, never the documents again.
     heavy = sent[-1]["messages"][1]["content"]
     assert "18,500" in heavy and CANARY not in heavy and "Harbour Street" not in heavy
-    assert all(r["max_tokens"] == 300 for r in sent[:-1]) and sent[-1]["max_tokens"] == 700
+    assert sent[0]["max_tokens"] == 300 and all(r["max_tokens"] == 1200 for r in sent[1:-1]) and sent[-1]["max_tokens"] == 700
 
     # Per-step usage adds up to the job's.
     usage = o["usage"]
@@ -249,10 +259,12 @@ def test_outline_hints_reach_the_planner_and_shape_the_rule_fallback(env, proxy,
 def test_claims_that_fail_the_citation_rule_are_dropped_at_once(env, proxy, docs):
     def extract(request: dict) -> str:
         numbers = list(passages_in(request))
-        good = [{"text": claim, "cites": [n]} for n, text in passages_in(request).items() for needle, claim in EN_FACTS if needle in text]
-        bad = [{"text": "The landlord owns three other buildings in the city centre.", "cites": [numbers[0]]},  # not in the passage
-               {"text": "The rent is 18,500 dollars.", "cites": [99]},  # a passage that was not given
-               {"text": "Pets are allowed with a fee.", "cites": []}]  # cites nothing
+        good = quoted(request)
+        bad = [{"quote": "The landlord owns three other buildings", "n": numbers[0],
+                "says": "The landlord owns three other buildings in the city centre."},  # not in the passage
+               {"quote": "The monthly rent is 18,500 dollars", "n": 99, "says": "The rent is 18,500 dollars."},  # not given
+               {"text": "Pets are allowed with a fee.", "cites": []},  # the old shape: no quote
+               {"quote": "The monthly rent is 18,500 dollars", "n": numbers[0], "says": "The rent is 18,900 dollars."}]  # a number
         return json.dumps({"claims": bad + good})
 
     script(proxy, extract=extract)
@@ -300,8 +312,7 @@ def test_light_step_deferred_mid_extract_keeps_the_claims_so_far(env, proxy, doc
         calls["n"] += 1
         if calls["n"] >= 2:
             return ration_429("defer:reserve", 600, "wait:2026-11-14T00:00:00Z")
-        return json.dumps({"claims": [{"text": claim, "cites": [n]} for n, text in passages_in(request).items()
-                                      for needle, claim in EN_FACTS if needle in text]})
+        return json.dumps({"claims": quoted(request)})
 
     script(proxy, extract=extract)
     result = research(env, QUESTION, docs)
@@ -358,8 +369,7 @@ def test_a_subquestion_the_model_leaves_out_is_added_from_its_claims(env, proxy,
 
     def extract(request: dict) -> str:  # one fact per sub-question, so each sub-question stands on its own claim
         asked = request["messages"][1]["content"].split("Question: ")[1].split("\n")[0]
-        needle, claim = EN_FACTS[EN_PLAN.index(asked)]
-        return json.dumps({"claims": [{"text": claim, "cites": [n]} for n, text in passages_in(request).items() if needle in text]})
+        return json.dumps({"claims": quoted(request, [EN_FACTS[EN_PLAN.index(asked)]])})
 
     script(proxy, synth=synth, extract=extract)
     result = research(env, QUESTION, docs)
@@ -405,7 +415,7 @@ def test_check_catches_an_uncited_factual_sentence_then_needs_a_choice(env, prox
     script(proxy, synth=synth)
     result = research(env, QUESTION, docs)
     assert result.status == "needs_choice" and result.check["status"] == "failed"
-    assert any(re.fullmatch(r"sentence \d+ states a fact without a source", r) for r in result.check["reasons"])
+    assert any(re.fullmatch(r"sentence \d+: states a fact without a source", r) for r in result.check["reasons"])
     assert result.output["stage"] == "report" and result.writes == []  # the draft is returned, marked, and nothing is written
     # One retry, one tier stronger for the light steps; the heavy step stays heavy.
     tasks = [(step_of(r), r["task"]) for r in chats(proxy)]
@@ -418,16 +428,16 @@ def test_check_catches_a_wrong_and_a_missing_citation(env, proxy, docs):
     def synth(request: dict) -> str:
         notes = notes_in(request)
         wrong = next(n for n in range(1, 30) if n not in {c for _, _, cites in notes for c in cites})
-        return (faithful(request) + f"\n\nTomatoes need six hours of sun every single day [{notes[0][2][0]}]."
+        return (faithful(request) + f"\n\nThe monthly rent rose to 19,750 dollars last year [{notes[0][2][0]}]."
                 f" The deposit equals two months of rent [{wrong + 40}].")
 
     script(proxy, synth=synth)
     result = research(env, QUESTION, docs)
     assert result.status == "needs_choice" and result.check["status"] == "failed"
     reasons = " | ".join(result.check["reasons"])
-    assert re.search(r"sentence \d+: shares too little with ", reasons)
+    assert re.search(r"sentence \d+: states a number that is not in the quote it cites", reasons)
     assert re.search(r"sentence \d+: cites source \d+, which does not exist", reasons)
-    assert "Tomatoes" not in reasons and "deposit" not in reasons  # reasons never quote the text
+    assert "19,750" not in reasons and "deposit" not in reasons  # reasons never quote the text
 
 
 def good_output(env, proxy, docs) -> dict:
@@ -461,8 +471,10 @@ def test_check_directly_on_edited_outputs(env, proxy, docs):
     empty = edited(text=f"# {QUESTION}\n\n## Sources\n")
     assert "the report makes no statement with a source" in skill.check(empty)
     # A claim in the table that no longer stands on its source.
-    claims = [dict(o["claims"][0], text="Tomatoes need six hours of sun every day."), *o["claims"][1:]]
-    assert any(r.startswith("claim 1: shares too little") for r in skill.check(edited(claims=claims)))
+    claims = [dict(o["claims"][0], quote="Tomatoes need six hours of sun every day."), *o["claims"][1:]]
+    assert any(r.startswith("claim 1: its quote is not in the passage") for r in skill.check(edited(claims=claims)))
+    # A passage that was not read is never a pass, even when everything else stands.
+    assert any("were not read" in r for r in skill.check(edited(not_read=[2])))
     # Partial and not-found shapes.
     assert skill.check(edited(stage="claims", not_done=[])) == ["the result is partial but does not say what was not done"]
     assert skill.check(edited(stage="not_found")) == ["the result says nothing was found but still carries claims"]
@@ -474,7 +486,7 @@ def test_sentence_reader_handles_markers_bullets_headings_and_connectives():
     lines = ["## Rent", "- The rent is 18,500 dollars a month [1]. It is due on the 5th. [2] In short:", "",
              "**Deposit**", "The deposit is two months 【3】【4】。Is that usual?", "Version 4.2 costs 1,200 dollars per seat [5, 6]"]
     got = report.sentences(lines[1:])
-    assert [(s["cites"], s["fact"]) for s in got] == [([1], True), ([2], False), ([], False), ([3, 4], True), ([], False), ([5, 6], True)]
+    assert [(s["cites"], s["fact"]) for s in got] == [([1], True), ([2], True), ([], False), ([3, 4], True), ([], False), ([5, 6], True)]
     assert got[5]["text"] == "Version 4.2 costs 1,200 dollars per seat"
     assert report.cites_of("a [1][2] b [2, 3]") == [1, 2, 3]
     body = report.clean_body("```markdown\n# My title\n\n## Rent\nText [1].\n\n## Sources\n[1] made up\n```")

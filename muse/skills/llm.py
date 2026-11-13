@@ -11,6 +11,13 @@ typed `Deferred` carrying exactly what the router offered (`Retry-After`, the
 never sleeps or retries by itself: the runner decides. A 403 privacy refusal
 raises `PrivacyRefused` and is final: nothing here ever lowers a privacy class.
 
+A 200 with no visible text is a FAILED call, not an empty result: `Answer.empty`
+is True and `Answer.empty_reason` says `reasoning` (the router's
+`x-muse-answer: empty-reasoning` header, a `length` stop, or reasoning tokens in
+the usage) or `blank`. `ask_with_recovery` retries such a call once with a
+larger output cap one task step up, and returns a typed `Unanswered` when that
+is empty too. A skill must never read an empty answer as "nothing found".
+
 No message, prompt or answer text is put in an exception message or an event.
 """
 
@@ -21,7 +28,7 @@ import math
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Mapping, Sequence
 
 from muse import policy, rules
@@ -34,6 +41,10 @@ REQUEST_TIMEOUT_S = 120.0
 DEFAULT_OUTPUT_TOKENS = 1024
 MAX_EMBED_BATCH = 64
 EMPTY_REASONING = "empty-reasoning"
+EMPTY_REASON_REASONING = "reasoning"  # the output allowance went on hidden reasoning (router header, length stop, or usage)
+EMPTY_REASON_BLANK = "blank"  # no visible text and no sign of why
+RECOVERY_FACTOR = 4  # ask_with_recovery: the retry's output cap is this many times the first one ...
+RECOVERY_MAX_TOKENS = 4096  # ... but never above this (the caller may pass a lower bound)
 
 
 # ---------------------------------------------------------------- errors
@@ -139,6 +150,7 @@ class Meter:
     cost_usd: float = 0.0
     deferred: int = 0
     cache_hits: int = 0
+    empty_answers: int = 0  # 200s with no visible text
     by_provider: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -186,7 +198,7 @@ class Meter:
     def used(self) -> dict[str, Any]:
         return {"requests": self.requests, "tokens": self.tokens, "tokens_in": self.tokens_in, "tokens_out": self.tokens_out,
                 "cost_usd": round(self.cost_usd, 6), "seconds": round(self.elapsed(), 3), "deferred": self.deferred,
-                "cache_hits": self.cache_hits,
+                "cache_hits": self.cache_hits, "empty_answers": self.empty_answers,
                 "providers": {k: {**v, "cost_usd": round(v["cost_usd"], 6)} for k, v in sorted(self.by_provider.items())}}
 
 
@@ -234,16 +246,76 @@ class Answer:
     handoff: bool = False  # the router suggested the hand-off (x-muse-handoff: suggest)
     tokens_in: int = 0
     tokens_out: int = 0
+    empty_reason: str = ""  # "" when there is text; else "reasoning" or "blank"
+    finish_reason: str = ""  # the first choice's finish_reason, as the provider gave it
+    reasoning_tokens: int = 0  # usage.completion_tokens_details.reasoning_tokens, when reported
+    attempts: int = 1  # 2 when ask_with_recovery had to ask again
+    reasoning: str = ""  # x-muse-reasoning: the reasoning effort the router set for this call
+    flagged: bool = False  # the router itself said x-muse-answer: empty-reasoning (an older router never does)
+    ms: int = 0  # how long the HTTP call took, in milliseconds (router-side retries and fallbacks included)
 
     @property
     def empty(self) -> bool:
+        """True when there is no visible text. An empty answer is a failed call, never a valid empty result."""
         return not self.text.strip()
+
+    @property
+    def unanswered(self) -> bool:
+        return False  # an Answer always came from a model; see Unanswered
+
+    @property
+    def recovered(self) -> bool:
+        return self.attempts > 1 and not self.empty
 
     def facts(self) -> dict[str, Any]:
         """Everything but the text: safe for events."""
         return {"provider": self.provider, "cost_usd": self.cost_usd, "cache": self.cache, "min_output": self.min_output,
                 "answer": self.answer, "task": self.task, "privacy": self.privacy, "deployment": self.deployment,
-                "handoff": self.handoff, "tokens_in": self.tokens_in, "tokens_out": self.tokens_out}
+                "handoff": self.handoff, "tokens_in": self.tokens_in, "tokens_out": self.tokens_out,
+                "empty": self.empty, "empty_reason": self.empty_reason, "finish_reason": self.finish_reason,
+                "reasoning": self.reasoning, "flagged": self.flagged, "ms": self.ms}
+
+
+@dataclass(frozen=True, slots=True)
+class Unanswered:
+    """What `ask_with_recovery` returns when the model gave no visible text, also after the one larger retry.
+
+    It is not an answer: a caller must treat the step as NOT DONE (passages not read, question not answered),
+    never as "the model found nothing". `stopped` says why no second answer exists when the retry was not sent
+    or did not come back: "" (it was sent and was empty too), "budget", or "no-retry".
+    """
+
+    reason: str = EMPTY_REASON_BLANK  # reasoning | blank: why the last answer was empty
+    attempts: int = 1
+    stopped: str = ""
+    task: str = ""
+    provider: str = ""
+    cost_usd: float | None = None
+    handoff: bool = False
+
+    @property
+    def unanswered(self) -> bool:
+        return True
+
+    @property
+    def text(self) -> str:
+        return ""
+
+    @property
+    def empty(self) -> bool:
+        return True
+
+    @property
+    def recovered(self) -> bool:
+        return False
+
+    @property
+    def empty_reason(self) -> str:
+        return self.reason
+
+    @property
+    def answer(self) -> str:
+        return EMPTY_REASONING
 
 
 @dataclass(frozen=True, slots=True)
@@ -259,6 +331,42 @@ def raised(task: str, steps: int) -> str:
     if steps <= 0 or task not in RAISE_ORDER:
         return task
     return RAISE_ORDER[min(len(RAISE_ORDER) - 1, RAISE_ORDER.index(task) + steps)]
+
+
+def ask_with_recovery(client: Any, messages: Sequence[Mapping[str, Any]], *, task: str | None = None,
+                      max_tokens: int | None = None, max_retry_tokens: int = RECOVERY_MAX_TOKENS,
+                      factor: int = RECOVERY_FACTOR, **kwargs: Any) -> "Answer | Unanswered":
+    """One chat call; when it comes back with no visible text, ONE retry with more room. Opt-in: `ask` is unchanged.
+
+    The retry's output cap is `max_tokens * factor`, at most `max_retry_tokens`, and its task is one step up
+    (light -> everyday -> heavy): the router clamps a `light` call to that task's ceiling again, so a larger
+    cap alone would change nothing. Both calls are counted against the job's budget like any other call.
+
+    Returns the `Answer` (with `attempts == 2` and `recovered` True when the retry is the one that has text),
+    or an `Unanswered` when there is still no text: the caller must treat its step as not done. A deferral,
+    a privacy refusal or a router error on either call is raised as from `ask`; a budget stop on the retry is
+    not raised: the result is `Unanswered(stopped="budget")`, because the first call did happen.
+
+    `client` is anything with `ask` (the runner's Client, or the sandbox's proxy for it).
+    """
+    first = client.ask(messages, task=task, max_tokens=max_tokens, **kwargs)
+    if not first.empty:
+        return first
+    base = task or getattr(client, "default_task", "") or ""
+    lost = dict(reason=first.empty_reason or EMPTY_REASON_BLANK, task=first.task, provider=first.provider,
+                cost_usd=first.cost_usd, handoff=first.handoff)
+    if max_tokens is None or factor <= 1:
+        return Unanswered(attempts=1, stopped="no-retry", **lost)  # no cap was set, so there is no larger one to try
+    larger = max(int(max_tokens), min(int(max_tokens) * int(factor), int(max_retry_tokens)))
+    try:
+        second = client.ask(messages, task=raised(base, 1) if base else None, max_tokens=larger, **kwargs)
+    except BudgetExceeded:
+        return Unanswered(attempts=1, stopped="budget", **lost)
+    if second.empty:
+        cost = (first.cost_usd or 0.0) + (second.cost_usd or 0.0)
+        return Unanswered(reason=second.empty_reason or EMPTY_REASON_BLANK, attempts=2, task=second.task,
+                          provider=second.provider, cost_usd=cost, handoff=second.handoff)
+    return replace(second, attempts=2)
 
 
 def _float(value: Any) -> float | None:
@@ -340,6 +448,7 @@ class Client:
         self._post = post
         self.answers: list[dict[str, Any]] = []  # route facts of every 200, never text
         self.last_deferred: Deferred | None = None
+        self._last_ms = 0  # the duration of the latest HTTP call, for the `call` event
 
     # ------------------------------------------------------------ public
 
@@ -377,18 +486,36 @@ class Client:
         usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
         text = text if isinstance(text, str) else ""
         h = reply.headers
+        flagged = h.get("x-muse-answer", "").strip().lower()
+        choice = payload["choices"][0]
+        finish = str(choice.get("finish_reason") or "") if isinstance(choice, dict) else ""
+        details = usage.get("completion_tokens_details")
+        reasoning_tokens = _int(details.get("reasoning_tokens")) if isinstance(details, dict) else 0
+        empty_reason = ""
+        if not text.strip():
+            by_reasoning = flagged == EMPTY_REASONING or finish == "length" or reasoning_tokens > 0
+            empty_reason = EMPTY_REASON_REASONING if by_reasoning else EMPTY_REASON_BLANK
         answer = Answer(
             text=text, provider=h.get("x-muse-provider", ""), cost_usd=_float(h.get("x-muse-cost-usd")),
             cache=h.get("x-muse-cache", ""), min_output=h.get("x-muse-min-output", ""),
-            answer=h.get("x-muse-answer", "").strip().lower() or (EMPTY_REASONING if not text.strip() else ""),
+            answer=flagged or (EMPTY_REASONING if not text.strip() else ""),
             task=h.get("x-muse-task", "") or task, privacy=h.get("x-muse-privacy", "") or cls,
             deployment=h.get("x-muse-deployment", ""), handoff=h.get("x-muse-handoff", "").strip().lower() == "suggest",
             tokens_in=_int(usage.get("prompt_tokens")), tokens_out=_int(usage.get("completion_tokens")),
+            empty_reason=empty_reason, finish_reason=finish[:40], reasoning_tokens=reasoning_tokens,
+            reasoning=h.get("x-muse-reasoning", "").strip().lower()[:20],
+            flagged=flagged == EMPTY_REASONING, ms=self._last_ms,
         )
+        if answer.empty:
+            self.meter.empty_answers += 1
         self._settle(estimate, answer.tokens_in, answer.tokens_out, answer.cost_usd, answer.provider, answer.cache)
         self.answers.append(answer.facts())
         self._emit("call", status=200, ok=True, **answer.facts())
         return answer
+
+    def ask_with_recovery(self, messages: Sequence[Mapping[str, Any]], **kwargs: Any) -> "Answer | Unanswered":
+        """`ask`, with one larger retry when the answer has no visible text. See the module's `ask_with_recovery`."""
+        return ask_with_recovery(self, messages, **kwargs)
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         """Vectors for `texts` through the `embed` alias, in order."""
@@ -417,7 +544,8 @@ class Client:
         provider, cost = h.get("x-muse-provider", ""), _float(h.get("x-muse-cost-usd"))
         used = _int(usage.get("prompt_tokens")) or _int(usage.get("total_tokens"))
         self._settle(estimate, used, 0, cost, provider, h.get("x-muse-cache", ""))
-        self._emit("call", status=200, ok=True, task="embed", provider=provider, cost_usd=cost, tokens_in=used, count=len(texts))
+        self._emit("call", status=200, ok=True, task="embed", provider=provider, cost_usd=cost, tokens_in=used, count=len(texts),
+                   ms=self._last_ms)
         return Embeddings(vectors, provider, h.get("x-muse-deployment", ""), cost)
 
     # ------------------------------------------------------------ internals
@@ -455,7 +583,9 @@ class Client:
             if self.allow_paid:
                 headers["x-muse-allow-paid"] = "true"
             timeout = max(1.0, min(self.timeout, self.meter.remaining()["seconds"]))
+            began = time.monotonic()
             reply = self._post(self._base + path, headers, data, timeout)
+            self._last_ms = int((time.monotonic() - began) * 1000)
             if reply.status == 200:
                 return reply
             self.meter.release(estimate)
@@ -472,7 +602,7 @@ class Client:
                 if self._on_deferred is not None and self._on_deferred(error):
                     continue  # the runner chose to wait and try again
             else:
-                self._emit("call", task=task, status=reply.status, ok=False, error=type(error).__name__)
+                self._emit("call", task=task, status=reply.status, ok=False, error=type(error).__name__, ms=self._last_ms)
             raise error
 
     def _error(self, reply: Reply, task: str, cls: str) -> LlmError:

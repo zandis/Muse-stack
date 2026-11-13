@@ -1,100 +1,138 @@
-# Chores check: do the skills pass on free allowances?
+# Chores check: are the skills right on free allowances?
 
-`scripts/chores_check.py` runs each shipped skill many times through the real skill runner and the real router, on free allowances only, and reports how often a run passes. It answers gate G1 in [the execution plan](spec/04-execution-plan.md): "at least 80% of runs pass their own check on free allowances with nothing spent".
+`scripts/chores_check.py` runs each shipped skill many times through the real skill runner and the real router, on free allowances only, and reports how often a run is **right**. It answers gate G1 in [the execution plan](spec/04-execution-plan.md).
+
+Since 2026-11-13 the gate counts runs that are **right by the expected facts**, not runs that passed the skill's own check. The full real run that day showed why: research-report passed its own check in 82% of runs (over the 80% line) while only 41% of its reports were right. The own-check rate is still printed, as a second line, with the gap called out.
 
 It needs a machine with real provider keys and a running router. Without one, only `--check-tasks` and the tests work.
 
+## Before you run it: update the live router
+
+The first real run (2026-11-13) used current skills against an **old router build**: no output floor above the light ceiling, no `x-muse-answer`, no `x-muse-reasoning`. The fixes below are half on the router side. Update and restart the router before re-running, or the numbers will repeat the old failures. The check now warns loudly when the router answers like an old build:
+
+```
+WARNING: your router is older than these skills: it did not send the newer headers (x-muse-min-output / x-muse-reasoning / x-muse-answer) where a current build would. Update it and restart it, then run this again.
+```
+
+It can only tell when a call landed on a deployment where a current build always says something (a gpt-oss deployment on a light or everyday call, or an empty answer). The report's `router` says `current`, `old` or `unknown`.
+
 ## Run it
 
-On the machine with the keys, with the router up (`muse up`):
+On the machine with the keys, with the router up and current (`muse up`):
 
 ```bash
 # 0. Sends nothing: are the task files and fixtures consistent?
 python scripts/chores_check.py --check-tasks
 
-# 1. A cheap sample first: 5 tasks per skill, 10 runs in all.
-python scripts/chores_check.py --sample 5
+# 1. A cheap sample first: 5 tasks per skill, 10 runs in all, keeping what went wrong.
+python scripts/chores_check.py --sample 5 --keep-failures
 
-# 2. The full check: every task once (67 for files-answer, 66 for research-report).
-python scripts/chores_check.py
+# 2. The full check, capped well below the day's free allowance.
+python scripts/chores_check.py --max-requests 400 --keep-failures
 
-# Later, or the next day, after deferrals: finish what did not complete.
-python scripts/chores_check.py --resume
+# Later, or the next day, after deferrals or the cap: finish what did not complete.
+python scripts/chores_check.py --resume --max-requests 400
 ```
 
 Each command prints what it will send and waits for `y`. Add `--yes` for an unattended (nightly) run.
 
-| Command | Runs | Worst case |
-|---|---|---|
-| `--sample 5` | 10 | 260 requests, 1,050,000 tokens |
-| `--sample 50` (exactly the 50 runs per skill the gate names) | 100 | 2,600 requests, 10,500,000 tokens |
-| no `--sample` | 133 | 3,444 requests, 13,920,000 tokens |
+The worst case is each skill's own budget times the runs: 12 requests and 60,000 tokens for `files-answer`, 40 and 150,000 for `research-report`. It is a ceiling, not an estimate. Measured on 2026-11-13 (the old router): files-answer 2.2 requests and 2,313 tokens a run; research-report 11.7 requests and 8,916 tokens a run. research-report now makes one extraction call per sub-question (offline: 5.6 requests a run instead of 8.3).
 
-The worst case is each skill's own budget times the runs: 12 requests and 60,000 tokens for `files-answer`, 40 and 150,000 for `research-report`. It is a ceiling, not an estimate. By design, a `files-answer` run that passes first time makes 1 chat call and up to 3 embedding calls; a `research-report` run makes up to 17 (1 plan, up to 3 embedding, up to 12 extract, 1 heavy), and a failed check doubles that once. How much real models use has not been measured before the first run on the VM; the report says.
-
-Useful options: `--only files-answer`, `--runs N` (repeat every task N times), `--seed S` (which sample), `--privacy private`, `--delay SECONDS` (pause between runs, default 2), `--max-wait SECONDS` (longest `Retry-After` to sit out, default 60), `--stop-after N` (stop a skill after N deferred runs in a row, default 5), `--keep-outputs`, `--report PATH`, `--csv PATH`.
+Options: `--only files-answer`, `--only-kinds date,numeric`, `--max-requests N` (a run is not started when its budget could take the batch over N; the report prints the requests used against the cap), `--runs N`, `--sample K`, `--seed S`, `--privacy private`, `--delay SECONDS` (default 2), `--max-wait SECONDS` (longest `Retry-After` to sit out, default 60), `--stop-after N` (stop a skill after N deferred runs in a row, default 5), `--keep-failures`, `--keep-outputs`, `--report PATH`, `--csv PATH`.
 
 ## What it does to stay free and polite
 
 - Every run uses the runner's own app `skills`, which may never pay, and a money budget of 0. `x-muse-allow-paid` is never sent.
-- **If the router reports any cost above zero, the check stops at once**, prints a loud message and exits with code 3. No further run is started.
-- One run at a time, with a pause between runs.
-- A `Retry-After` of up to `--max-wait` seconds is sat out (at most three times in a run). A longer one ends the run as **deferred**.
-- After five deferred runs in a row for a skill, that skill's remaining tasks are not started: the free allowance is used up for now. `--resume` continues later.
-- If the router cannot be reached twice in a row, it stops and says to start it.
+- **If the router reports any cost above zero, the check stops at once**, prints a loud message and exits with code 3.
+- One run at a time, with a pause between runs. A `Retry-After` up to `--max-wait` is sat out; a longer one ends the run as **deferred**. Five deferred runs in a row stop that skill.
+- `--max-requests` keeps a nightly batch well below the day's allowance. The full set on 2026-11-13 used 922 requests and ran the free allowances dry near the end: the last ten runs were answered by OpenRouter alone.
+- At the start and the end the report records the day's allowance per connected provider from the local ledger (`muse status`: state, requests today, what is left when known). A provider that went from `ok` to `exhausted` or `cooling` during the batch is named, because runs after that point had fewer providers.
 
 ## What the numbers mean
 
-For each skill:
-
 | Line | Meaning |
 |---|---|
-| planned / completed / deferred / not run | A run is **completed** when it ended with a result the skill could be judged on. **Deferred** runs were held back by the router (a free allowance ran out or was being paced); they are reported apart and count neither as passes nor as failures. **Not run** were never started. |
-| passed own check | The runner returned `done` or `partial` and the skill's own check passed, after its one stronger retry if needed. This is what G1 counts. `partial` passes are counted here and also shown separately. |
-| right by expected facts | The independent score. Each task lists facts that must appear in the answer and the file each should cite; a not-in-the-files task expects the skill to say so. It needs no model. |
-| both | Passed its own check and was right. |
-| 95% interval | The Wilson score interval for the rate. With 50 runs and 40 passes it is about 67% to 89%: fifty runs cannot tell 80% from 70% reliably. |
-| failed | By category: `check-failed` (with the check's reasons as codes: `uncited`, `weak-overlap`, `unknown-source`, `length`, `language`, `coverage`, `empty`), `budget`, `router-error`, `privacy-refused`, `skill-error`. |
-| deferrals, offered | How many times the router held a call back, and which choices its refusals carried (`wait`, `wait+handoff`, ...). |
-| used | Requests, tokens and cost through the router, and which providers answered. Cost must be 0. |
-| empty answers | Calls that returned no visible text because a reasoning model spent its output allowance (`x-muse-answer: empty-reasoning`). |
-| by kind, by language | Own-check passes for lookup, multi-hop, numeric, date, not-found, cross-lang and long-file tasks, and for English and Traditional Chinese questions. |
-
-Then the verdict line:
+| right by expected facts | **The gate.** Each task lists facts that must appear in the answer and the file each should cite; a not-in-the-files task expects the skill to say so. |
+| passed own check | The runner returned `done` or `partial` and the skill's own check passed. Second line, with "it overstates the right-rate by N points", "passed but wrong" and "right but failed its own check". |
+| statuses | done / partial / needs_choice / failed counts, then empty answers, recoveries (an empty answer asked again with more room that then answered) and still unanswered. |
+| right by empty answers | The right-rate of runs with 0, 1-2 and 3+ empty answers: on 2026-11-13, 9/13, 11/19 and 7/34. |
+| requests per step | research-report: plan, gather (embeddings), extract, synthesise. |
+| slowest calls | The slowest calls of the batch: task, provider, milliseconds, and the total call time against the time spent waiting for `Retry-After`. A long call includes the router's own work inside that one request (LiteLLM's retry, `num_retries: 1`, and fallbacks to other deployments); the client cannot split that further. Per-run records hold every call's provider, task, milliseconds and status. |
+| router build seen | current / old / unknown per run. |
+| failed | `check-failed` (reasons as codes: `uncited`, `quote-not-found`, `number-not-quoted`, `quote-size`, `unknown-source`, `not-read`, `unanswered`, `off-subject`, `missing-part`, `length`, `language`, `coverage`, `empty`), `budget`, `router-error`, `privacy-refused`, `skill-error`. |
+| 95% interval | Wilson score interval. With 50 runs and 40 right it is about 67% to 89%. |
 
 ```
-G1: at least 80% of completed runs passed their own check with nothing spent: yes (54 of 61)
+G1: at least 80% of completed runs RIGHT by the expected facts with nothing spent: no (27 of 66)
+Own check (second line, not the gate): 54 of 66 passed (81.8%); it overstates the right-rate by 40.9 points; passed but wrong 30, right but failed its own check 3. By the own check alone this skill would have looked like it met the line; it did not.
 ```
 
-It is `yes` when at least 80% of completed runs passed their own check and the total cost is exactly 0. If fewer than 50 runs completed for a skill, the line says so: the gate asks for 50. The overall line is `yes` only when every skill that ran is.
+### Expected facts are typed
 
-And the caveat, when it applies:
+A fact can be a plain list of accepted strings (`any`), a `number`, a `regex`, or a **typed** value that takes every way of writing it and no other value:
 
-```
-CAVEAT: the skill's own check passed answers that were wrong 9 time(s) by the expected facts; the own-check rate overstates how often it is right.
-```
+| Type | Example | Accepted |
+|---|---|---|
+| `{"date": "2031-04-03"}` | fa-025 | 2031-04-03, 2031/4/3, 2031.04.03, 3 April 2031, 03 Apr 2031, April 3, 2031, 2031年4月3日, 民國120年4月3日. `"year_optional": true` also takes "3 April" / "4月3日". |
+| `{"time": "08:40"}` | rr-021 | 08:40, 8:40, 8:40 am, 8.40am, 上午8點40分, 8點40分. 13:15 also takes 1:15 pm, 下午1點15分 and a bare 1:15. |
+| `{"amount": 1450}` | rr-001 | 1,450, 1450.00, US$1,450, NT$1,450, 1,450 元. |
+| `{"count": 3, "unit": "year"}` | fa-027 | 3 years, three years, 3-year, 3 年, 三年 (兩年 for 2). |
 
-The own check is lexical: it proves that each statement shares words with the passage it cites, not that it answers the question. The expected-facts score is the plain measure of "is it right". Read G1 with both numbers.
+97 facts of the shipped tasks were converted (15 dates, 10 times, 18 counts, 55 amounts, one by hand: rr-028's "10:30" is 22:30 in the handbook), each only where the typed fact accepts every form the old list did; the check that every expected fact is in its fixture still holds.
+
+### --keep-failures
+
+Writes one line per wrong or failed run to `$MUSE_HOME/chores-failures.jsonl` (mode 0600): the answer text, its claims (what each says, the exact quote and its passage number and source label: only the skill's own quotes, never a passage or a prompt), and for each expected fact that was missing its kind and accepted forms. Nothing is kept by default. With it, a miss like fa-025 shows whether the answer had the wrong date or the right date in a form the scorer did not list.
+
+## What the first real runs showed (2026-11-13)
+
+**Sample** (`--sample 5`, 10 runs, 74 requests, US$0): files-answer own 5/5, right 4/5 (fa-025's date was not in any accepted form; output not kept). research-report own 3/5, right 0/5: 62 requests, 21 **empty** answers ("reasoning used the whole output"); two reports passed their own check while saying the files did not answer, after empty extraction calls; one failed on an uncited sentence; the Chinese question over English files failed the word-overlap check.
+
+**Full set** (133 runs, 922 requests, 743,426 tokens, US$0, 78 minutes): files-answer right 65/67 (zh 28/28, cross-language 6/6; wrong-but-passed fa-027, one of two parts answered, and fa-035, the size of Flat 4B "answered" from the purifier's 42 square metres). research-report own 54/66, right 27/66; 774 requests (11.7 a run), 172 empty answers (22% of calls); right-rate falls from 9/13 with no empty answer to 7/34 with three or more.
+
+Causes, as found in the code:
+
+1. **Hidden reasoning used the light allowance.** Task `light` caps output at 300 tokens. The gpt-oss deployments had an output floor of 256, below the ceiling, so it never applied, and reasoning used all 300.
+2. **An empty answer read as "nothing found".** research-report listed the sub-question under "what the sources did not answer", and its own check passed.
+3. **The word-overlap citation check** could not work across languages and was weak within one.
+4. **The scorer was strict on formats**, not only on values.
+
+## The fixes
+
+- **Router**: the gpt-oss floor is 1024 (an observation, not provider documentation); `reasoning_effort: low` on light and everyday calls to Groq gpt-oss and Cerebras gpt-oss-120b, where the providers document it and LiteLLM passes it on (`x-muse-reasoning: low`). See the README.
+- **Empty answers are failures**: an empty answer is asked once more with four times the room one tier up; still empty, it is `Unanswered`. research-report marks those passages NOT READ, lists the sub-question under "Not done" and its check does not pass; files-answer says the question was not answered, never that the files lack it.
+- **Claims are verbatim quotes** checked on this computer: the quote must be in the passage it names, every number stated must be in the quote, every sentence must cite a claim. Works across languages.
+- **files-answer**: an answer must come from a file that mentions what the question names (Flat 4B, INV-3109), and a question asking for two things needs a claim for each or must say what is missing (from fa-035 and fa-027).
+- **research-report**: one extraction call per sub-question on the everyday tier instead of many light calls.
+- **Harness**: right-by-facts gate, typed facts, `--keep-failures`, the old-router warning, `--max-requests`, `--only-kinds`, per-call timing and the allowance at both ends.
+
+### Offline experiments (fake models, the shipped task set, embeddings off)
+
+| | files-answer right | research-report right | research requests a run |
+|---|---|---|---|
+| model that quotes every expected fact it is shown, before | 62/67 | 55/66 | 8.3 |
+| the same, now | 62/67 | 57/66 | 5.6 |
+| the same with 22% of light calls empty, before | 62/67 | 52/66 (own check 66/66) | 8.3 |
+| the same with 22% of light calls empty, now | 62/67 | 57/66 | 5.9 |
+| naive extractive model (copies the sentences that share most words with the question), before | 37/67 (own 67/67) | 7/66 (own 65/66) | 8.5 |
+| naive, now | 37/67 (own 65/67) | 6/66 (own 65/66) | 5.8 |
+
+What this says: the pipeline can be right in about 93% (files-answer) and 86% (research-report) of the tasks with a perfect reader; most of the rest are passages the search never found (lexical search cannot find English passages for a Chinese question with embeddings off: research-report cross-language 2/5). Empty answers no longer turn into silent passes. And the quote rule does **not** close the gap for a model that quotes true but irrelevant sentences: those quotes are real, so the check passes them. That is what the gate change is for.
 
 ## Files
 
-- `$MUSE_HOME/chores-report.json`: the whole report: options, per-skill summary, one record per run, the verdict. `--resume` keeps the runs that passed or failed and runs the rest (deferred ones included).
-- `$MUSE_HOME/chores-runs.csv`: one line per run, appended on every invocation, so nightly runs can be compared. `set` changes when a task or a fixture changes; compare only lines with the same `set`.
+- `$MUSE_HOME/chores-report.json`: options, per-skill summary, one record per run (with per-call provider, task and milliseconds), router build, allowance at start and end, the verdict. `--resume` keeps the runs that passed or failed and runs the rest.
+- `$MUSE_HOME/chores-runs.csv`: one line per run, appended, so nights can be compared. Compare only lines with the same `set`.
+- `$MUSE_HOME/chores-failures.jsonl`: only with `--keep-failures`; see above.
 
-Neither file holds document text, prompts, model answers, the wording of check reasons, or any key: only ids, counts, provider names and short codes. `--keep-outputs` adds each run's answer, notes and check reasons to the JSON report; the test documents are fictional, so this is safe to share, but it is off by default so the habit carries over to real folders.
+The report and CSV hold no document text, prompts, model answers, check-reason wording or keys: ids, counts, provider names, milliseconds and short codes. `--keep-outputs` adds answers, notes and reasons to the JSON report.
 
-Exit codes: 0 every skill met the G1 line; 1 one did not, or the router was unreachable; 2 usage problem (including a broken task file); 3 stopped because something was charged.
-
-## The task sets
-
-See [evals/chores/README.md](../evals/chores/README.md): two folders of fictional documents (English and Traditional Chinese) and one `tasks.jsonl` per skill. Skills that are not installed are skipped with a note; add a task file for a new skill in the same shape.
+Exit codes: 0 every skill met the G1 line; 1 one did not, or the router was unreachable; 2 usage problem; 3 stopped because something was charged.
 
 ## Limits
 
-- **What the G1 line proves.** That, on this machine, on these days, with these keys, the skills' own checks passed in at least 80% of the runs that the free allowances let through, at no cost. It does not prove the answers were right (that is the expected-facts line), that an allowance is large enough for a day's real use (see the deferred count), or that it holds for other documents.
-- **Deferred runs are left out of the rate.** A night where most runs are deferred can still print `yes` on a handful of completed runs; the line says how many, and the gate needs 50 per skill.
-- **The fixtures are small and clean**: fourteen short documents, plain text and CSV, no scans, no PDFs, no messy exports. Real folders are harder to search.
-- **The expected facts are strict in one way and lenient in another.** A right answer worded differently (a date in another format that the task does not list) scores as wrong; an answer that mentions the right number in a wrong sentence scores as right.
-- **Cross-language tasks mostly fail the own check by design**: the check compares words, so an answer in one language citing a passage in another shares too few. They are in the set to show the size of that gap.
-- **Free allowances change.** Providers change limits and models; compare nights with the CSV rather than trusting one run.
-- **Not run here.** The harness has only been run against the fake router in the tests. No real provider has been called by it yet.
+- **The fixtures are small and clean**: fourteen short documents. Real folders are harder to search.
+- **The expected facts are lenient in one way**: an answer that mentions the right value in a wrong sentence scores as right. Typed facts are strict on values, so a wrong date in another form is still wrong.
+- **The router-build check can say `unknown`** for a whole batch answered by models without a floor or reasoning setting.
+- **Allowances change.** Compare nights with the CSV.
+- **Not run here against real providers.** The changes of 2026-11-13 were tested with the fake router only.

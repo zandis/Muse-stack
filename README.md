@@ -85,9 +85,37 @@ response headers go with it:
   on unchanged and nothing from it is logged or stored. Streamed responses do
   not carry this header, because headers are sent before the answer is known.
 
-The shipped floor is 256 on the gpt-oss deployments. That figure is the
-owner's observation on real keys on 2026-11-12/13 (empty at 16 to 20 tokens,
-fine at 300), not a number from any provider's documentation.
+- `x-muse-reasoning: <value>`, for example `low`. The deployment that answered
+  carries a `reasoning` setting in `config/providers.yaml` (for example
+  `reasoning: {param: reasoning_effort, light: low, everyday: low}`, rendered
+  as `model_info.muse_reasoning`) and Muse sent that parameter with that value
+  for the request's task, because the client had not set it. Shipped on the
+  Groq gpt-oss deployments and Cerebras gpt-oss-120b: `reasoning_effort`
+  (low/medium/high) is documented for those models on
+  https://console.groq.com/docs/reasoning and
+  https://inference-docs.cerebras.ai/capabilities/reasoning (both read
+  2026-11-13), and LiteLLM 1.108.5 passes it through for `groq/` and
+  `cerebras/`. It drops it for `nvidia_nim/` and `novita/` (Muse renders
+  `drop_params: true`, so it would silently do nothing), so those have no
+  setting. Lower effort is a request to think less, not a limit: Cerebras
+  says the levels do not reserve an exact token budget. `low` is the lowest
+  value either provider documents for gpt-oss: Groq lists `none` only for
+  another model, and Cerebras says gpt-oss-120b does not support `none`.
+  LiteLLM 1.108.5 does not check the value for `groq/` or `cerebras/` (it
+  passes `none` and `minimal` on unchanged, so the provider would see them),
+  which is why the catalogue only accepts low, medium and high. Not yet
+  observed on real keys.
+
+The shipped floor is 1024 on the gpt-oss deployments. That figure is not from
+any provider's documentation. It is the owner's observation on real keys: empty
+answers at 16 to 20 tokens and a normal one at 300 (2026-11-12/13), and then
+the first skills run (2026-11-13), where research-report still got 21 empty
+answers out of 62 requests at the `light` ceiling of 300, which the earlier
+floor of 256 never raised. The cost, said plainly: a `light` call that lands on
+a gpt-oss deployment may now use up to 1024 output tokens of that provider's
+free allowance instead of 300, about three times as much per call at worst,
+in exchange for an answer instead of an empty one (which a skill then had to
+ask for again, paying twice).
 
 A provider's `Retry-After` on a 429 is honoured twice over. LiteLLM cools that
 one deployment for the stated time (the rendered config sets no `allowed_fails`

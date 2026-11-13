@@ -6,6 +6,7 @@ No network and no real provider: the router is queue_fakes.FakeProxy with script
 from __future__ import annotations
 
 import json
+import re
 import os
 import sqlite3
 from pathlib import Path
@@ -41,9 +42,10 @@ def docs(tmp_path) -> Path:
     return folder
 
 
-def answer_json(answer: str, claims: list[tuple[str, list[int]]], not_found: bool = False) -> str:
-    return json.dumps({"answer": answer, "claims": [{"text": t, "cites": c} for t, c in claims], "not_found": not_found},
-                      ensure_ascii=False)
+def answer_json(answer: str, claims: list[tuple], not_found: bool = False) -> str:
+    """A model reply. A claim is (quote, passage n) or (quote, passage n, says); `answer` cites claims by place, [1]..."""
+    items = [{"quote": c[0], "n": c[1], "says": c[2] if len(c) > 2 else c[0]} for c in claims]
+    return json.dumps({"claims": items, "answer": answer, "not_found": not_found}, ensure_ascii=False)
 
 
 def ask(env, question: str, folder: Path, privacy: str | None = "standard", **inputs):
@@ -117,9 +119,28 @@ def test_bigram_overlap_for_chinese_and_english():
 # ================================================================ reading the model's reply
 
 
+def old_json(answer: str, claims: list[tuple[str, list[int]]]) -> str:
+    """The older {"text", "cites"} shape, still read by `parse` for plain-text readers."""
+    return json.dumps({"answer": answer, "claims": [{"text": t, "cites": c} for t, c in claims], "not_found": False})
+
+
+def test_parse_quoted_reads_quote_claims_in_the_models_order_and_odd_keys():
+    a = module("answer")
+    body = answer_json("Rent is 18,500 [1].", [("The monthly rent is 18,500 dollars", 1, "Rent is 18,500 [1]")])
+    for raw in (body, f"```json\n{body}\n```", f"Here you go:\n{body}\nThanks"):
+        got = a.parse_quoted(raw)
+        assert got["read"] == "json" and got["answer"] == "Rent is 18,500 [1]."
+        assert got["claims"] == [{"quote": "The monthly rent is 18,500 dollars", "n": 1, "says": "Rent is 18,500"}]
+    odd = a.parse_quoted(json.dumps({"claims": [{"quote": "a b", "passage": "2", "text": "x"}, "junk", {"says": "y"}]}))
+    assert odd["claims"] == [{"quote": "a b", "n": "2", "says": "x"}, {"quote": "", "n": None, "says": ""},
+                             {"quote": "", "n": None, "says": "y"}]
+    assert a.parse_quoted("The rent is 18,500 dollars [1].")["claims"] == []  # prose has no quotes to verify
+    assert a.parse_quoted("")["read"] == "empty"
+
+
 def test_parse_reads_clean_fenced_and_wrapped_json():
     a = module("answer")
-    body = answer_json("Rent is 18,500 [1].", [("Rent is 18,500 dollars", [1])])
+    body = old_json("Rent is 18,500 [1].", [("Rent is 18,500 dollars", [1])])
     for raw in (body, f"```json\n{body}\n```", f"Sure! Here is the JSON you asked for:\n\n{body}\n\nHope this helps.",
                 f"```\n{body}\n```\nLet me know if you need more."):
         parsed = a.parse(raw)
@@ -129,7 +150,7 @@ def test_parse_reads_clean_fenced_and_wrapped_json():
 
 def test_parse_repairs_a_truncated_object():
     a = module("answer")
-    whole = answer_json("Rent is 18,500 [1]. Deposit is two months [2].",
+    whole = old_json("Rent is 18,500 [1]. Deposit is two months [2].",
                         [("Rent is 18,500 dollars", [1]), ("The deposit equals two months of rent", [2])])
     cut = a.parse(whole[:whole.index("two months of rent") + 5])  # stopped inside the second claim's text
     assert cut["read"] == "repaired" and cut["claims"][0] == {"text": "Rent is 18,500 dollars", "cites": [1]}
@@ -164,8 +185,12 @@ PASSAGES = [{"n": 1, "text": "The monthly rent is 18,500 dollars, due on the 5th
             {"n": 3, "text": "第三季的營收達到 4.2 億元，比去年同期成長 12%。"}]
 
 
-def out(claims, not_found=False, answer="x"):
-    return {"answer": answer, "claims": [{"text": t, "cites": c} for t, c in claims], "not_found": not_found, "passages": PASSAGES}
+def out(claims, not_found=False, answer=None):
+    """An output to check. A claim is (quote, passage n, says); the answer defaults to each claim's `says` [id]."""
+    items = [{"id": i, "quote": q, "n": n, "says": s, "text": s} for i, (q, n, s) in enumerate(claims, start=1)]
+    if answer is None:
+        answer = " ".join(f"{s} [{i}]" for i, (_, _, s) in enumerate(claims, start=1)) or "x"
+    return {"question": "q", "answer": answer, "claims": items, "not_found": not_found, "passages": PASSAGES}
 
 
 def test_citation_labels():
@@ -174,32 +199,42 @@ def test_citation_labels():
     assert label("b.md", [2, 3, 4], False) == "b.md › paragraph 2-4" and label("報告.md", [2, 5], True) == "報告.md › 第 2、5 段"
 
 
-def test_the_check_passes_cited_overlapping_claims_in_both_languages():
+def test_the_check_passes_quoted_claims_in_both_languages_and_across_them():
     check = module("skill").check
-    assert check(out([("The rent is 18,500 dollars a month", [1]), ("第三季營收為4.2億元", [3])])) == []
+    assert check(out([("The monthly rent is 18,500 dollars", 1, "The rent is 18,500 dollars a month."),
+                      ("第三季的營收達到 4.2 億元", 3, "第三季營收為4.2億元。")])) == []
+    assert check(out([("The monthly rent is 18,500 dollars", 1, "每月租金是 18,500 元。")])) == []  # zh over an English quote
+    assert check(out([("第三季的營收達到 4.2 億元", 3, "Q3 revenue was 4.2 億元.")])) == []  # English over a zh-TW quote
     assert check(out([], not_found=True, answer="Not in your files.")) == []
 
 
-def test_the_check_catches_an_uncited_claim_and_a_wrong_citation():
+def test_the_check_catches_bad_quotes_numbers_and_citations():
     check = module("skill").check
-    reasons = check(out([("The rent is 18,500 dollars a month", [1]), ("The landlord is called Mr Lin", [])]))
-    assert reasons == ["claim 2 cites no passage"]
-    assert check(out([("The rent is 18,500 dollars a month", [9])])) == ["claim 1 cites passage 9, which was not given"]
-    wrong = check(out([("The rent is 18,500 dollars a month", [2])]))  # the passage exists but says nothing of the kind
-    assert wrong == ["claim 1 shares too little with passage 2"]
-    assert check(out([("第三季營收為4.2億元", [1])])) == ["claim 1 shares too little with passage 1"]
-    both = check(out([("The rent is 18,500 dollars a month", [1, 2])]))  # every cited passage must support it
-    assert both == ["claim 1 shares too little with passage 2"]
+    rent = ("The monthly rent is 18,500 dollars", 1, "The rent is 18,500 dollars a month.")
+    assert check(out([rent, ("The landlord is called Mr Lin", 1, "The landlord is Mr Lin.")])) == [
+        "claim 2: its quote is not in the passage it cites", "sentence 2: cites claim 2, which does not exist"]
+    assert check(out([(rent[0], 9, rent[2])]))[0] == "claim 1: cites a passage that was not given"
+    assert check(out([(rent[0], 2, rent[2])]))[0] == "claim 1: its quote is not in the passage it cites"  # wrong passage
+    assert check(out([("The monthly rent is 18,900 dollars", 1, "18,900")]))[0] == "claim 1: its quote is not in the passage it cites"
+    assert check(out([(rent[0], 1, "The rent is 19,000 dollars.")]))[0] == "claim 1: states a number that is not in the quote it cites"
+    # A sentence of the answer: uncited, citing nothing that exists, or stating a number its quote does not hold.
+    assert check(out([rent], answer="The rent is 18,500 dollars [1]. Pets are allowed for a fee.")) == [
+        "sentence 2: states a fact without a source"]
+    assert check(out([rent], answer="The rent is 18,500 dollars [4].")) == ["sentence 1: cites claim 4, which does not exist"]
+    assert check(out([rent], answer="The rent is 18,600 dollars [1].")) == [
+        "sentence 1: states a number that is not in the quote it cites"]
 
 
-def test_the_check_catches_not_found_with_claims_and_empty_answers():
+def test_the_check_catches_not_found_with_claims_unanswered_and_empty_answers():
     check = module("skill").check
-    assert check(out([("The rent is 18,500 dollars a month", [1])], not_found=True)) == [
-        "the answer says it was not found but still makes claims"]
-    assert check(out([], answer="")) == ["the answer is empty", "the answer makes no cited claims"]
-    assert check(out([("the of and", [1])])) == ["claim 1 says nothing that can be checked"]
+    rent = ("The monthly rent is 18,500 dollars", 1, "The rent is 18,500 dollars a month.")
+    assert check(out([rent], not_found=True)) == ["the answer says it was not found but still makes claims"]
+    assert check(out([], answer="")) == ["the answer is empty", "the answer makes no verified claims (no quote from a passage stood)"]
+    assert check(out([("rent", 1, "Rent.")]))[0] == "claim 1: its quote is too short to check"
+    assert check({**out([]), "unanswered": {"reason": "reasoning"}}) == [
+        "the model gave no answer (no visible text), so the question is not answered"]
     assert check(None) == ["the skill returned no answer"]
-    for reason in check(out([("The landlord, Mr Lin, lives upstairs with a parrot", [2])])):
+    for reason in check(out([("The landlord, Mr Lin, lives upstairs with a parrot", 2, "Mr Lin has a parrot.")])):
         assert "Lin" not in reason and "parrot" not in reason  # reasons name claims by number, never quote them
 
 
@@ -335,7 +370,7 @@ def test_an_english_question_end_to_end(env, proxy, docs):
     assert result.status == "done" and result.check == {"status": "passed", "reasons": []}
     request = chats(proxy)[0]
     assert request["task"] == "everyday" and request["privacy"] == "standard"  # the skill's own defaults
-    assert request["max_tokens"] == 900 and len(proxy.requests) == 1  # ONE model call
+    assert request["max_tokens"] == 1200 and len(proxy.requests) == 1  # ONE model call
     sent = request["messages"][1]["content"]
     assert "[1] " in sent and "18,500 dollars" in sent and "How much is the monthly rent?" in sent
     assert CANARY not in json.dumps(request["body"])  # only the relevant passages leave, not the folder
@@ -344,7 +379,10 @@ def test_an_english_question_end_to_end(env, proxy, docs):
     assert output["claims"][0]["sources"] == ["lease.md › paragraph 3"]  # the paragraph inside the passage, not just the file
     assert output["citations"] == [{"n": 1, "path": str(docs.resolve() / "lease.md"), "paragraphs": [3],
                                     "label": "lease.md › paragraph 3"}]
-    assert output["text"] == "The rent is 18,500 dollars a month [1].\n\nSources:\n[1] lease.md › paragraph 3"
+    assert output["text"] == ("The rent is 18,500 dollars a month [1].\n\nSources:\n"
+                              "[1] lease.md › paragraph 3: “The monthly rent is 18,500 dollars”")
+    claim = output["claims"][0]
+    assert output["passages"][0]["text"][claim["start"]:claim["end"]] == claim["quote"] and output["written"] == "model"
     assert output["passages"][0]["text"].startswith("# Lease") and output["passages"][0]["paragraphs"] == [1, 2, 3, 4]
     assert len(output["passages"]) == 1  # the other files share no word with the question, so they are not sent
     assert output["retrieval"] == {"mode": "lexical", "files": 3, "chunks": 3, "sent": 1}
@@ -352,8 +390,8 @@ def test_an_english_question_end_to_end(env, proxy, docs):
 
 
 def test_a_traditional_chinese_question_end_to_end(env, proxy, docs):
-    proxy.push(*chat("```json\n" + answer_json("第三季的營收是 4.2 億元，比去年同期成長 12% [1]。",
-                                              [("第三季營收達到 4.2 億元", [1]), ("比去年同期成長 12%", [1])]) + "\n```", task="everyday"))
+    proxy.push(*chat("```json\n" + answer_json("第三季的營收是 4.2 億元，比去年同期成長 12% [1][2]。",
+                                              [("第三季的營收達到 4.2 億元", [1]), ("比去年同期成長 12%", [1])]) + "\n```", task="everyday"))
     result = ask(env, "第三季的營收是多少？", docs, top_k=1)
     assert result.status == "done" and result.check["status"] == "passed"
     sent = chats(proxy)[0]["messages"][1]["content"]
@@ -374,23 +412,62 @@ def test_a_failed_check_retries_on_a_stronger_tier_and_can_pass(env, proxy, docs
     assert [c["status"] for c in checks] == ["failed", "passed"]
 
 
-def test_an_answer_that_fails_twice_is_marked_and_lists_the_failed_claims(env, proxy, docs):
-    bad = answer_json("Rent is 18,500 [1]. The landlord is Mr Lin.",
-                      [("The monthly rent is 18,500 dollars", [1]), ("The landlord is Mr Lin", []), ("Parking costs 900 dollars", [7])])
+def test_bad_claims_are_dropped_and_the_answer_is_written_from_the_claims_that_stand(env, proxy, docs):
+    mixed = answer_json("Rent is 18,500 [1]. The landlord is Mr Lin [2]. Parking costs 900 dollars [3].",
+                        [("The monthly rent is 18,500 dollars", [1]), ("The landlord is Mr Lin", [1]), ("Parking costs 900 dollars", [7])])
+    proxy.push(*chat(mixed, task="everyday"))
+    result = ask(env, "How much is the monthly rent?", docs)
+    assert result.status == "done" and len(chats(proxy)) == 1, result.check
+    o = result.output
+    assert [c["quote"] for c in o["claims"]] == ["The monthly rent is 18,500 dollars"] and o["written"] == "claims"
+    assert o["answer"] == "The monthly rent is 18,500 dollars [1]" and "Mr Lin" not in o["text"] and "Parking" not in o["text"]
+    assert o["dropped_claims"] == {"quote-not-in-passage": 1, "unknown-passage": 1}
+
+
+def test_an_answer_that_fails_twice_is_marked(env, proxy, docs):
+    bad = answer_json("The landlord is Mr Lin [1]. Parking costs 900 dollars [2].",
+                      [("The landlord is Mr Lin", [1]), ("Parking costs 900 dollars", [7])])
     proxy.push(*chat(bad, task="everyday"))
     proxy.push(*chat(bad, task="heavy"))
     result = ask(env, "How much is the monthly rent?", docs)
     assert result.status == "needs_choice" and result.options == [] and len(chats(proxy)) == 2
-    assert result.check == {"status": "failed", "reasons": ["claim 2 cites no passage", "claim 3 cites passage 7, which was not given"]}
-    assert result.output["claims"][0]["cites"] == [1]  # the answer is still there, for the app to show as unchecked
+    assert result.check == {"status": "failed", "reasons": [
+        "the answer makes no verified claims (no quote from a passage stood)",
+        "sentence 1: cites claim 0, which does not exist", "sentence 2: cites claim 0, which does not exist"]}
+    assert result.output["not_found"] is False  # nothing verified is not the same as "not in your files"
+    assert result.output["written"] == "unverified" and "Mr Lin" in result.output["answer"]  # shown, marked not checked
 
 
-def test_an_empty_reasoning_answer_fails_the_check_and_is_retried(env, proxy, docs):
+def empty_length(task: str) -> tuple:
+    """A reasoning model's 200 with no visible text: finish_reason length, reasoning tokens in the usage (no router header)."""
+    body = json.dumps({"choices": [{"message": {"role": "assistant", "content": ""}, "finish_reason": "length"}],
+                       "usage": {"prompt_tokens": 300, "completion_tokens": 300,
+                                 "completion_tokens_details": {"reasoning_tokens": 300}}}).encode()
+    status, headers, _ = chat("", task=task)
+    return status, headers, body
+
+
+def test_an_empty_reasoning_answer_is_asked_again_with_more_room_one_tier_up(env, proxy, docs):
     proxy.push(*chat("", task="everyday", **{"x-muse-answer": "empty-reasoning"}))
     proxy.push(*chat(answer_json("The rent is 18,500 dollars [1].", [("The monthly rent is 18,500 dollars", [1])]), task="heavy"))
     result = ask(env, "How much is the monthly rent?", docs)
     assert result.status == "done" and [r["task"] for r in chats(proxy)] == ["everyday", "heavy"]
-    assert next(e for e in result.events if e["kind"] == "skill.answer")["empty"] is True
+    assert [r["max_tokens"] for r in chats(proxy)] == [1200, 4096]  # x4, bounded
+    event = next(e for e in result.events if e["kind"] == "skill.answer")
+    assert event["empty"] is False and event["recovered"] is True and event["attempts"] == 2
+    assert result.used["requests"] == 2 and result.used["empty_answers"] == 1  # the recovery is counted like any call
+
+
+def test_an_answer_that_stays_empty_is_unanswered_never_not_found(env, proxy, docs):
+    for task in ("everyday", "heavy", "heavy", "heavy"):  # recovery, then the runner's stronger retry and its recovery
+        proxy.push(*empty_length(task))
+    result = ask(env, "How much is the monthly rent?", docs)
+    o = result.output
+    assert o["not_found"] is False and o["unanswered"]["reason"] == "reasoning" and o["claims"] == []
+    assert result.status == "needs_choice" and result.check["status"] == "failed"
+    assert result.check["reasons"] == ["the model gave no answer (no visible text), so the question is not answered"]
+    assert "could not find" not in o["text"] and "not answered yet" in o["text"]
+    assert len(chats(proxy)) == 4 and result.used["empty_answers"] == 4
 
 
 def test_not_found_is_said_plainly(env, proxy, docs):
@@ -552,3 +629,71 @@ def test_no_file_content_reaches_events_notes_usage_or_the_terminal_log(env, pro
     captured = capsys.readouterr()
     assert code == 0 and captured.out.startswith("Tomatoes need six hours of sun [1].\n\nSources:\n[1] garden.txt › paragraph 1")
     assert "Answered by cohere and freea. Nothing spent." in captured.err and CANARY not in captured.err + captured.out
+
+
+# ================================================================ the two wrong-but-passed answers of the full real run
+
+
+LARKSPUR = Path(__file__).resolve().parents[1] / "evals" / "chores" / "fixtures" / "larkspur-en"
+
+
+def where(request: dict, words: str) -> int:
+    """The number of the passage sent in this request that holds `words`."""
+    user = request["messages"][1]["content"].split("\n\nQuestion:")[0]
+    for n, text in re.findall(r"^\[(\d+)\] (.*?)(?=^\[\d+\] |\Z)", user, flags=re.S | re.M):
+        if words in text:
+            return int(n)
+    raise AssertionError(f"no passage holds {words!r}")
+
+
+def model(proxy, make) -> None:
+    proxy.responder = lambda request: None if request["path"].endswith("/embeddings") else chat(make(request), task=request["task"])
+
+
+def test_fa_035_a_number_from_a_file_about_something_else_is_not_an_answer(env, proxy):
+    """The size of Flat 4B is in no file; the purifier FAQ says "rooms up to 42 square metres". A loose model used it."""
+    def loose(request: dict) -> str:
+        quote = "The Brisa K2 is made for rooms up to 42 square metres"
+        return answer_json("Flat 4B is 42 square metres [1].", [(quote, where(request, quote), "Flat 4B is 42 square metres.")])
+
+    model(proxy, loose)
+    result = ask(env, "How many square metres is Flat 4B?", LARKSPUR)
+    assert result.status == "needs_choice" and result.check["status"] == "failed"  # never delivered as checked
+    assert "no claim comes from a file that mentions what the question names" in result.check["reasons"]
+    assert len(chats(proxy)) == 2  # the first answer, and the runner's one stronger retry
+    model(proxy, lambda request: answer_json("", [], not_found=True))
+    result = ask(env, "How many square metres is Flat 4B?", LARKSPUR)
+    assert result.status == "done" and result.output["not_found"] is True
+
+
+def test_fa_027_a_two_part_question_needs_a_claim_for_each_part_or_says_what_is_missing(env, proxy):
+    question = "How much did the Brisa K2 air purifier cost on its invoice, and how long is the warranty on its motor?"
+    price = "INV-3106,2031-03-02,Nimbel Home,Brisa K2 air purifier,229.00"
+    warranty = "The warranty is 3 years for the motor"
+
+    def half(request: dict) -> str:
+        return answer_json("It cost 229.00 dollars [1].", [(price, where(request, price), "The Brisa K2 cost 229.00 dollars.")])
+
+    model(proxy, half)
+    result = ask(env, question, LARKSPUR)
+    assert result.check["status"] == "failed" and result.status == "needs_choice"
+    assert any(r.startswith("the question asks for 2 things but the answer rests on 1 claim") for r in result.check["reasons"])
+
+    def both(request: dict) -> str:
+        return answer_json("It cost 229.00 dollars [1] and the motor has a 3-year warranty [2].",
+                           [(price, where(request, price), "The Brisa K2 cost 229.00 dollars."),
+                            (warranty, where(request, warranty), "The motor warranty is 3 years.")])
+
+    model(proxy, both)
+    result = ask(env, question, LARKSPUR)
+    assert result.status == "done" and result.check["status"] == "passed", result.check
+    assert "229.00" in result.output["text"] and "3-year" in result.output["text"]
+    assert {Path(c["path"]).name for c in result.output["citations"]} == {"invoices.csv", "purifier-faq.md"}
+
+    def honest(request: dict) -> str:
+        body = json.loads(half(request))
+        return json.dumps({**body, "missing": ["the motor warranty"]})
+
+    model(proxy, honest)
+    result = ask(env, question, LARKSPUR)
+    assert result.status == "done" and "Not found in your files: the motor warranty" in result.output["text"]

@@ -554,7 +554,7 @@ def scenario_min_output_tokens() -> None:
               f"{info['id']}: a floor must be a positive whole number on a chat deployment")
     # The shipped figure is an observation on gpt-oss only; anything else needs its own evidence and this check updated.
     for dep_id, floor in declared.items():
-        check((floor == 256) == ("gpt-oss" in dep_id), f"{dep_id}: min_output_tokens {floor!r}; only gpt-oss deployments carry 256")
+        check((floor == 1024) == ("gpt-oss" in dep_id), f"{dep_id}: min_output_tokens {floor!r}; only gpt-oss deployments carry 1024")
     # A provider-level default reaches its chat deployments; a deployment's own value wins; other modes get none.
     custom = copy.deepcopy(catalog)
     cohere = next(p for p in custom["providers"] if p["id"] == "cohere")
@@ -591,6 +591,44 @@ def scenario_min_output_tokens() -> None:
     except SystemExit:
         return
     raise Failure("a floor on a non-chat deployment was rendered")
+
+
+def scenario_reasoning() -> None:
+    """`reasoning` is rendered as model_info.muse_reasoning only where declared, and only where LiteLLM passes it on."""
+    import copy
+    from datetime import date
+
+    import litellm
+
+    from muse import catalog as catalog_mod
+
+    catalog = load_catalog(CATALOG_PATH)
+    keys = {str(p["env"]): "k" for p in catalog["providers"] if p.get("env")}
+    keys.update({str(n): "a" * 32 for p in catalog["providers"] for n in p.get("also_env") or []})
+    config, _ = render(catalog, env_with(MUSE_ALLOW_PAID_FALLBACK="true", **keys))
+    declared = {str(d["id"]): (p, d, catalog_mod.reasoning_for(d)) for p in catalog["providers"] for d in p.get("deployments") or []}
+    check(any(r for _, _, r in declared.values()), "no shipped deployment declares reasoning")
+    for entry in config["model_list"]:
+        info = entry["model_info"]
+        _, _, want = declared[str(info["id"]).split("__")[0]]
+        check(info.get("muse_reasoning") == want, f"{info['id']}: muse_reasoning {info.get('muse_reasoning')!r}, the catalogue says {want!r}")
+    for dep_id, (provider, dep, want) in declared.items():
+        if not want:
+            continue
+        route, _, model = str(dep["model"]).partition("/")
+        supported = litellm.get_supported_openai_params(model=model, custom_llm_provider=route) or []
+        check(want["param"] in supported, f"{dep_id}: LiteLLM drops {want['param']} for {route}/, so the setting would do nothing")
+    broken = copy.deepcopy(catalog)
+    target = next(p for p in broken["providers"] if p["id"] == "cohere")
+    for bad in ({"param": "thinking", "light": "low"}, {"param": "reasoning_effort"}, {"param": "reasoning_effort", "light": "none"},
+                {"param": "reasoning_effort", "tiny": "low"}, "low"):
+        target["deployments"][0]["reasoning"] = bad
+        check(any(".reasoning" in p for p in catalog_mod.validate_provider(target, date.today())), f"reasoning {bad!r} passed")
+        try:
+            render(broken, env_with(COHERE_API_KEY="c"))
+        except SystemExit:
+            continue
+        raise Failure(f"reasoning {bad!r} was rendered")
 
 
 # ---------------------------------------------------------------- supply chain
@@ -747,6 +785,7 @@ def main() -> int:
         scenario_catalogue_v2,
         scenario_oneoff_and_also_env,
         scenario_min_output_tokens,
+        scenario_reasoning,
         scenario_native_retry_after,
         scenario_supply_chain,
     ]

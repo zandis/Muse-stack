@@ -574,17 +574,35 @@ def test_shipped_floor_is_on_the_gpt_oss_deployments_only():
     floored = {dep_id for dep_id, value in declared.items() if value is not None}
     assert floored == {"groq-gpt-oss-20b", "groq-gpt-oss-120b", "novita-gpt-oss-120b", "nim-gpt-oss-20b", "cerebras-gpt-oss-120b"}
     assert floored == {dep_id for dep_id in declared if "gpt-oss" in dep_id}
-    assert {declared[dep_id] for dep_id in floored} == {256}
+    assert {declared[dep_id] for dep_id in floored} == {1024}
     assert all("min_output_tokens" not in p for p in cat["providers"])  # no provider-level default is shipped
     text = CATALOG_PATH.read_text(encoding="utf-8")
     assert "owner's observation" in text and "2026-11-12/13" in text and "NOT from any provider's documentation" in text
+
+
+def test_shipped_reasoning_setting_is_only_where_the_provider_documents_it_and_litellm_passes_it():
+    litellm = pytest.importorskip("litellm")
+    cat = real()
+    found = {d["id"]: (d["model"], catalog.reasoning_for(d)) for p in cat["providers"] for d in p.get("deployments") or []
+             if d.get("reasoning") is not None}
+    assert set(found) == {"groq-gpt-oss-20b", "groq-gpt-oss-120b", "cerebras-gpt-oss-120b"}
+    for dep_id, (model, setting) in found.items():
+        assert setting == {"param": "reasoning_effort", "light": "low", "everyday": "low"}, dep_id
+        route, _, name = model.partition("/")
+        assert "reasoning_effort" in (litellm.get_supported_openai_params(model=name, custom_llm_provider=route) or [])
+    for route, name in (("nvidia_nim", "openai/gpt-oss-20b"), ("novita", "openai/gpt-oss-120b")):  # dropped there: no field
+        assert "reasoning_effort" not in (litellm.get_supported_openai_params(model=name, custom_llm_provider=route) or [])
+    text = CATALOG_PATH.read_text(encoding="utf-8")
+    assert "https://console.groq.com/docs/reasoning" in text and "https://inference-docs.cerebras.ai/capabilities/reasoning" in text
+    bad = {"id": "x", "name": "X", "deployments": [{"id": "x1", "mode": "embedding", "reasoning": {"param": "reasoning_effort", "light": "low"}}]}
+    assert any("only a chat deployment" in p for p in catalog.validate_reasoning(bad, "provider x"))
 
 
 def test_loader_gives_the_floor_per_deployment():
     loaded = catalog.load_catalog()
     groq = loaded.provider("groq")
     assert groq.min_output_tokens is None
-    assert groq.min_output_for("groq-gpt-oss-20b") == 256 and groq.min_output_for("groq-gpt-oss-120b") == 256
+    assert groq.min_output_for("groq-gpt-oss-20b") == 1024 and groq.min_output_for("groq-gpt-oss-120b") == 1024
     assert groq.min_output_for("no-such-deployment") is None
     gemini = loaded.provider("gemini")
     assert all(gemini.min_output_for(d["id"]) is None for d in gemini.raw["deployments"])
@@ -644,17 +662,17 @@ def test_floor_on_a_non_chat_deployment_is_an_error(tmp_path):
 def test_renderer_writes_the_floor_on_every_entry_of_a_floored_deployment():
     cat = real()
     got = floors(render_config.render(cat, all_keys(cat))[0])
-    assert got["groq-gpt-oss-20b"] == 256 and got["groq-gpt-oss-20b__fast"] == 256 and got["groq-gpt-oss-20b__cheap"] == 256
-    assert got["groq-gpt-oss-120b__smart"] == 256 and got["cerebras-gpt-oss-120b__smart"] == 256
-    assert got["novita-gpt-oss-120b"] == 256 and got["nim-gpt-oss-20b"] == 256
+    assert got["groq-gpt-oss-20b"] == 1024 and got["groq-gpt-oss-20b__fast"] == 1024 and got["groq-gpt-oss-20b__cheap"] == 1024
+    assert got["groq-gpt-oss-120b__smart"] == 1024 and got["cerebras-gpt-oss-120b__smart"] == 1024
+    assert got["novita-gpt-oss-120b"] == 1024 and got["nim-gpt-oss-20b"] == 1024
     for dep_id, value in got.items():
-        assert (value == 256) == ("gpt-oss" in dep_id), dep_id
+        assert (value == 1024) == ("gpt-oss" in dep_id), dep_id
         assert value is None or type(value) is int
     # Not set means the field is absent, not null or zero.
     config, _ = render_config.render(cat, all_keys(cat))
     assert all("muse_min_output_tokens" not in e["model_info"] for e in config["model_list"] if "gpt-oss" not in e["model_info"]["id"])
     text = render_config.dumps(config, [])
-    assert "muse_min_output_tokens: 256" in text
+    assert "muse_min_output_tokens: 1024" in text
 
 
 def test_renderer_provider_default_reaches_chat_deployments_only():
