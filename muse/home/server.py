@@ -125,6 +125,10 @@ class FailureLimiter:
 
 
 class _Handler(BaseHTTPRequestHandler):
+    # A request line too broken to parse is treated as HTTP/0.9 by default, which on some
+    # Python versions means the reply has no status line and no headers. Always answer
+    # with a full response.
+    default_request_version = "HTTP/1.0"
     server_version = "MuseHome"
     sys_version = ""
     protocol_version = "HTTP/1.1"

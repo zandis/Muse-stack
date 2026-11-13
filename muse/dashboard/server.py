@@ -79,6 +79,8 @@ def demo_snapshot(now: datetime | None = None) -> dict:
 
 
 class _Handler(BaseHTTPRequestHandler):
+    # See muse/home/server.py: always answer a broken request line with a full response.
+    default_request_version = "HTTP/1.0"
     server_version = "MuseDash"
     sys_version = ""
     protocol_version = "HTTP/1.1"

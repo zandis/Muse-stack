@@ -164,7 +164,7 @@ fn build() -> String {
         "ｶﾞｲﾄﾞ", "한글", "ß", "", "a  b",
     ];
     for text in texts {
-        out.push(format!("normalise: {text:?}"), "normalise_index_value", json!(text), json!(normalise_index_value(text)));
+        out.push(format!("normalise: {}", stable_quote(text)), "normalise_index_value", json!(text), json!(normalise_index_value(text)));
     }
     for case in 0..4 {
         let key = secret(&mut rng);
@@ -187,7 +187,7 @@ fn build() -> String {
         }
         for (label, data) in [("record", &b"abc"[..]), ("receipt", &b""[..]), ("", &b"x"[..])] {
             out.push(
-                format!("keyed_ref: {label:?} #{case}"),
+                format!("keyed_ref: {} #{case}", stable_quote(label)),
                 "keyed_ref",
                 json!({"k_ref": hex(key.expose()), "label": label, "data": hex(data)}),
                 json!(hex(&keyed_ref(&key, label, data))),
@@ -407,6 +407,14 @@ fn build() -> String {
     );
 
     format!("[\n{}\n]\n", out.0.join(",\n"))
+}
+
+/// A quoted form of a string for vector names that does not depend on the Rust version.
+/// `{:?}` is not stable: which characters it escapes changes between releases of the
+/// standard library (a half-width voiced mark was escaped by 1.97 and printed by 1.100),
+/// which made the committed file differ between machines. JSON string escaping is fixed.
+fn stable_quote(text: &str) -> String {
+    serde_json::to_string(text).expect("a string always serialises")
 }
 
 fn path() -> PathBuf {

@@ -167,5 +167,8 @@ wait_for_proxy() {
   return 1
 }
 
+# Used by the scripts that source this file (bootstrap.sh, muse-update.sh).
+# shellcheck disable=SC2034
 MUSE_LONG_RUNNING="muse-proxy.service muse-home.service muse-queue.service muse-vm-monitor.service"
+# shellcheck disable=SC2034
 MUSE_TIMERS="muse-chores.timer muse-catalog-check.timer muse-backup.timer muse-update.timer"
