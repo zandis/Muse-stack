@@ -411,7 +411,7 @@ LiteLLM is the one large third-party program that sees every provider key, so th
 What is pinned:
 
 - **The image, by digest.** `docker-compose.yml` uses `ghcr.io/berriai/litellm:v1.108.6@sha256:c64fe10f82a1f77906f88574f954317c50f67c617e0c97b70ac8fc61b74d3ec3`. That is the multi-arch index (linux/amd64 `sha256:66670e9c…`, linux/arm64 `sha256:91addd1d…`; both in full in the compose file), read from ghcr.io on 13 November 2026. Docker pulls by the digest, so moving the tag changes nothing here.
-- **The Python install, by hash.** `requirements/proxy.lock` lists `litellm[proxy]==1.108.6` and all 119 packages it pulls in, each with the SHA-256 of every file PyPI holds for that version. `pip install --require-hashes -r requirements/proxy.lock` refuses anything else. `requirements/dev.lock` does the same for pytest and setuptools. The resolution is for CPython 3.12 and 3.13 on any platform, Linux x86_64 and aarch64 included; it was installed and tested on CPython 3.12 and 3.13 on Linux x86_64; for Linux aarch64 every pinned wheel was fetched with hash checking for both Pythons, but not installed or run there. PyPI received the 1.108.6 files on 12 November 2026 at 01:07 UTC, after the incident and after the key change.
+- **The Python install, by hash.** `requirements/proxy.lock` lists `litellm[proxy]==1.108.6` and all 119 packages it pulls in, each with the SHA-256 of every file PyPI holds for that version. `pip install --require-hashes -r requirements/proxy.lock` refuses anything else. `requirements/dev.lock` does the same for pytest, pytest-xdist and setuptools. The resolution is for CPython 3.12 and 3.13 on any platform, Linux x86_64 and aarch64 included; it was installed and tested on CPython 3.12 and 3.13 on Linux x86_64; for Linux aarch64 every pinned wheel was fetched with hash checking for both Pythons, but not installed or run there. PyPI received the 1.108.6 files on 12 November 2026 at 01:07 UTC, after the incident and after the key change.
 - **Why 1.108.6.** It fixes [GHSA-2rwg-2wh4-7c4f](https://github.com/BerriAI/litellm/security/advisories/GHSA-2rwg-2wh4-7c4f) (12 November 2026, high): an authenticated caller could override Azure Entra credential fields in the request body and read server secrets back. It needs an `azure/` or `azure_ai/` model, which the catalogue does not have, so exposure here was low. The 1.108.6 release also moves those six fields into `metadata` (a breaking change for callers that sent them). The files `muse/` relies on (`proxy_server.py`, `common_request_processing.py`, `custom_logger.py`, the cache, the router and its cooldowns, `types_utils/utils.py`, `route_checks.py`, `auth_checks.py`) are byte-identical between 1.108.5 and 1.108.6.
 - **The rules.** `scripts/validate_config.py` fails if a compose file names a LiteLLM image without an `@sha256:` digest or with a floating tag (`latest`, `main-latest`, `main-stable`, `main`), or if any tracked file installs `litellm` without an exact `==` version or the lock file.
 
@@ -440,7 +440,7 @@ Upgrading LiteLLM is a deliberate change, in this order:
 2. Resolve the tag's digest and put tag and digest in `docker-compose.yml`: `docker buildx imagetools inspect ghcr.io/berriai/litellm:vX.Y.Z` prints the index digest and both platform digests. Check it is not a digest from an incident report, and verify the signature as above.
 3. Change the version in `requirements/proxy.in` and regenerate both lock files with the `uv pip compile` commands in their headers. Compare the litellm hashes with `https://pypi.org/pypi/litellm/X.Y.Z/json` and put the header back.
 4. Change the version where prose still names it (this README, `deploy/oracle-cloud.md`, comments in `muse/`). CI and the setup script install from the lock file and need no edit.
-5. Run `python scripts/validate_config.py`, `python scripts/verify_litellm.py --image` and the whole suite (`python -m pytest tests -q`) in an environment installed from the new lock. The hook relies on LiteLLM internals that are noted with the version they were read in.
+5. Run `python scripts/validate_config.py`, `python scripts/verify_litellm.py --image` and the whole suite (`python -m pytest tests -q -n auto --dist worksteal`) in an environment installed from the new lock. The hook relies on LiteLLM internals that are noted with the version they were read in.
 
 One rule goes with this: **provider keys live only in the proxy's environment** (`.env` with mode 600, or the OS keychain handed over by `muse up`). Applications get their own `sk-muse-app-…` key and never a provider key; CI, the lock files, the rendered config and the image hold none. If LiteLLM is ever compromised again, the keys to rotate are the ones in that one place.
 
@@ -553,6 +553,18 @@ It reads `LITELLM_MASTER_KEY` from the environment or from `.env`. It does not c
 ## CI
 
 `.github/workflows/ci.yml` renders the config with empty and partial environments and does not call a provider. The proxy tests install LiteLLM from `requirements/proxy.lock` with `--require-hashes`. A second job boots the pinned image with a throwaway master key, checks the health endpoint, and checks that a fake Gemini key exposes the chat and embed aliases without sending a completion.
+
+## Tests
+
+```bash
+pip install --require-hashes -r requirements/proxy.lock -r requirements/dev.lock
+pip install --no-build-isolation --no-deps -e .
+python -m pytest tests -q -n auto --dist worksteal     # in parallel, one worker per core (pytest-xdist)
+python -m pytest tests -q                              # the same suite, one test at a time
+MUSE_SLOW_TESTS=1 python -m pytest tests/integration -q -n auto --dist worksteal   # also the slow proxy tests
+```
+
+Every test gets its own `MUSE_HOME` and temporary folders and binds port 0, and each proxy test starts its own LiteLLM, so workers share nothing and the order does not matter. Use `--dist worksteal`: the proxy tests take 5 to 20 seconds each, and with the default scheduling they pile up on one worker at the end. On 13 November 2026, on a 4-core machine that was also running other jobs, the whole suite (about 3,200 tests) took about 18 minutes one at a time, about 9 minutes with `-n auto` alone and about 4.5 minutes with `-n auto --dist worksteal`. Most of the time goes to the proxy tests in `tests/integration`, each of which boots a real LiteLLM. Without LiteLLM installed those are skipped.
 
 ## Layout
 
