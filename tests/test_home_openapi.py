@@ -156,3 +156,19 @@ def test_app_and_status_shapes_match_what_is_served(spec):
     assert set(app["required"]) == set(app["properties"]) == {"name", "priority", "daily_requests", "daily_tokens", "allow_paid",
                                                                "default_privacy", "note", "created_at"}
     assert set(spec["components"]["schemas"]["AppSettings"]["properties"]) == set(api._APP_FIELDS)
+
+
+def test_every_operation_states_its_scope_and_roles_and_they_match_the_server(spec):
+    from muse.home import auth
+
+    for route in api.ROUTES:
+        op = spec["paths"][route.path][route.method.lower()]
+        assert op["x-scope"] == route.scope, (route.method, route.path)
+        assert op["x-roles"] == api.route_roles(route), (route.method, route.path)
+        assert op["x-roles"] and op["x-roles"][0] == "owner"  # the person can always do it
+    assert {role: sorted(scopes) for role, scopes in spec["x-role-scopes"].items()} == {
+        role: sorted(scopes) for role, scopes in auth.ROLE_SCOPES.items()}
+    text = spec["info"]["description"]
+    assert "`forbidden` (403)" in text and "created before roles existed are `owner`" in text
+    assert f"more than {server.AUTH_FAIL_LIMIT} times in {int(server.AUTH_FAIL_WINDOW_S)} seconds" in text
+    assert f"At most {server.MAX_CONNECTIONS} connections" in text

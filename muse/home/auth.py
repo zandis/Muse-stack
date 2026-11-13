@@ -13,6 +13,22 @@ narrowed from the device's mandate. When mandates exist, a `MandateVerifier`
 that checks the token's signature, caveats and revocation replaces
 `TokenFileVerifier` here, and no handler or route changes.
 
+Roles. Every device has one role, and a role is a fixed set of scopes. Each
+route of the API names the one scope it needs (muse/home/api.py), and the check
+is made in one place before any handler runs:
+
+  owner    the person's own app or command line: everything.
+  host     the tools server a host bot runs (`muse hosts setup`). Only what that
+           server needs: read status and the catalogue, ask the person (create
+           cards) and read ITS OWN cards, queue / read / cancel ITS OWN jobs,
+           add records, list and run skills and read ITS OWN runs. It cannot
+           pause or resume, store keys, connect services, manage apps, answer a
+           card, read the records, or see another device's jobs, cards or runs.
+  viewer   read-only: status, catalogue, cards, jobs, records.
+
+A token file written before roles existed has no `role` field; such a device is
+an `owner`, which is what every token was until then.
+
 File safety is the same as the app registry: written through a temp file and
 os.replace under an advisory lock; a missing or malformed file means "no
 devices" (every request is refused) and a malformed file is never overwritten.
@@ -46,6 +62,40 @@ FILE_VERSION = 1
 MAX_DEVICES = 64
 MAX_TOKEN_CHARS = 512  # longer bearer values are refused before hashing
 
+# ---------------------------------------------------------------- roles and scopes
+
+OWNER, HOST, VIEWER = "owner", "host", "viewer"
+ROLES = (OWNER, HOST, VIEWER)
+DEFAULT_ROLE = OWNER  # also what a token file from before roles means
+
+# Every scope a route can need. A route names exactly one (muse/home/api.py::ROUTES).
+SCOPES = (
+    "status.read", "catalogue.read",
+    "connect.write", "keys.write",
+    "jobs.read", "jobs.write",
+    "cards.read", "cards.ask", "cards.answer",
+    "pause.write",
+    "apps.read", "apps.write",
+    "receipts.read", "receipts.write",
+    "skills.read", "skills.run",
+    "mandates.read",
+)
+
+ROLE_SCOPES: dict[str, frozenset[str]] = {
+    OWNER: frozenset(SCOPES),
+    HOST: frozenset({"status.read", "catalogue.read", "cards.read", "cards.ask", "jobs.read", "jobs.write",
+                     "receipts.write", "skills.read", "skills.run"}),
+    VIEWER: frozenset({"status.read", "catalogue.read", "cards.read", "jobs.read", "receipts.read"}),
+}
+
+# Roles that see every device's jobs, cards and skill runs. Any other role sees only what it made itself.
+SEES_ALL = frozenset({OWNER, VIEWER})
+
+
+def allows(role: str, scope: str) -> bool:
+    """May a device with `role` use a route that needs `scope`? Unknown roles and scopes are refused."""
+    return bool(scope) and scope in SCOPES and scope in ROLE_SCOPES.get(role, frozenset())
+
 
 class TokenError(ValueError):
     """A token-store change that is not valid. The message is safe to show."""
@@ -58,6 +108,15 @@ class Device:
     name: str
     created_at: str = ""
     rotated_at: str | None = None
+    role: str = DEFAULT_ROLE
+
+    def can(self, scope: str) -> bool:
+        return allows(self.role, scope)
+
+    @property
+    def sees_all(self) -> bool:
+        """Does this device see every device's jobs, cards and skill runs, or only its own?"""
+        return self.role in SEES_ALL
 
 
 class Verifier(Protocol):
@@ -83,6 +142,12 @@ def validate_name(name: Any) -> str:
             "starting and ending with a letter or digit"
         )
     return name
+
+
+def validate_role(role: Any) -> str:
+    if not isinstance(role, str) or role not in ROLES:
+        raise TokenError(f"role must be one of {', '.join(ROLES)}")
+    return role
 
 
 def tokens_path(environ: Mapping[str, str] | None = None) -> Path:
@@ -115,9 +180,12 @@ def _parse(text: str) -> dict[str, dict[str, Any]]:
         if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
             continue
         rotated = item.get("rotated_at")
+        role = item.get("role", DEFAULT_ROLE)  # absent: a token from before roles, which could do everything
+        if not isinstance(role, str) or role not in ROLES:
+            continue  # a role this version does not know grants nothing: that device cannot sign in
         out[name] = {
             "name": name, "token_sha256": digest, "created_at": str(item.get("created_at") or ""),
-            "rotated_at": rotated if isinstance(rotated, str) else None,
+            "rotated_at": rotated if isinstance(rotated, str) else None, "role": role,
         }
     return out
 
@@ -194,15 +262,18 @@ def _write(path: Path, devices: Mapping[str, Mapping[str, Any]]) -> None:
 
 
 def _device(record: Mapping[str, Any]) -> Device:
-    return Device(name=record["name"], created_at=record.get("created_at") or "", rotated_at=record.get("rotated_at"))
+    return Device(name=record["name"], created_at=record.get("created_at") or "", rotated_at=record.get("rotated_at"),
+                  role=record.get("role") or DEFAULT_ROLE)
 
 
 # ---------------------------------------------------------------- public API
 
 
-def add_token(name: str, environ: Mapping[str, str] | None = None, now: float | None = None) -> tuple[Device, str]:
-    """Register a device. Returns (device, token); the token is not stored and cannot be shown again."""
+def add_token(name: str, environ: Mapping[str, str] | None = None, now: float | None = None,
+              role: str = DEFAULT_ROLE) -> tuple[Device, str]:
+    """Register a device with a role. Returns (device, token); the token is not stored and cannot be shown again."""
     validate_name(name)
+    validate_role(role)
     path = tokens_path(environ)
     token = new_token()
     with _locked(path):
@@ -211,7 +282,8 @@ def add_token(name: str, environ: Mapping[str, str] | None = None, now: float | 
             raise TokenError(f"device '{name}' already exists; rotate its token or remove it first")
         if len(devices) >= MAX_DEVICES:
             raise TokenError(f"there are already {MAX_DEVICES} devices; remove one first")
-        devices[name] = {"name": name, "token_sha256": hash_token(token), "created_at": _utc(now), "rotated_at": None}
+        devices[name] = {"name": name, "token_sha256": hash_token(token), "created_at": _utc(now), "rotated_at": None,
+                         "role": role}
         _write(path, devices)
         return _device(devices[name]), token
 
@@ -274,9 +346,13 @@ class TokenFileVerifier:
 class StaticVerifier:
     """Fixed tokens held in memory as hashes. For the fake home and tests."""
 
-    def __init__(self, tokens: Mapping[str, str]) -> None:
-        """`tokens` maps device name -> token."""
-        self._records = {name: {"name": name, "token_sha256": hash_token(tok), "created_at": ""} for name, tok in tokens.items()}
+    def __init__(self, tokens: Mapping[str, str], roles: Mapping[str, str] | None = None) -> None:
+        """`tokens` maps device name -> token; `roles` maps device name -> role (default: owner)."""
+        roles = dict(roles or {})
+        for role in roles.values():
+            validate_role(role)
+        self._records = {name: {"name": name, "token_sha256": hash_token(tok), "created_at": "",
+                                "role": roles.get(name, DEFAULT_ROLE)} for name, tok in tokens.items()}
 
     def verify(self, token: str) -> Device | None:
         return _match(token, self._records)

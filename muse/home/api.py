@@ -14,6 +14,11 @@ Rules every handler keeps:
   * A request body that holds anything key-shaped is refused with a generic 400,
     except on `POST /v1/keys/{provider}`, the one place a key is meant to arrive.
   * Handlers learn who is calling only as a `Device` (see muse/home/auth.py).
+  * Every route names the one scope it needs, and `dispatch` checks it against
+    the device's role before the handler runs. A route with no scope is refused
+    for everyone. A device that does not see everything (a `host`) gets only the
+    jobs, cards and skill runs it made itself; anything else answers 404, the
+    same as if it did not exist.
 """
 
 from __future__ import annotations
@@ -33,6 +38,7 @@ from muse.home import API_VERSION
 from muse.home.auth import Device, Verifier
 from muse.home.cards import CardAlreadyAnswered, CardError, CardExpired, CardNotFound, CardStore
 from muse.home.cards import STATUSES as CARD_STATUSES
+from muse.home.state import HomeState
 
 log = logging.getLogger("muse.home")
 
@@ -54,6 +60,7 @@ ERROR_CODES: dict[str, int] = {
     "card_expired": 410,
     "length_required": 411,
     "payload_too_large": 413,
+    "too_many_requests": 429,
     "internal": 500,
     "not_built": 501,
     "unavailable": 503,
@@ -177,6 +184,7 @@ class Home:
         self.environ = environ
         self.clock = clock
         self.cards = cards if cards is not None else CardStore(environ, clock=clock)
+        self.book = HomeState(environ, clock=clock)
         self._snapshot_fn = snapshot_fn
         self._proxy_running_fn = proxy_running
 
@@ -454,6 +462,9 @@ def h_jobs_list(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
     if any(s not in queue.STATUSES for s in statuses):
         raise ApiError("invalid_request", f"status must be one or more of {', '.join(queue.STATUSES)}.")
     jobs = home.queue().list(statuses or None)
+    if not req.device.sees_all:
+        mine = home.book.jobs_of(req.device.name)
+        jobs = [j for j in jobs if j.id in mine]
     return 200, {"jobs": [j.public() for j in jobs]}  # public(): metadata only, never the prompt or the result
 
 
@@ -512,12 +523,25 @@ def h_jobs_add(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
         )
     except queue.QueueError as exc:
         raise _job_error(exc) from None
+    try:
+        home.book.set_job_owner(job.id, req.device.name)
+    except Exception as exc:
+        # Without the owner row a host could never see this job again; say so rather than leave an orphan running.
+        log.error("jobs: the owner of a new job could not be written (%s)", type(exc).__name__)
+        try:
+            home.queue().cancel(job.id)
+        except queue.QueueError:
+            pass
+        raise ApiError("unavailable", "The home could not keep track of the job, so it was not queued.") from None
     return 201, {"job": job.public()}
 
 
-def _job_id(req: Request) -> str:
+def _job_id(home: Home, req: Request) -> str:
+    """The job id of the path, when it is a job this device may see. Otherwise 404, as if there were none."""
     job_id = req.params["id"]
     if not re.fullmatch(r"[0-9a-f]{12}", job_id):
+        raise ApiError("not_found", "There is no such job.")
+    if not req.device.sees_all and home.book.job_owner(job_id) != req.device.name:
         raise ApiError("not_found", "There is no such job.")
     return job_id
 
@@ -527,7 +551,7 @@ def h_job_get(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
 
     _query(req)
     try:
-        job = home.queue().get(_job_id(req))
+        job = home.queue().get(_job_id(home, req))
     except queue.QueueError as exc:
         raise _job_error(exc) from None
     return 200, {"job": job.public()}
@@ -538,7 +562,7 @@ def h_job_cancel(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
 
     _no_body(req)
     try:
-        job = home.queue().cancel(_job_id(req))
+        job = home.queue().cancel(_job_id(home, req))
     except queue.QueueError as exc:
         raise _job_error(exc) from None
     return 200, {"job": job.public()}
@@ -562,16 +586,28 @@ def h_cards_list(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
     statuses = [s for s in req.query.get("status", "").split(",") if s]
     if any(s not in CARD_STATUSES for s in statuses):
         raise ApiError("invalid_request", f"status must be one or more of {', '.join(CARD_STATUSES)}.")
-    cards = home.cards.list(statuses or None)
-    return 200, {"cards": cards, "counts": home.cards.counts()}
+    if req.device.sees_all:
+        return 200, {"cards": home.cards.list(statuses or None), "counts": home.cards.counts()}
+    mine = asked_by(req.device)
+    own = [c for c in home.cards.list(None, limit=1000) if c["job_ref"] == mine]
+    counts = {s: sum(1 for c in own if c["status"] == s) for s in CARD_STATUSES}
+    return 200, {"cards": [c for c in own if not statuses or c["status"] in statuses][:200], "counts": counts}
+
+
+def _card_for(home: Home, req: Request) -> dict[str, Any]:
+    """The card of the path, when this device may see it. Otherwise 404, as if there were none."""
+    try:
+        card = home.cards.get(req.params["id"])
+    except CardError as exc:
+        raise _card_error(exc) from None
+    if not req.device.sees_all and card["job_ref"] != asked_by(req.device):
+        raise ApiError("not_found", "There is no such card.")
+    return card
 
 
 def h_card_get(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
     _query(req)
-    try:
-        return 200, {"card": home.cards.get(req.params["id"])}
-    except CardError as exc:
-        raise _card_error(exc) from None
+    return 200, {"card": _card_for(home, req)}
 
 
 # A device that asks (POST /v1/cards) is named on the card as `job_ref: "device:<name>"`. That is how
@@ -614,11 +650,8 @@ def h_card_answer(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
         raise ApiError("invalid_request", "decision must be approve or decline.")
     if always and decision != "approve":
         raise ApiError("invalid_request", "'always' can only be set when approving.")
-    try:
-        if home.cards.get(req.params["id"])["job_ref"] == asked_by(req.device):
-            raise ApiError("forbidden", "A device cannot answer a card it asked for itself. Answer it from another device.")
-    except CardError as exc:
-        raise _card_error(exc) from None
+    if _card_for(home, req)["job_ref"] == asked_by(req.device):
+        raise ApiError("forbidden", "A device cannot answer a card it asked for itself. Answer it from another device.")
     try:
         card = home.cards.answer(req.params["id"], decision, req.device.name, always)
     except CardError as exc:
@@ -761,6 +794,7 @@ class Route:
     method: str
     path: str  # template under /v1, e.g. "/v1/jobs/{id}"
     handler: Callable[[Home, Request], tuple[int, dict[str, Any]]]
+    scope: str = ""  # one of muse.home.auth.SCOPES; a route without one is refused for every device
     takes_key: bool = False  # the one route whose body may hold a key
     planned: bool = False  # answers 501 until its module exists
 
@@ -780,38 +814,55 @@ def _compile(template: str) -> re.Pattern[str]:
     return _PATTERNS[template]
 
 
-def _r(method: str, path: str, handler: Callable[[Home, Request], tuple[int, dict[str, Any]]], **kw: Any) -> Route:
-    return Route(method, PREFIX + path, handler, **kw)
+def _r(method: str, path: str, scope: str, handler: Callable[[Home, Request], tuple[int, dict[str, Any]]], **kw: Any) -> Route:
+    return Route(method, PREFIX + path, handler, scope, **kw)
 
 
+# Method, path, the scope a device needs (muse/home/auth.py: which roles hold it), the handler.
 ROUTES: tuple[Route, ...] = (
-    _r("GET", "/status", h_status),
-    _r("GET", "/catalogue", h_catalogue),
-    _r("POST", "/connect/{provider}", h_connect),
-    _r("POST", "/keys/{provider}", h_keys, takes_key=True),
-    _r("GET", "/jobs", h_jobs_list),
-    _r("POST", "/jobs", h_jobs_add),
-    _r("GET", "/jobs/{id}", h_job_get),
-    _r("DELETE", "/jobs/{id}", h_job_cancel),
-    _r("GET", "/cards", h_cards_list),
-    _r("POST", "/cards", h_card_ask),
-    _r("GET", "/cards/{id}", h_card_get),
-    _r("POST", "/cards/{id}/answer", h_card_answer),
-    _r("POST", "/pause", h_pause),
-    _r("POST", "/resume", h_resume),
-    _r("GET", "/apps", h_apps_list),
-    _r("POST", "/apps", h_apps_add),
-    _r("PATCH", "/apps/{name}", h_app_update),
-    _r("DELETE", "/apps/{name}", h_app_remove),
-    _r("POST", "/apps/{name}/rotate", h_app_rotate),
-    _r("GET", "/receipts", h_not_built, planned=True),
-    _r("GET", "/mandates/artifacts", h_not_built, planned=True),
+    _r("GET", "/status", "status.read", h_status),
+    _r("GET", "/catalogue", "catalogue.read", h_catalogue),
+    _r("POST", "/connect/{provider}", "connect.write", h_connect),
+    _r("POST", "/keys/{provider}", "keys.write", h_keys, takes_key=True),
+    _r("GET", "/jobs", "jobs.read", h_jobs_list),
+    _r("POST", "/jobs", "jobs.write", h_jobs_add),
+    _r("GET", "/jobs/{id}", "jobs.read", h_job_get),
+    _r("DELETE", "/jobs/{id}", "jobs.write", h_job_cancel),
+    _r("GET", "/cards", "cards.read", h_cards_list),
+    _r("POST", "/cards", "cards.ask", h_card_ask),
+    _r("GET", "/cards/{id}", "cards.read", h_card_get),
+    _r("POST", "/cards/{id}/answer", "cards.answer", h_card_answer),
+    _r("POST", "/pause", "pause.write", h_pause),
+    _r("POST", "/resume", "pause.write", h_resume),
+    _r("GET", "/apps", "apps.read", h_apps_list),
+    _r("POST", "/apps", "apps.write", h_apps_add),
+    _r("PATCH", "/apps/{name}", "apps.write", h_app_update),
+    _r("DELETE", "/apps/{name}", "apps.write", h_app_remove),
+    _r("POST", "/apps/{name}/rotate", "apps.write", h_app_rotate),
+    _r("GET", "/receipts", "receipts.read", h_not_built, planned=True),
+    _r("GET", "/mandates/artifacts", "mandates.read", h_not_built, planned=True),
 )
 
 
 def route_table() -> list[tuple[str, str]]:
     """(method, path template) for every route. The OpenAPI test compares this with the file."""
     return [(r.method, r.path) for r in ROUTES]
+
+
+def route_roles(route: Route) -> list[str]:
+    """The roles that may use a route, in the order of muse.home.auth.ROLES. The OpenAPI file states the same."""
+    from muse.home import auth
+
+    return [role for role in auth.ROLES if auth.allows(role, route.scope)]
+
+
+def check_scope(route: Route, device: Device) -> None:
+    """The one place a role is checked. Deny by default: no scope on the route, or a role without it, is 403."""
+    from muse.home import auth
+
+    if not auth.allows(getattr(device, "role", ""), route.scope):
+        raise ApiError("forbidden", "This device is not allowed to make this call. The person can do it from their own "
+                                    "app or the command line.")
 
 
 def find_route(method: str, path: str) -> tuple[Route, dict[str, str]]:
@@ -867,6 +918,7 @@ def dispatch(home: Home, device: Device, method: str, target: str, raw_body: byt
         parts = urlsplit(target)
         route, params = find_route(method, parts.path)
         template = route.path
+        check_scope(route, device)
         home.check_available()
         if len(raw_body) > MAX_BODY_BYTES:
             raise ApiError("payload_too_large", "The request body is too large.")

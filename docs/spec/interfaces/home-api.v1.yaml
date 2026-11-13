@@ -16,6 +16,20 @@ info:
       unknown token gets the same 401. On the Unix socket the caller must also be the same
       user as the home (403 otherwise). On TCP the `Host` header must be `127.0.0.1:<port>`
       or `localhost:<port>` (403 otherwise).
+    * Every device has a role, and every call needs one scope (`x-scope` on each operation;
+      `x-roles` lists the roles that hold it; the table is `x-role-scopes` below). A device
+      whose role lacks the scope gets `forbidden` (403) before anything else is looked at.
+      `owner` may do everything. `host` (the tools server a host bot runs) may read status
+      and the catalogue, ask the person a question and read its own cards, queue, read and
+      cancel its own jobs, add records, and list and run skills; it may not pause or resume,
+      connect services, store keys, manage apps, answer a card or read the records. `viewer`
+      may only read status, the catalogue, cards, jobs and records. A `host` sees only the
+      jobs, cards and skill runs it made itself: anyone else's answer `not_found` (404),
+      exactly as if they did not exist. Devices created before roles existed are `owner`.
+    * A peer that sends a wrong token more than 10 times in 60 seconds gets
+      `too_many_requests` (429) with `retry_after` for its further wrong tokens; a correct
+      token is always served. At most 64 connections are served at once; one more gets
+      `unavailable` (503) with `retry_after`.
     * Bodies are JSON objects of at most 512 KiB, sent with a `Content-Length`.
     * A reply never holds a provider key, a prompt, a job's result, or internal error text.
       The only secret that ever leaves is a new app token, once, when it is created or rotated.
@@ -28,8 +42,8 @@ info:
 
     Error codes: `invalid_request` 400, `unauthorized` 401, `forbidden` 403, `not_found` 404,
     `method_not_allowed` 405, `conflict` 409, `card_already_answered` 409, `card_expired` 410,
-    `length_required` 411, `payload_too_large` 413, `internal` 500, `not_built` 501,
-    `unavailable` 503.
+    `length_required` 411, `payload_too_large` 413, `too_many_requests` 429, `internal` 500,
+    `not_built` 501, `unavailable` 503.
 
     For development, `python -m muse.home --fake` serves this same API from canned data.
 servers:
@@ -48,14 +62,25 @@ x-error-codes:
   card_expired: 410
   length_required: 411
   payload_too_large: 413
+  too_many_requests: 429
   internal: 500
   not_built: 501
   unavailable: 503
+# Which scopes each role holds (muse/home/auth.py::ROLE_SCOPES). Checked by tests/test_home_openapi.py.
+x-role-scopes:
+  owner: [status.read, catalogue.read, connect.write, keys.write, jobs.read, jobs.write, cards.read, cards.ask,
+          cards.answer, pause.write, apps.read, apps.write, receipts.read, receipts.write, skills.read, skills.run,
+          mandates.read]
+  host: [status.read, catalogue.read, jobs.read, jobs.write, cards.read, cards.ask, receipts.write, skills.read,
+         skills.run]
+  viewer: [status.read, catalogue.read, jobs.read, cards.read, receipts.read]
 
 paths:
   /v1/status:
     get:
       operationId: getStatus
+      x-scope: status.read
+      x-roles: [owner, host, viewer]
       summary: The snapshot the dashboard and `muse status` show, plus `api_version`.
       description: Allowances, services, apps, the queue, the paid total and whether the home is paused. Never holds keys or prompts.
       responses:
@@ -70,6 +95,8 @@ paths:
   /v1/catalogue:
     get:
       operationId: getCatalogue
+      x-scope: catalogue.read
+      x-roles: [owner, host, viewer]
       summary: The catalogue with the person's connection state.
       responses:
         "200":
@@ -82,6 +109,8 @@ paths:
   /v1/connect/{provider}:
     post:
       operationId: startConnection
+      x-scope: connect.write
+      x-roles: [owner]
       summary: Start a guided connection; returns the steps.
       description: |
         The home opens no browser: the client shows the steps and opens `open_url` on the
@@ -103,6 +132,8 @@ paths:
   /v1/keys/{provider}:
     post:
       operationId: storeKey
+      x-scope: keys.write
+      x-roles: [owner]
       summary: Store a service's key on the home.
       description: |
         The only call that accepts a key. The key is stored through the home's key store
@@ -138,6 +169,8 @@ paths:
   /v1/jobs:
     get:
       operationId: listJobs
+      x-scope: jobs.read
+      x-roles: [owner, host, viewer]
       summary: Background jobs, oldest first. Metadata only.
       description: A job's prompt and result are never returned by any call.
       parameters:
@@ -159,6 +192,8 @@ paths:
         default: {$ref: "#/components/responses/Error"}
     post:
       operationId: addJob
+      x-scope: jobs.write
+      x-roles: [owner, host]
       summary: Queue a job to run on spare allowance.
       description: |
         The prompt is accepted and kept on the home until the job ends; it is not returned.
@@ -181,6 +216,8 @@ paths:
   /v1/jobs/{id}:
     get:
       operationId: getJob
+      x-scope: jobs.read
+      x-roles: [owner, host, viewer]
       summary: One job's metadata.
       parameters:
         - {$ref: "#/components/parameters/jobId"}
@@ -194,6 +231,8 @@ paths:
         default: {$ref: "#/components/responses/Error"}
     delete:
       operationId: cancelJob
+      x-scope: jobs.write
+      x-roles: [owner, host]
       summary: Cancel a waiting or running job.
       description: The job stays in the list as `cancelled` and its prompt is erased. `conflict` if it had already finished.
       parameters:
@@ -211,6 +250,8 @@ paths:
   /v1/cards:
     get:
       operationId: listCards
+      x-scope: cards.read
+      x-roles: [owner, host, viewer]
       summary: Cards, newest first. "Needs you" is `?status=pending`.
       parameters:
         - name: status
@@ -235,6 +276,8 @@ paths:
         default: {$ref: "#/components/responses/Error"}
     post:
       operationId: askCard
+      x-scope: cards.ask
+      x-roles: [owner, host]
       summary: Ask the person a question. Creates one waiting card.
       description: |
         For a device that acts for the person and must ask first, such as the Muse tools server a
@@ -268,6 +311,8 @@ paths:
   /v1/cards/{id}:
     get:
       operationId: getCard
+      x-scope: cards.read
+      x-roles: [owner, host, viewer]
       summary: One card.
       parameters:
         - {$ref: "#/components/parameters/cardId"}
@@ -283,6 +328,8 @@ paths:
   /v1/cards/{id}/answer:
     post:
       operationId: answerCard
+      x-scope: cards.answer
+      x-roles: [owner]
       summary: Approve or decline a waiting card.
       description: |
         Exactly one answer ever succeeds. A second answer gets `card_already_answered` (409);
@@ -326,6 +373,8 @@ paths:
   /v1/pause:
     post:
       operationId: pause
+      x-scope: pause.write
+      x-roles: [owner]
       summary: The one switch, off. Background work sends nothing until resumed.
       description: Same as `muse pause`. In v1 this stops the queue; the router keeps answering apps. No request body. Idempotent.
       responses:
@@ -343,6 +392,8 @@ paths:
   /v1/resume:
     post:
       operationId: resume
+      x-scope: pause.write
+      x-roles: [owner]
       summary: The one switch, on.
       description: Same as `muse resume`. No request body. Idempotent.
       responses:
@@ -361,6 +412,8 @@ paths:
   /v1/apps:
     get:
       operationId: listApps
+      x-scope: apps.read
+      x-roles: [owner]
       summary: The apps that share the router, by name. Today's use per app is in `/v1/status`.
       responses:
         "200":
@@ -376,6 +429,8 @@ paths:
         default: {$ref: "#/components/responses/Error"}
     post:
       operationId: addApp
+      x-scope: apps.write
+      x-roles: [owner]
       summary: Register an app. Its token is returned once.
       requestBody:
         required: true
@@ -402,6 +457,8 @@ paths:
   /v1/apps/{name}:
     patch:
       operationId: updateApp
+      x-scope: apps.write
+      x-roles: [owner]
       summary: Change an app's priority, caps, paid permission, privacy or note.
       description: Send only what changes. `null` clears an optional cap; `allow_paid null` returns to the priority's default.
       parameters:
@@ -427,6 +484,8 @@ paths:
         default: {$ref: "#/components/responses/Error"}
     delete:
       operationId: removeApp
+      x-scope: apps.write
+      x-roles: [owner]
       summary: Remove an app. Its token stops working at the next request.
       parameters:
         - {$ref: "#/components/parameters/appName"}
@@ -447,6 +506,8 @@ paths:
   /v1/apps/{name}/rotate:
     post:
       operationId: rotateAppToken
+      x-scope: apps.write
+      x-roles: [owner]
       summary: Issue a new token for an app; the old one stops working at once.
       description: No request body.
       parameters:
@@ -464,6 +525,8 @@ paths:
   /v1/receipts:
     get:
       operationId: listReceipts
+      x-scope: receipts.read
+      x-roles: [owner, viewer]
       summary: Planned. Receipts written on the home.
       description: Not built yet; answers 501 `not_built` until the records module exists.
       x-planned: true
@@ -478,6 +541,8 @@ paths:
   /v1/mandates/artifacts:
     get:
       operationId: listMandateArtifacts
+      x-scope: mandates.read
+      x-roles: [owner]
       summary: Planned. Per-target state from the mandate compiler.
       description: Not built yet; answers 501 `not_built` until the compiler exists.
       x-planned: true
@@ -491,8 +556,8 @@ components:
       type: http
       scheme: bearer
       description: |
-        A device token made on the home with `muse home token add <name>`; the home keeps only
-        its SHA-256. In a later version this becomes a mandate token narrowed from the
+        A device token made on the home with `muse home token add <name> [--role owner|host|viewer]`;
+        the home keeps only its SHA-256 and the role. `muse hosts setup` makes `host` tokens. In a later version this becomes a mandate token narrowed from the
         device's mandate; the header stays the same.
 
   parameters:
@@ -563,8 +628,8 @@ components:
           properties:
             code:
               enum: [invalid_request, unauthorized, forbidden, not_found, method_not_allowed, conflict,
-                     card_already_answered, card_expired, length_required, payload_too_large, internal,
-                     not_built, unavailable]
+                     card_already_answered, card_expired, length_required, payload_too_large,
+                     too_many_requests, internal, not_built, unavailable]
             message: {type: string, description: One plain sentence. Never a secret, a prompt or internal error text.}
             retry_after: {type: integer, minimum: 0, description: Seconds. Also sent as the Retry-After header.}
 

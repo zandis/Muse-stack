@@ -62,7 +62,8 @@ def test_token_add_shows_the_token_once_in_a_terminal(monkeypatch):
     code, out, err = run(["home", "token", "list"], monkeypatch, tty=True)
     assert code == 0 and "mei-phone" in out and "sk-muse-dev-" not in out and auth.hash_token(token) not in out
     code, out, err = run(["home", "token", "list", "--json"], monkeypatch)
-    assert [d["name"] for d in json.loads(out)] == ["mei-phone"] and set(json.loads(out)[0]) == {"name", "created_at", "rotated_at"}
+    assert [d["name"] for d in json.loads(out)] == ["mei-phone"] and set(json.loads(out)[0]) == {"name", "role", "created_at", "rotated_at"}
+    assert json.loads(out)[0]["role"] == "owner" and "with the role owner" in run(["home", "token", "add", "desk"], monkeypatch, tty=True)[1]
 
 
 @pytest.mark.parametrize("verb", ["add", "rotate"])
@@ -253,3 +254,18 @@ def test_serve_reports_a_path_it_cannot_use(monkeypatch, tmp_path):
     blocker.write_text("x")
     code, out, err = run(["home", "serve", "--socket", str(blocker)], monkeypatch)
     assert code == 1 and "Could not start the home" in err and "not a socket" in err
+
+
+def test_token_add_takes_a_role_and_list_shows_it(monkeypatch):
+    code, out, err = run(["home", "token", "add", "bot-tools", "--role", "host"], monkeypatch, tty=True)
+    assert code == 0 and "with the role host" in out and "cannot pause or resume" in out
+    assert auth.TokenFileVerifier().verify(token_in(out)).role == "host"
+    assert run(["home", "token", "add", "wall", "--role", "viewer"], monkeypatch, tty=True)[0] == 0
+    assert run(["home", "token", "add", "mei-phone"], monkeypatch, tty=True)[0] == 0  # no --role: owner, as before roles
+    code, out, err = run(["home", "token", "list"], monkeypatch, tty=True)
+    lines = {line.split()[0]: line.split()[1] for line in out.splitlines() if line.strip()}
+    assert lines == {"bot-tools": "host", "mei-phone": "owner", "wall": "viewer"}
+    code, out, err = run(["home", "token", "list", "--json"], monkeypatch)
+    assert {d["name"]: d["role"] for d in json.loads(out)} == lines
+    assert run(["home", "token", "add", "x", "--role", "admin"], monkeypatch, tty=True)[0] == 2
+    assert "x" not in {d.name for d in auth.list_devices()}

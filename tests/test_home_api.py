@@ -479,7 +479,8 @@ def test_an_unexpected_failure_is_a_plain_500(rig, monkeypatch, caplog):
 def test_error_codes_and_statuses_are_one_table():
     assert api.ERROR_CODES == {
         "invalid_request": 400, "unauthorized": 401, "forbidden": 403, "not_found": 404, "method_not_allowed": 405, "conflict": 409,
-        "card_already_answered": 409, "card_expired": 410, "length_required": 411, "payload_too_large": 413, "internal": 500,
+        "card_already_answered": 409, "card_expired": 410, "length_required": 411, "payload_too_large": 413,
+        "too_many_requests": 429, "internal": 500,
         "not_built": 501, "unavailable": 503,
     }
     err = api.ApiError("unavailable", "Wait a little.", retry_after=7)
