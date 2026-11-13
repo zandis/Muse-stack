@@ -94,7 +94,7 @@ System libraries on Ubuntu 24.04: `libwebkit2gtk-4.1-dev libxdo-dev libssl-dev l
 
 Done on Ubuntu 24.04 (x86-64) with WebKitGTK 2.52:
 
-- `cargo test` in `src-tauri/` (22 tests: 18 in `muse-home-link`, 4 in the shell).
+- `cargo test --workspace` in `src-tauri/` (22 tests: 18 in `muse-home-link`, 4 in the shell).
 - `pnpm tauri build --debug --no-bundle` produced the binary.
 - The binary was run on a virtual display (Xvfb) against the fake home, both over TCP and over the home's real Unix socket with the token from a 0600 file. Today rendered with live data; clicking Pause changed the home's state (checked by asking the home afterwards).
 
@@ -109,7 +109,7 @@ Not done:
 ```bash
 pnpm typecheck && pnpm lint && pnpm test && pnpm build
 MUSE_PYTHON=/path/to/venv/bin/python pnpm e2e
-(cd src-tauri && cargo test)
+(cd src-tauri && cargo test --workspace)
 ```
 
 - **Unit (Vitest):** the client and both transports, the reducer, the gauge and spending, polling, the tip rule, formatting, both dictionaries (every key, same placeholders, only the plain words of UX §1), the card for each kind, Today in every state, navigation, and rules about the source (no bare strings, no HTML from strings, one `fetch`, no secrets).
