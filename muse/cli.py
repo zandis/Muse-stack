@@ -1390,6 +1390,7 @@ def cmd_pause(args: argparse.Namespace) -> int:
 
     queue.set_paused(_env())
     print("Paused. The queue sends nothing until you run `muse resume`. The proxy keeps answering your apps.")
+    _record_home_event("home.pause", "Paused the queue")
     return 0
 
 
@@ -1398,6 +1399,7 @@ def cmd_resume(args: argparse.Namespace) -> int:
 
     if queue.clear_paused(_env()):
         print("Resumed. A running `muse queue run` carries on within a few seconds.")
+        _record_home_event("home.resume", "Resumed the queue")
     else:
         print("It was not paused.")
     return 0
@@ -1812,6 +1814,7 @@ def build_parser() -> argparse.ArgumentParser:
     v = sub.add_parser("version", help="print the version")
     v.set_defaults(func=cmd_version)
     add_rules_parser(sub)
+    register_records_commands(sub)
     return p
 
 
@@ -1877,6 +1880,70 @@ def add_rules_parser(sub: Any) -> None:
 
 
 # ============================================================ end routing rules
+
+
+# ===== BEGIN records: `muse records`, and the record `muse pause` / `muse resume` leave (logic lives in muse/records/) =====
+
+
+def _record_home_event(action: str, summary: str) -> None:
+    """Append a record of something the person did to this home. Never raises: the action itself
+    has already happened and must not fail because the record could not be written."""
+    try:
+        from muse.records import commands
+
+        commands.note_home_event(_env(), action, summary)
+    except Exception as exc:  # noqa: BLE001  (a records failure must never stop pause/resume)
+        _err(f"Note: no record was written ({type(exc).__name__}).")  # the type only: never the message or a path
+
+
+def cmd_records(args: argparse.Namespace) -> int:
+    try:
+        from muse.records import commands
+    except ImportError as exc:
+        _err(f"Error: records need the `cryptography` package ({type(exc).__name__}).")
+        return 1
+    try:
+        if args.records_command == "verify":
+            return commands.verify(_env(), as_json=args.json)
+        if args.records_command == "seal":
+            return commands.seal(_env())
+        if args.records_command == "list":
+            return commands.list_records(_env(), args.since, args.action, args.cost_only, args.json)
+        if args.records_command == "export":
+            return commands.export_file(_env(), args.file, args.since, args.action, args.cost_only, args.redact_summaries)
+        return commands.check_file(args.file, args.device, as_json=args.json)
+    except ImportError as exc:  # cryptography is imported on first signature
+        _err(f"Error: records need the `cryptography` package ({type(exc).__name__}).")
+        return 1
+
+
+def register_records_commands(sub: Any) -> None:
+    r = sub.add_parser("records", help="what was done in your name on this computer: list, check, export")
+    rsub = r.add_subparsers(dest="records_command", required=True)
+    v = rsub.add_parser("verify", help="check every record and the last seal")
+    v.add_argument("--json", action="store_true")
+    rsub.add_parser("seal", help="sign a checkpoint over every record so far")
+
+    def filters(p: Any) -> None:
+        p.add_argument("--since", metavar="WHEN", help="7d, 36h, 2026-11-01 or 2026-11-01T09:00")
+        p.add_argument("--action", metavar="NAME", help="one action (files.write) or a family (files)")
+        p.add_argument("--cost-only", action="store_true", help="only records that cost money")
+
+    ls = rsub.add_parser("list", help="records, newest first")
+    filters(ls)
+    ls.add_argument("--json", action="store_true")
+    ex = rsub.add_parser("export", help="write a file someone else can check (never overwrites)")
+    ex.add_argument("file", metavar="FILE")
+    filters(ex)
+    ex.add_argument("--redact-summaries", action="store_true", help="leave the summary text out; the file still checks")
+    cf = rsub.add_parser("check-file", help="check an export, yours or someone else's")
+    cf.add_argument("file", metavar="FILE")
+    cf.add_argument("--device", metavar="KEY", help="the device key you expect (64 hex characters)")
+    cf.add_argument("--json", action="store_true")
+    r.set_defaults(func=cmd_records)
+
+
+# ===== END records =====
 
 
 def main(argv: list[str] | None = None) -> int:
