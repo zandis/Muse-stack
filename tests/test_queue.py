@@ -256,6 +256,31 @@ def test_backoff_is_capped_and_never_earlier_than_retry_after(env, clock, proxy)
     assert job(env, clock, j.id).next_attempt_at - clock.t >= 7200
 
 
+def test_provider_limit_wait_is_used_instead_of_the_backoff_guess(env, clock, proxy):
+    """`x-muse-wait: provider-limit` + Retry-After: the proxy knows when the block ends."""
+    j = add(env, clock, max_attempts=50)
+    runner = make(env, clock)
+    for _ in range(6):  # a late attempt, where the plain backoff would be 8..16 minutes
+        proxy.push(429, {}, error("slow down"))
+        runner.run(once=True)
+        clock.t = job(env, clock, j.id).next_attempt_at
+    proxy.push(429, {"x-muse-wait": "provider-limit", "retry-after": "58"}, error("slow down"))
+    runner.run(once=True)
+    d = job(env, clock, j.id)
+    assert 58 <= d.next_attempt_at - clock.t <= 58 + 11.6 + 0.01  # Retry-After + at most 20 % jitter
+    assert d.attempts == 7 and d.last_reason == "http-429"  # the provider was asked: still an attempt
+    # A huge value is capped like any Retry-After; without the header the old rule holds.
+    clock.t = d.next_attempt_at
+    proxy.push(429, {"x-muse-wait": "provider-limit", "retry-after": "999999"}, error("slow down"))
+    runner.run(once=True)
+    d = job(env, clock, j.id)
+    assert queue.RETRY_AFTER_CAP_S <= d.next_attempt_at - clock.t <= queue.RETRY_AFTER_CAP_S + 30.01
+    clock.t = d.next_attempt_at
+    proxy.push(429, {"x-muse-wait": "provider-limit"}, error("slow down"))  # no Retry-After: nothing to prefer
+    runner.run(once=True)
+    assert job(env, clock, j.id).next_attempt_at - clock.t <= queue.BACKOFF_CAP_S + 0.01
+
+
 def test_5xx_and_unreadable_200_are_attempts(env, clock, proxy):
     j = add(env, clock)
     proxy.push(503, {}, error("down", 503))

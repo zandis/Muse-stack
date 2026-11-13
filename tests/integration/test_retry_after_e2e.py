@@ -108,7 +108,13 @@ def test_a_rate_limited_single_deployment_answers_at_once(make_proxy, upstream, 
     proxy = make_proxy(local=False, env=env)
     upstream.set("q-small", f"429_retry_after:{RETRY_AFTER}")
     started = time.time()
-    status, _, body = proxy.chat("q-small", timeout=45)  # the pinned name: a group of one
+    status, headers, body = proxy.chat("q-small", timeout=45)  # the pinned name: a group of one
     assert status == 429, body
     assert time.time() - started < 10
     assert len(upstream.calls("q-small")) == 1  # and it was sent once
+    if path == "muse":
+        # The hook recorded a block until the provider's Retry-After; the caller is told the same.
+        headers = {str(k).lower(): v for k, v in dict(headers).items()}
+        assert headers.get("x-muse-wait") == "provider-limit", headers
+        assert 55 <= int(headers["retry-after"]) <= 60, headers
+        assert "x-muse-ration" not in headers  # that header means nothing was sent upstream

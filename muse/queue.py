@@ -27,9 +27,11 @@ Runner policy (same text as README, kept exact because the tests pin it):
     Retry-After (local midnight) + jitter. Not an attempt.
   * 429 + `refuse:paid-spend-unknown`: retry in ~60 s. Any other `*:paid-*`: retry at
     Retry-After if given, else next local midnight. Not an attempt.
-  * 429 without `x-muse-ration`: a provider block or upstream limit. Exponential
-    backoff (30 s * 2^(attempt-1), cap 1 h, jittered to 50..100 %), never earlier
-    than Retry-After (cap 6 h). Counts as an attempt.
+  * 429 without `x-muse-ration`: a provider block or upstream limit. With
+    `x-muse-wait: provider-limit` and a Retry-After, the proxy knows when the
+    provider's block ends: retry at Retry-After (cap 6 h) + jitter. Otherwise
+    exponential backoff (30 s * 2^(attempt-1), cap 1 h, jittered to 50..100 %),
+    never earlier than Retry-After (cap 6 h). Either way it counts as an attempt.
   * 403 whose message starts `[muse]`: privacy refusal, failed (`privacy-refused`), no retry.
   * 401: the token was revoked. The runner re-checks its managed app once (rotating
     its own token if the registry changed); if still 401 it stops and leaves the job queued.
@@ -933,6 +935,9 @@ class Runner:
             wait = retry_after if retry_after is not None else (DEFAULT_DEFER_S if kind == "defer" else 3600.0)
             return {"kind": "wait", "reason": f"{kind}:{code}", "until": now + wait + self.jitter(wait)}
         if status == 429:
+            if headers.get("x-muse-wait", "").strip().lower() == "provider-limit" and retry_after is not None:
+                # The proxy says when the provider's quota block ends: come back then, not on a guess.
+                return {"kind": "retry", "reason": "http-429", "count": True, "delay": retry_after, "exact": True}
             return {"kind": "retry", "reason": "http-429", "count": True, "delay": retry_after}
         if status == 403:
             if _message(reply).startswith("[muse]"):
@@ -967,10 +972,14 @@ class Runner:
             )
             self.log(f"{job.id} failed: max-attempts:{reason}")
             return "failed"
-        delay = min(BACKOFF_CAP_S, BACKOFF_BASE_S * 2 ** max(0, attempts - 1))
-        delay = self.rng.uniform(0.5 * delay, delay)
-        if action.get("delay") is not None:
-            delay = max(delay, min(RETRY_AFTER_CAP_S, float(action["delay"])))
+        if action.get("exact") and action.get("delay") is not None:
+            wait = min(RETRY_AFTER_CAP_S, float(action["delay"]))
+            delay = wait + self.jitter(wait)
+        else:
+            delay = min(BACKOFF_CAP_S, BACKOFF_BASE_S * 2 ** max(0, attempts - 1))
+            delay = self.rng.uniform(0.5 * delay, delay)
+            if action.get("delay") is not None:
+                delay = max(delay, min(RETRY_AFTER_CAP_S, float(action["delay"])))
         self.queue.settle(job.id, self.id, status="deferred", attempts=attempts, last_reason=reason, next_attempt_at=now + delay)
         self.log(f"{job.id} will retry: {reason}, in {int(delay)} s")
         return "deferred"

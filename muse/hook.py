@@ -33,6 +33,12 @@ Hooks used, with the 1.108.5 signatures (litellm/integrations/custom_logger.py):
 - async_post_call_response_headers_hook: x-muse-provider / -deployment / -privacy /
   -app, x-muse-cost-usd, x-muse-ration and Retry-After on a rationing refusal,
   x-muse-task (the task applied), x-muse-handoff: suggest (rule 6), x-muse-cache.
+  A 429 whose last failure was a provider limit (the provider answered 429 and
+  that set or met a quota block, or every allowed deployment was already
+  blocked) carries `x-muse-wait: provider-limit` and Retry-After = seconds until
+  the soonest such block ends (at least 1). It is a separate header, not an
+  x-muse-ration value, because x-muse-ration means "Muse turned this away and
+  nothing was sent upstream"; clients tell a provider's 429 by its absence.
 
 Request headers read: x-muse-privacy, x-muse-task, x-muse-allow-oneoff: true (the
 user approved spending one-off trial credits), x-muse-allow-paid: true (the user
@@ -55,6 +61,7 @@ from __future__ import annotations
 import sys
 import asyncio
 import logging
+import math
 import os
 import threading
 import time
@@ -82,6 +89,8 @@ PRIVACY_HEADER = "x-muse-privacy"
 TASK_HEADER = "x-muse-task"
 ONEOFF_HEADER = "x-muse-allow-oneoff"
 ALLOW_PAID_HEADER = "x-muse-allow-paid"
+WAIT_HEADER = "x-muse-wait"  # response: why a 429 that is not a rationing refusal says Retry-After
+WAIT_PROVIDER_LIMIT = "provider-limit"
 AUTO_MODEL = "auto"
 CACHE_PROVIDER = "cache"  # provider/upstream recorded for an answer served from the exact-repeat cache
 TRUTHY = {"1", "true", "on", "yes"}
@@ -110,7 +119,8 @@ class MusePrivacyError(GuardrailRaisedException):
 class MuseBlockedError(RateLimitError):
     """Every allowed deployment in this group is blocked by a quota; LiteLLM may fall back."""
 
-    def __init__(self, message: str, model: str) -> None:
+    def __init__(self, message: str, model: str, until: float | None = None) -> None:
+        self.until = until  # when the soonest quota block ends; None when no quota block was involved
         super().__init__(message=f"{MARK} {message}", llm_provider="muse", model=model)
 
 
@@ -176,6 +186,10 @@ class _Note:
     cache_key: str | None = None
     cache_privacy: str | None = None
     cache_value: str | None = None  # the answer pinned at lookup, so a later expiry cannot route it upstream unrationed
+    # Provider limits met by this request: when the soonest quota block ends, and whether the
+    # most recent failure was one (a later privacy refusal, rationing refusal or other error clears it).
+    provider_until: float | None = None
+    provider_limit_last: bool = False
 
 
 def _metadata(data: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -487,6 +501,26 @@ class MuseHook(CustomLogger):
                 self._notes.popitem(last=False)
             return note
 
+    def _failed(self, data: Mapping[str, Any] | None, provider_until: float | None = None) -> None:
+        """Remember how the latest failure of this request ended, for the response headers.
+
+        `provider_until` is when the quota block behind a provider's 429 ends; None
+        means the failure was something else (a privacy or rationing refusal, a
+        server error), which must never be answered with the provider's wait.
+        """
+        try:
+            note = self._note(_call_id(data))
+            if note is None:
+                return
+            if provider_until is None:
+                note.provider_limit_last = False
+                return
+            note.provider_limit_last = True
+            if note.provider_until is None or provider_until < note.provider_until:
+                note.provider_until = float(provider_until)
+        except Exception as exc:
+            self._fault("failed_note", exc)
+
     async def _ration_state(
         self, app: apps_mod.App, deployments: list[dict], settings: ration.Settings, now: float
     ) -> ration.State:
@@ -731,6 +765,22 @@ class MuseHook(CustomLogger):
         request_kwargs: dict | None = None,
         parent_otel_span: Any = None,
     ) -> list[dict]:
+        try:
+            return await self._filter_deployments(model, healthy_deployments, messages, request_kwargs)
+        except MuseBlockedError as exc:
+            self._failed(request_kwargs, exc.until)  # None when no quota block was behind it
+            raise
+        except Exception:
+            self._failed(request_kwargs)
+            raise
+
+    async def _filter_deployments(
+        self,
+        model: str,
+        healthy_deployments: list,
+        messages: list | None,
+        request_kwargs: dict | None,
+    ) -> list[dict]:
         from muse import policy
 
         # Privacy first decides what is allowed at all. Fails closed.
@@ -806,6 +856,7 @@ class MuseHook(CustomLogger):
                     f"soonest reset {quota.iso(soonest['until'])} ({soonest['kind']}: {soonest['reason']}) | "
                     + ration.options_trailer(float(soonest["until"]), handoff, None),
                     model=model,
+                    until=float(soonest["until"]),
                 )
 
         # Then rationing between apps (muse/ration.py).
@@ -820,6 +871,13 @@ class MuseHook(CustomLogger):
 
     async def async_pre_call_deployment_hook(self, kwargs: dict, call_type: Any) -> dict | None:
         """Last check on the deployment actually chosen (covers requests by deployment id)."""
+        try:
+            return await self._pre_call_deployment(kwargs, call_type)
+        except Exception:
+            self._failed(kwargs)  # a refusal here is never a provider's wait
+            raise
+
+    async def _pre_call_deployment(self, kwargs: dict, call_type: Any) -> dict | None:
         from muse import policy
 
         info = _model_info(kwargs)
@@ -915,7 +973,9 @@ class MuseHook(CustomLogger):
         try:
             if isinstance(exception, (MusePrivacyError, MuseBlockedError, MuseRationError, MuseAppCapError, MuseDirectRationError)) \
                     or MARK in str(getattr(exception, "message", "")):
+                self._failed(request_data)
                 return
+            self._failed(request_data)  # until the lines below show this was a provider limit
             info = _model_info(request_data)
             pair = _upstream(info)
             if pair is None:
@@ -940,7 +1000,14 @@ class MuseHook(CustomLogger):
             body_text = f"{body_text} {getattr(exception, 'message', '') or exception}"
             block = quota.classify_failure(provider, status, dict(headers or {}), body_text, now)
             if block is not None:
-                await self._run(self.ledger.set_block, block.key(provider, upstream), block.until, block.kind, block.reason, now)
+                written = await self._run(self.ledger.set_block, block.key(provider, upstream), block.until, block.kind, block.reason, now)
+                if status == 429:
+                    self._failed(request_data, await self._block_until(provider, upstream, now, None if not written else block.until))
+            elif status == 429:
+                # Not understood well enough to block, but a block already in force still says when to return.
+                until = await self._block_until(provider, upstream, now, None)
+                if until is not None:
+                    self._failed(request_data, until)
             latency = None
             logging_obj = request_data.get("litellm_logging_obj")
             started = getattr(logging_obj, "start_time", None)
@@ -966,6 +1033,15 @@ class MuseHook(CustomLogger):
             )
         except Exception as exc:
             self._fault("failure_event", exc)
+
+    async def _block_until(self, provider: str, upstream: str, now: float, known: float | None) -> float | None:
+        """When the block on this upstream ends: `known` if this failure just wrote it,
+        else what the ledger holds (set_block keeps a longer block that was already there)."""
+        if known is not None:
+            return float(known)
+        blocks = await self._run(self.ledger.active_blocks, now)
+        found = [float(b["until"]) for b in (blocks.get(upstream), blocks.get(f"provider:{provider}")) if b]
+        return max(found) if found else None
 
     def _privacy_for_record(self, data: Mapping[str, Any]) -> str:
         try:
@@ -1095,6 +1171,11 @@ class MuseHook(CustomLogger):
                     out["x-muse-cost-usd"] = f"{cost:.6f}"
                 if note is not None and note.codes:
                     out["x-muse-ration"] = ",".join(sorted(note.codes))
+            elif note is not None and note.provider_limit_last and note.provider_until is not None:
+                # The request ended on a provider's limit (see _failed). Checked before the rationing
+                # notes: an earlier group may have been rationed, but the last word was the provider's.
+                out[WAIT_HEADER] = WAIT_PROVIDER_LIMIT
+                out["retry-after"] = str(max(1, int(math.ceil(note.provider_until - self.clock()))))
             elif note is not None and note.decisions:
                 now = self.clock()
                 defers = [d for d in note.decisions if d.kind == ration.DEFER and d.retry_at is not None]

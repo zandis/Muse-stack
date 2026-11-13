@@ -329,6 +329,125 @@ def test_response_headers(h):
     assert run(h.async_post_call_response_headers_hook(req(), None, None)) == {"x-muse-privacy": "standard"}
 
 
+# ---------------------------------------------------------------- a provider's 429 says when to come back
+
+def call(call_id="call-1", privacy=None, **metadata) -> dict:
+    return {**req(privacy, **metadata), "litellm_call_id": call_id}
+
+
+def fail(h, info, error, data):
+    started = datetime.now() - timedelta(milliseconds=40)
+    full = {**data, "model_info": info, "litellm_logging_obj": SimpleNamespace(start_time=started)}
+    run(h.async_post_call_failure_deployment_hook(MappingProxyType(full), error, None))
+
+
+def failure_headers(h, data):
+    return run(h.async_post_call_response_headers_hook(data, None, None))
+
+
+def test_provider_429_carries_retry_after_and_says_the_wait_is_the_providers(h, db):
+    data = call(model_group="fast")
+    fail(h, Q_FAST["model_info"], FakeError(429, headers={"retry-after": "58"}), data)
+    out = failure_headers(h, data)
+    assert out["retry-after"] == "58" and out["x-muse-wait"] == "provider-limit"
+    assert "x-muse-ration" not in out  # that header still means "Muse turned it away, nothing was sent"
+    assert db.active_blocks()["groq:groq/q"]["until"] == NOW + 58
+
+
+def test_provider_wait_is_at_least_one_second_and_rounds_up(db):
+    clock = {"t": NOW}
+    h = MuseHook(ledger=db, clock=lambda: clock["t"], environ={})
+    data = call()
+    fail(h, Q_FAST["model_info"], FakeError(429, headers={"retry-after": "7"}), data)
+    clock["t"] = NOW + 6.4
+    assert failure_headers(h, data)["retry-after"] == "1"
+    clock["t"] = NOW + 30  # the block has ended: never zero or negative
+    assert failure_headers(h, data)["retry-after"] == "1"
+    clock["t"] = NOW + 2.5
+    assert failure_headers(h, data)["retry-after"] == "5"
+
+
+def test_provider_429_that_meets_a_longer_block_reports_the_block_in_force(h, db):
+    db.set_block("groq:groq/q", NOW + 3600, "exhausted", "daily")
+    data = call()
+    fail(h, Q_FAST["model_info"], FakeError(429, headers={"retry-after": "7"}), data)  # set_block keeps the longer one
+    assert failure_headers(h, data)["retry-after"] == "3600"
+
+
+def test_no_provider_wait_on_a_successful_fallback(h):
+    data = call(model_group="fast")
+    fail(h, G_FAST["model_info"], FakeError(429, headers={"retry-after": "58"}), data)
+    out = run(h.async_post_call_response_headers_hook(data, None, object(), litellm_call_info={"model_info": Q_FAST["model_info"]}))
+    assert out["x-muse-provider"] == "groq"
+    assert "retry-after" not in out and "x-muse-wait" not in out and "x-muse-ration" not in out
+
+
+def test_no_provider_wait_when_the_request_ends_in_a_privacy_refusal(h):
+    # The first group's provider said 429; the fallback group has nothing a `local` request may use.
+    data = call(privacy="local", model_group="fast")
+    fail(h, L_FAST["model_info"], FakeError(429, headers={"retry-after": "58"}), data)
+    with pytest.raises(MusePrivacyError):
+        filt(h, [G_CHEAP, P_CHEAP], data, model="cheap")
+    out = failure_headers(h, data)
+    assert out == {"x-muse-privacy": "local"}
+    # The same from the deployment hook (a request that named a deployment id).
+    data = call("call-2", privacy="local")
+    fail(h, L_FAST["model_info"], FakeError(429, headers={"retry-after": "58"}), data)
+    with pytest.raises(MusePrivacyError):
+        run(h.async_pre_call_deployment_hook({**data, "model_info": G_FAST["model_info"]}, None))
+    assert failure_headers(h, data) == {"x-muse-privacy": "local"}
+
+
+@pytest.mark.parametrize("status, headers", [(500, {}), (503, {"retry-after": "5"}), (400, {}), (401, {}), (None, {})])
+def test_no_provider_wait_when_the_last_failure_is_not_a_429(h, status, headers):
+    data = call()
+    fail(h, G_FAST["model_info"], FakeError(429, headers={"retry-after": "58"}), data)
+    fail(h, Q_FAST["model_info"], FakeError(status, headers=headers), data)
+    out = failure_headers(h, data)
+    assert "retry-after" not in out and "x-muse-wait" not in out
+
+
+def test_no_provider_wait_for_a_429_from_a_deployment_muse_does_not_manage(h):
+    data = call()
+    fail(h, {"id": "other"}, FakeError(429, headers={"retry-after": "58"}), data)
+    assert failure_headers(h, data) == {"x-muse-privacy": "standard"}
+
+
+def test_every_deployment_already_blocked_gives_the_soonest_reset(h, db):
+    db.set_block("gemini:gemini/g", NOW + 3600, "exhausted", "daily")
+    db.set_block("provider:groq", NOW + 60, "cooldown", "rpm")
+    data = call()
+    with pytest.raises(MuseBlockedError):
+        filt(h, [G_FAST, Q_FAST], data)
+    out = failure_headers(h, data)
+    assert out["retry-after"] == "60" and out["x-muse-wait"] == "provider-limit" and "x-muse-ration" not in out
+
+
+def test_soonest_provider_wait_wins_across_fallback_groups(h, db):
+    db.set_block("privcloud:openai/p", NOW + 20, "cooldown", "rpm")
+    data = call()
+    fail(h, G_FAST["model_info"], FakeError(429, headers={"retry-after": "58"}), data)
+    with pytest.raises(MuseBlockedError):
+        filt(h, [P_CHEAP], data, model="cheap")
+    assert failure_headers(h, data)["retry-after"] == "20"
+
+
+def test_resting_after_a_provider_error_without_a_quota_block_has_no_provider_wait(h, router_with):
+    router_with([G_FAST])
+    data = call()
+    with pytest.raises(MuseBlockedError):
+        filt(h, [], data)
+    out = failure_headers(h, data)
+    assert "retry-after" not in out and "x-muse-wait" not in out
+
+
+def test_provider_wait_note_error_is_swallowed(h, monkeypatch):
+    data = call()
+    monkeypatch.setattr(h, "_note", lambda *a, **k: 1 / 0)
+    fail(h, Q_FAST["model_info"], FakeError(429, headers={"retry-after": "58"}), data)
+    assert h.errors["failed_note"] >= 1
+
+
 # ---------------------------------------------------------------- deployments the proxy itself is cooling
 
 
