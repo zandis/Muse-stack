@@ -1,6 +1,9 @@
 // Types for the home control API, written by hand from
 // docs/spec/interfaces/home-api.v1.yaml and card.schema.json.
 // The status snapshot may gain fields; everything the app does not use stays optional.
+import type { ActivityItem, MoneyInfo } from './types-app';
+
+export type * from './types-app';
 
 export type ErrorCode =
   | 'invalid_request'
@@ -115,6 +118,11 @@ export interface Status {
   queue: QueueSummary;
   suggestions: Suggestion[];
   subscriptions: Subscription[];
+  /** Added by the app's handler (muse/home/app_api.py); an older home does not send them. */
+  money?: MoneyInfo;
+  activity?: { running: ActivityItem[]; done_today: ActivityItem[] };
+  local_runtime?: boolean;
+  restart_pending?: boolean;
 }
 
 // ---- cards
@@ -145,6 +153,9 @@ interface CardBase {
   answered_by: string | null;
   always: boolean;
   job_ref: string | null;
+  /** The home's own cards: the name of a sentence the app has in every language (card.schema.json). */
+  title_key?: string | null;
+  params?: Record<string, string | number>;
 }
 
 export type Card = CardBase &

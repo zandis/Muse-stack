@@ -12,7 +12,7 @@ export function Bar({ percent, low = false }: { percent: number; low?: boolean }
   );
 }
 
-export function Tag({ kind, icon, children }: { kind?: 'ok' | 'warn' | 'bad'; icon?: IconName; children: ReactNode }) {
+export function Tag({ kind, icon, children }: { kind?: 'ok' | 'warn' | 'bad' | undefined; icon?: IconName | undefined; children: ReactNode }) {
   return (
     <span className={kind ? `tag ${kind}` : 'tag'}>
       {icon ? <Icon name={icon} /> : null}

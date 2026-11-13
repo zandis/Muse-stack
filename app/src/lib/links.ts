@@ -5,7 +5,22 @@ import { isTauri, tauriInvoke, type Invoke } from '../home/tauri';
 
 export const ALLOWED_HOSTS: readonly string[] = ['chatgpt.com', 'claude.ai', 'gemini.google.com'];
 
-export function allowedExternal(url: string, hosts: readonly string[] = ALLOWED_HOSTS): URL | null {
+/**
+ * Hosts of the services' own key pages, as the home's catalogue names them (GET /v1/services `key_host`).
+ * Added while the app runs, never removed; a plain DNS name only, so nothing else can be smuggled in.
+ */
+const catalogueHosts = new Set<string>();
+const DNS_NAME = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+
+export function allowCatalogueHosts(hosts: readonly (string | null | undefined)[]): void {
+  for (const h of hosts) if (typeof h === 'string' && DNS_NAME.test(h)) catalogueHosts.add(h);
+}
+
+export function allowedHosts(): string[] {
+  return [...ALLOWED_HOSTS, ...catalogueHosts];
+}
+
+export function allowedExternal(url: string, hosts: readonly string[] = allowedHosts()): URL | null {
   let u: URL;
   try {
     u = new URL(url);

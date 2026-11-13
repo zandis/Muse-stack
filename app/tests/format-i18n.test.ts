@@ -29,9 +29,11 @@ describe('dictionaries', () => {
   it('use the plain words of UX section 1, not the technical ones', () => {
     // Words the table rules out on main screens. ("Key" is allowed only for For apps.)
     const banned = /\b(agent|bot|provider|API|quota|rate limit|resets?|mandate|scope|receipt|log|VM|server|token|model|end-to-end)\b/i;
-    for (const k of keys) expect(en[k], k).not.toMatch(banned);
+    // Details (dt_ keys) is where model names and tokens may be named (section 1, rule 2).
+    const main = keys.filter((k) => !k.startsWith('dt_'));
+    for (const k of main) expect(en[k], k).not.toMatch(banned);
     const bannedZh = /(代理程式|機器人|供應商|配額|重置|伺服器|模型|權杖)/;
-    for (const k of keys) expect(zhTW[k], k).not.toMatch(bannedZh);
+    for (const k of main) expect(zhTW[k], k).not.toMatch(bannedZh);
   });
   it('fill placeholders', () => {
     expect(fill('{0} of {1}', ['a', 2])).toBe('a of 2');

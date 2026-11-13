@@ -18,8 +18,8 @@ export const DISPLAY_CURRENCY = 'TWD';
 export const TWD_PER_USD = 32;
 
 /** Symbols the specification uses, so NT$ and US$ are never both shown as a bare "$". */
-const SYMBOL: Record<string, string> = { TWD: 'NT$', USD: 'US$' };
-const MAX_FRACTION: Record<string, number> = { TWD: 1, USD: 2, USDC: 2 };
+const SYMBOL: Record<string, string> = { TWD: 'NT$', USD: 'US$', JPY: 'JP¥', KRW: '₩' };
+const MAX_FRACTION: Record<string, number> = { TWD: 1, USD: 2, USDC: 2, JPY: 0, KRW: 0 };
 
 export function pickLang(preferred: readonly string[]): Lang {
   for (const tag of preferred) {

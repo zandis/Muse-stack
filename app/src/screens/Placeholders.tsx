@@ -8,21 +8,18 @@ import type { IconName } from '../components/Icon';
 import { Icon } from '../components/Icon';
 import { moreItems, NAV_KEY, useIsDesktop } from '../components/Shell';
 import { EmptyBox } from '../components/ui';
-import { useI18n, type Key, type LangChoice } from '../i18n';
+import { useI18n, type Key } from '../i18n';
 import { fmtNumber } from '../i18n/format';
 import { Link, type Screen } from '../router';
 import { computeGauge } from '../state/gauge';
 import { useAppState } from '../state/store';
 
-type PlaceholderScreen = Exclude<Screen, 'today' | 'more' | 'settings' | 'services' | 'wallet'>;
+type PlaceholderScreen = Exclude<Screen, 'today' | 'more' | 'settings' | 'services' | 'wallet' | 'ask' | 'chores' | 'apps'>;
 
 const EMPTY: Record<PlaceholderScreen, { icon: IconName; title: Key; body: Key }> = {
-  ask: { icon: 'ask', title: 'ask_empty_t', body: 'ask_empty_b' },
-  chores: { icon: 'chores', title: 'chores_empty_t', body: 'chores_empty_b' },
   records: { icon: 'records', title: 're_t', body: 're_b' },
   permissions: { icon: 'permissions', title: 'perms_empty_t', body: 'perms_empty_b' },
   devices: { icon: 'devices', title: 'devices_empty_t', body: 'devices_empty_b' },
-  apps: { icon: 'apps', title: 'apps_empty_t', body: 'apps_empty_b' },
 };
 
 function Page({ screen, children }: { screen: Screen; children: ReactNode }) {
@@ -49,21 +46,6 @@ export function Placeholder({ screen }: { screen: PlaceholderScreen }) {
   );
 }
 
-export function Services() {
-  const { t, lang } = useI18n();
-  const { status } = useAppState();
-  const connected = status ? computeGauge(status).connected : 0;
-  return (
-    <Page screen="services">
-      {connected > 0 ? (
-        <EmptyBox icon="services" title={`${t('se_some_t')} · ${t('mo_services', fmtNumber(connected, lang))}`} body={t('se_some_b')} note={t('later_build')} />
-      ) : (
-        <EmptyBox icon="services" title={t('se_t')} body={t('se_b')} note={t('later_build')} />
-      )}
-    </Page>
-  );
-}
-
 /** Reached only by its address for now: the menus hide Wallet until a paid feature is first used (section 4.8). */
 export function Wallet() {
   const { t } = useI18n();
@@ -80,32 +62,6 @@ export function Wallet() {
         </div>
         <EmptyBox icon="wallet" title={t('wl_empty_t')} body={t('wl_empty_b')} note={t('later_build')} />
       </div>
-    </Page>
-  );
-}
-
-const LANG_OPTIONS: readonly { value: LangChoice; label: Key }[] = [
-  { value: null, label: 'st_lang_system' },
-  { value: 'zh-TW', label: 'st_lang_zh' },
-  { value: 'en', label: 'st_lang_en' },
-];
-
-export function Settings() {
-  const { t, choice, setChoice } = useI18n();
-  return (
-    <Page screen="settings">
-      <div className="card">
-        <fieldset className="seg" data-testid="language">
-          <legend>{t('st_lang')}</legend>
-          {LANG_OPTIONS.map((o) => (
-            <label key={o.label} className="radio" lang={o.value === 'zh-TW' ? 'zh-Hant-TW' : o.value === 'en' ? 'en' : undefined}>
-              <input type="radio" name="language" value={o.value ?? 'system'} checked={choice === o.value} onChange={() => setChoice(o.value)} />
-              {t(o.label)}
-            </label>
-          ))}
-        </fieldset>
-      </div>
-      <EmptyBox icon="settings" title={t('st_rest_t')} body={t('st_rest_b')} note={t('later_build')} />
     </Page>
   );
 }
