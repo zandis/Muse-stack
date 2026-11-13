@@ -392,7 +392,8 @@ def test_the_shipped_files_answer_skill_gives_the_same_result_sandboxed(env, pro
                                    "The monthly rent is 18,500 dollars, due on the 5th of each month.\n", encoding="utf-8")
     (docs / "garden.txt").write_text("Tomatoes need six hours of sun.\n\nWater the basil every morning.\n", encoding="utf-8")
     answer = json.dumps({"answer": "The monthly rent is 18,500 dollars [1].",
-                         "claims": [{"text": "The monthly rent is 18,500 dollars", "cites": [1]}], "not_found": False})
+                         "claims": [{"quote": "The monthly rent is 18,500 dollars", "n": 1,
+                                     "says": "The monthly rent is 18,500 dollars"}], "not_found": False})
     results = []
     for mode in ("off", "require" if caps().can_require else "auto"):
         shutil.rmtree(Path(env["MUSE_HOME"]) / "skills-data", ignore_errors=True)
@@ -404,6 +405,42 @@ def test_the_shipped_files_answer_skill_gives_the_same_result_sandboxed(env, pro
     assert results[1] == results[0]
     assert report.ran == "sandboxed"
     assert len(proxy.requests) == 2 and proxy.requests[0]["messages"] == proxy.requests[1]["messages"]  # the same prompt left the home
+
+
+@posix
+def test_the_shipped_research_report_recovers_empty_answers_the_same_way_sandboxed(env, proxy, tmp_path):  # noqa: F811
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "lease.md").write_text("# Lease\n\nThe monthly rent is 18,500 dollars, due on the 5th of each month.\n\n"
+                                   "The lease ends on 30 June 2032 and needs 60 days of notice.\n", encoding="utf-8")
+    quotes = ["The monthly rent is 18,500 dollars", "The lease ends on 30 June 2032"]
+
+    def respond(request: dict):
+        if request["path"].endswith("/embeddings"):
+            return None
+        system, user = request["messages"][0]["content"], request["messages"][1]["content"]
+        if system.startswith("You plan"):
+            return chat(json.dumps({"subquestions": ["What is the monthly rent?", "When does the lease end?"]}))
+        if system.startswith("You read"):
+            if request["task"] == "light":  # every first try is empty: the reasoning took the whole allowance
+                return chat("", **{"x-muse-answer": "empty-reasoning"})
+            given = re.findall(r"^\[(\d+)\] (.*?)(?=^\[\d+\] |\Z)", user.split("\n\nQuestion:")[0], flags=re.S | re.M)
+            claims = [{"quote": q, "n": int(n), "says": q} for n, text in given for q in quotes if q in text]
+            return chat(json.dumps({"claims": claims}))
+        ids = re.findall(r"^- (.*) \[(\d+)\]$", user, re.M)
+        return chat("## Lease\n" + " ".join(f"{text} [{n}]." for text, n in ids))
+
+    proxy.responder = respond
+    results = []
+    for mode in ("off", "require" if caps().can_require else "auto"):
+        shutil.rmtree(Path(env["MUSE_HOME"]) / "skills-data", ignore_errors=True)
+        proxy.requests.clear()
+        result, report = sandbox.run_skill("research-report", {"question": "Rent and end date of the lease?", "embeddings": "off"},
+                                           roots=[docs], mode=mode, environ=env)
+        results.append(plain(result))
+    assert results[0]["status"] == "done", results[0]["check"]
+    assert results[0]["output"]["usage"]["extract"]["recovered"] >= 1 and "18,500" in results[0]["output"]["text"]
+    assert results[1] == results[0] and report.ran == "sandboxed"
 
 
 @posix
