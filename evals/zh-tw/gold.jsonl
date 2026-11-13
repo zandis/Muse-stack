@@ -1,0 +1,200 @@
+{"id": "zt-cls-01", "output": "帳單"}
+{"id": "zt-cls-02", "output": "家人"}
+{"id": "zt-cls-03", "output": "廣告"}
+{"id": "zt-cls-04", "output": "工作"}
+{"id": "zt-cls-05", "output": "行程"}
+{"id": "zt-cls-06", "output": "帳單"}
+{"id": "zt-cls-07", "output": "家人"}
+{"id": "zt-cls-08", "output": "工作"}
+{"id": "zt-cls-09", "output": "廣告"}
+{"id": "zt-cls-10", "output": "行程"}
+{"id": "zt-cls-11", "output": "金鑰無效"}
+{"id": "zt-cls-12", "output": "速率限制"}
+{"id": "zt-cls-13", "output": "額度用完"}
+{"id": "zt-cls-14", "output": "網路問題"}
+{"id": "zt-cls-15", "output": "需要付款"}
+{"id": "zt-cls-16", "output": "金鑰無效"}
+{"id": "zt-cls-17", "output": "額度用完"}
+{"id": "zt-cls-18", "output": "速率限制"}
+{"id": "zt-ext-01", "output": "{\"store\": \"好日子文具行\", \"date\": \"2025-03-14\", \"total\": 165}"}
+{"id": "zt-ext-02", "output": "{\"amount\": 2300, \"due\": \"2025-11-15\"}"}
+{"id": "zt-ext-03", "output": "```json\n{\n  \"restaurant\": \"山腳下小館\",\n  \"time\": \"18:30\",\n  \"people\": 4\n}\n```"}
+{"id": "zt-ext-04", "output": "{\"tracking\": \"TW88201573\", \"store\": \"永康門市\", \"code\": \"4471\"}"}
+{"id": "zt-ext-05", "output": "{\"date\": \"2025-12-02\", \"time\": \"15:00\", \"host\": \"林經理\"}"}
+{"id": "zt-ext-06", "output": "```json\n{\n  \"payer\": \"陳小姐\",\n  \"amount\": 4500,\n  \"date\": \"2025-09-01\"\n}\n```"}
+{"id": "zt-ext-07", "output": "{\"date\": \"2025-12-10\", \"start\": \"09:00\", \"end\": \"16:00\"}"}
+{"id": "zt-ext-08", "output": "{\"order_id\": \"A20251105-031\", \"shipping\": 60, \"total\": 1940}"}
+{"id": "zt-ext-09", "output": "```json\n{\n  \"class\": \"三年二班\",\n  \"start\": \"2025-11-18\",\n  \"end\": \"2025-11-19\",\n  \"days\": 2\n}\n```"}
+{"id": "zt-ext-10", "output": "{\"fee\": 800, \"capacity\": 12, \"start_time\": \"10:00\"}"}
+{"id": "zt-ext-11", "output": "{\"usage\": 23, \"amount\": 412, \"due\": \"2025-12-08\"}"}
+{"id": "zt-ext-12", "output": "```json\n{\n  \"rent\": 18500,\n  \"deposit_months\": 2,\n  \"due_day\": 5\n}\n```"}
+{"id": "zt-ext-13", "output": "{\"year\": 2024, \"sample\": 1068, \"percent\": 62}"}
+{"id": "zt-ext-14", "output": "{\"year\": 2023, \"km\": 512, \"increase\": 87}"}
+{"id": "zt-ext-15", "output": "```json\n{\n  \"weight_kg\": 1.2,\n  \"screen_inch\": 14,\n  \"battery_hours\": 11,\n  \"price\": 32900\n}\n```"}
+{"id": "zt-ext-16", "output": "{\"open\": \"08:30\", \"close\": \"21:00\", \"closed_day\": \"週一\"}"}
+{"id": "zt-ext-17", "output": "{\"deadline\": \"2025-11-21\", \"office\": \"中山郵局\"}"}
+{"id": "zt-ext-18", "output": "```json\n{\n  \"invoice_no\": \"QW-48213907\",\n  \"date\": \"2025-10-28\",\n  \"seller\": \"巷口早餐店\",\n  \"total\": 85\n}\n```"}
+{"id": "zt-yn-01", "output": "{\"answer\": \"是\", \"reason\": \"訊息說金鑰已建立成功。\"}"}
+{"id": "zt-yn-02", "output": "{\"answer\": \"否\", \"reason\": \"要先完成電子郵件驗證。\"}"}
+{"id": "zt-yn-03", "output": "{\"answer\": \"否\", \"reason\": \"800 次低於每天 1,000 次的上限。\"}"}
+{"id": "zt-yn-04", "output": "{\"answer\": \"是\", \"reason\": \"副檔名是 .pdf。\"}"}
+{"id": "zt-yn-05", "output": "{\"answer\": \"否\", \"reason\": \"會議在 15:00 就結束了。\"}"}
+{"id": "zt-yn-06", "output": "{\"answer\": \"否\", \"reason\": \"星期六是例假日，不適用。\"}"}
+{"id": "zt-yn-07", "output": "{\"answer\": \"否\", \"reason\": \"620 元已超過 500 元的免運門檻。\"}"}
+{"id": "zt-yn-08", "output": "{\"answer\": \"是\", \"reason\": \"最後修改日是 10 月 2 日，在 9 月之後。\"}"}
+{"id": "zt-yn-09", "output": "{\"answer\": \"否\", \"reason\": \"是每月 1 日重置，不是每天。\"}"}
+{"id": "zt-yn-10", "output": "{\"answer\": \"是\", \"reason\": \"規則寫明可續借一次。\"}"}
+{"id": "zt-pick-01", "output": "B"}
+{"id": "zt-pick-02", "output": "B"}
+{"id": "zt-pick-03", "output": "C"}
+{"id": "zt-pick-04", "output": "C"}
+{"id": "zt-pick-05", "output": "B"}
+{"id": "zt-pick-06", "output": "A"}
+{"id": "zt-pick-07", "output": "B"}
+{"id": "zt-pick-08", "output": "D"}
+{"id": "zt-pick-09", "output": "A"}
+{"id": "zt-pick-10", "output": "B"}
+{"id": "zt-lang-01", "output": "zh-TW"}
+{"id": "zt-lang-02", "output": "zh-CN"}
+{"id": "zt-lang-03", "output": "en"}
+{"id": "zt-lang-04", "output": "ja"}
+{"id": "zt-lang-05", "output": "zh-TW"}
+{"id": "zt-lang-06", "output": "zh-CN"}
+{"id": "zt-lang-07", "output": "zh-CN"}
+{"id": "zt-lang-08", "output": "zh-TW"}
+{"id": "zt-lang-09", "output": "ja"}
+{"id": "zt-lang-10", "output": "en"}
+{"id": "zt-lang-11", "output": "zh-CN"}
+{"id": "zt-lang-12", "output": "zh-TW"}
+{"id": "zt-s2t-01", "output": "這個軟體的預設設定在哪裡？"}
+{"id": "zt-s2t-02", "output": "請把影片上傳到網路硬碟。"}
+{"id": "zt-s2t-03", "output": "我的滑鼠壞了，印表機也沒反應。"}
+{"id": "zt-s2t-04", "output": "伺服器記憶體不夠，程式執行很慢。"}
+{"id": "zt-s2t-05", "output": "他搭計程車去機場，花了三百塊。"}
+{"id": "zt-s2t-06", "output": "請用手機掃描 QR Code 登入。"}
+{"id": "zt-s2t-07", "output": "這台筆記型電腦的螢幕解析度很高。"}
+{"id": "zt-s2t-08", "output": "我傳了一則簡訊給你，裡面有連結。"}
+{"id": "zt-s2t-09", "output": "公車上的無線網路訊號很差。"}
+{"id": "zt-s2t-10", "output": "請把這個資料夾裡的資料備份到隨身碟。"}
+{"id": "zt-norm-01", "output": "2025-03-05"}
+{"id": "zt-norm-02", "output": "2024-12-31"}
+{"id": "zt-norm-03", "output": "2025-10-10"}
+{"id": "zt-norm-04", "output": "2010-07-01"}
+{"id": "zt-norm-05", "output": "2023-02-28"}
+{"id": "zt-norm-06", "output": "+886912345678"}
+{"id": "zt-norm-07", "output": "+886227123456"}
+{"id": "zt-norm-08", "output": "+886422345678"}
+{"id": "zt-norm-09", "output": "+886933123456"}
+{"id": "zt-norm-10", "output": "{\"city\": \"台北市\", \"district\": \"大安區\", \"road\": \"和平東路二段\", \"number\": \"100號\"}"}
+{"id": "zt-norm-11", "output": "{\"city\": \"高雄市\", \"district\": \"左營區\", \"road\": \"博愛二路\", \"number\": \"366號\"}"}
+{"id": "zt-norm-12", "output": "{\"city\": \"新竹縣\", \"district\": \"竹北市\", \"road\": \"光明六路\", \"number\": \"10號\"}"}
+{"id": "zt-cite-01", "output": "{\"answer\": \"押金是 32,000 元，退租時屋況良好的話，房東應在 14 天內退還。\", \"sources\": [2], \"not_found\": false}"}
+{"id": "zt-cite-02", "output": "{\"answer\": \"須在一個月前以書面通知房東。\", \"sources\": [3], \"not_found\": false}"}
+{"id": "zt-cite-03", "output": "連續請病假超過兩天就要附就醫證明 [2]。"}
+{"id": "zt-cite-04", "output": "{\"answer\": \"不行，生日假未使用不得遞延。\", \"sources\": [3], \"not_found\": false}"}
+{"id": "zt-cite-05", "output": "{\"answer\": \"壓縮機保固十年，自購買日起算。\", \"sources\": [1], \"not_found\": false}"}
+{"id": "zt-cite-06", "output": "{\"answer\": \"要準備購買發票和產品序號。\", \"sources\": [3], \"not_found\": false}"}
+{"id": "zt-cite-07", "output": "垃圾車在週三和週日不收垃圾 [1]。"}
+{"id": "zt-cite-08", "output": "{\"answer\": \"須提前三天向清潔隊預約。\", \"sources\": [3], \"not_found\": false}"}
+{"id": "zt-cite-09", "output": "{\"answer\": \"十月的線上廣告點擊率是 2.4%。\", \"sources\": [1], \"not_found\": false}"}
+{"id": "zt-cite-10", "output": "{\"answer\": \"由行銷組負責場地。\", \"sources\": [3], \"not_found\": false}"}
+{"id": "zt-cite-11", "output": "第二晚住在花蓮市區的民宿 [3]。"}
+{"id": "zt-cite-12", "output": "{\"answer\": \"第一天中午在宜蘭吃午餐。\", \"sources\": [1], \"not_found\": false}"}
+{"id": "zt-cite-13", "output": "{\"answer\": \"期末專題占 50%。\", \"sources\": [2], \"not_found\": false}"}
+{"id": "zt-cite-14", "output": "{\"answer\": \"期末專題要三到四人一組。\", \"sources\": [3], \"not_found\": false}"}
+{"id": "zt-cite-15", "output": "{\"answer\": \"家中有寵物時，建議每四個月更換一次濾網。\", \"sources\": [1], \"not_found\": false}"}
+{"id": "zt-cite-16", "output": "機器背面要和牆壁保持至少 20 公分 [3]。"}
+{"id": "zt-cite-17", "output": "{\"answer\": \"行李延誤超過六小時就可以申請補償。\", \"sources\": [2], \"not_found\": false}"}
+{"id": "zt-cite-18", "output": "{\"answer\": \"每晚上限 3,000 元，須保留收據。\", \"sources\": [3], \"not_found\": false}"}
+{"id": "zt-cite-19", "output": "早上 7 點 40 分在校門口集合 [1]。"}
+{"id": "zt-cite-20", "output": "{\"answer\": \"不用，午餐由學校統一訂購。\", \"sources\": [3], \"not_found\": false}"}
+{"id": "zt-cite-21", "output": "{\"answer\": \"在「設定 > 外觀」中可以切換深色模式。\", \"sources\": [1], \"not_found\": false}"}
+{"id": "zt-cite-22", "output": "{\"answer\": \"修正了匯出 PDF 時頁碼錯誤的問題。\", \"sources\": [2], \"not_found\": false}"}
+{"id": "zt-cite-23", "output": "{\"answer\": \"游泳池需另加 300 元。\", \"sources\": [1], \"not_found\": false}"}
+{"id": "zt-cite-24", "output": "一年最多可以暫停會籍兩次 [2]。"}
+{"id": "zt-cite-25", "output": "{\"answer\": \"專案 A 的截止日是 12 月 5 日，專案 B 是 12 月 19 日。\", \"sources\": [1, 2], \"not_found\": false}"}
+{"id": "zt-cite-26", "output": "{\"answer\": \"專案 B 由工程組負責。\", \"sources\": [2], \"not_found\": false}"}
+{"id": "zt-nf-01", "output": "{\"answer\": \"\", \"sources\": [], \"not_found\": true}"}
+{"id": "zt-nf-02", "output": "{\"answer\": \"\", \"sources\": [], \"not_found\": true}"}
+{"id": "zt-nf-03", "output": "{\"answer\": \"\", \"sources\": [], \"not_found\": true}"}
+{"id": "zt-nf-04", "output": "{\"answer\": \"\", \"sources\": [], \"not_found\": true}"}
+{"id": "zt-nf-05", "output": "{\"answer\": \"\", \"sources\": [], \"not_found\": true}"}
+{"id": "zt-nf-06", "output": "{\"answer\": \"\", \"sources\": [], \"not_found\": true}"}
+{"id": "zt-nf-07", "output": "{\"answer\": \"\", \"sources\": [], \"not_found\": true}"}
+{"id": "zt-nf-08", "output": "{\"answer\": \"\", \"sources\": [], \"not_found\": true}"}
+{"id": "zt-nf-09", "output": "{\"answer\": \"\", \"sources\": [], \"not_found\": true}"}
+{"id": "zt-nf-10", "output": "{\"answer\": \"\", \"sources\": [], \"not_found\": true}"}
+{"id": "zt-nf-11", "output": "{\"answer\": \"\", \"sources\": [], \"not_found\": true}"}
+{"id": "zt-nf-12", "output": "{\"answer\": \"\", \"sources\": [], \"not_found\": true}"}
+{"id": "zt-sum-01", "output": "- 明年一月起平日延長開放到晚上十點\n- 因應上班族下班後來不及借書\n- 自修室座位增為 200 個並改線上預約"}
+{"id": "zt-sum-02", "output": "- 問卷共回收 842 份\n- 超過七成受訪者每週至少外食五次，主因是沒時間煮飯\n- 四成的人願意多付錢買較健康的便當"}
+{"id": "zt-sum-03", "output": "- 下個月起試行每週兩天在家工作\n- 可自選日期，但週三全員進辦公室\n- 試行三個月後依問卷結果決定是否繼續"}
+{"id": "zt-sum-04", "output": "- 新公車路線十二月一日通車，連接火車站和科學園區\n- 尖峰每十分鐘一班，票價同一般公車，另有轉乘優惠"}
+{"id": "zt-sum-05", "output": "- 騎腳踏車通勤時間最短，平均 18 分鐘\n- 開車平均 27 分鐘，主要花在找停車位\n- 搭捷運要 31 分鐘，但滿意度最高"}
+{"id": "zt-sum-06", "output": "- 咖啡店下個月搬到隔壁巷子，新店面大一倍並有戶外座位\n- 12 月 8 日到 12 日暫停營業\n- 13 日重新開幕，當天咖啡買一送一"}
+{"id": "zt-sum-07", "output": "- 今年新增手機攝影和台語會話兩門課\n- 一月五日到二十日報名，可線上或現場辦理\n- 六十五歲以上長者學費打八折\n- 每班滿十五人才開課"}
+{"id": "zt-sum-08", "output": "- 週末受東北季風影響，北部和東北部有短暫雨，約 16 度\n- 中南部多雲到晴，日夜溫差大\n- 下週一起天氣回穩，氣溫回升"}
+{"id": "zt-sum-09", "output": "- 簡報由阿哲負責，週四前完成初稿\n- 場地改借三樓大會議室\n- 需兩位同仁接待來賓，名單下週一前確認"}
+{"id": "zt-sum-10", "output": "- 優點：安靜、洗得乾淨\n- 缺點：洗一次將近兩小時，門很難關緊"}
+{"id": "zt-sum-11", "output": "- 學生平均每天花 3.5 小時用手機\n- 社群軟體占一半以上的使用時間\n- 六成學生試過減少使用，但不到兩成成功"}
+{"id": "zt-sum-12", "output": "- 春節前一週，傳統市場延長營業到晚上八點\n- 周邊道路禁止停車，可停附近國小操場\n- 攤商須一律標示價格"}
+{"id": "zt-sum-13", "output": "- 星期二繳電話費\n- 星期四下午三點帶貓打預防針\n- 星期六早上十點和房東看熱水器\n- 月底前更新汽車保險"}
+{"id": "zt-sum-14", "output": "- 第一部分：咖啡豆的產地和品種\n- 第二部分：各種沖煮器具的用法\n- 第三部分：作者走訪各地咖啡店的隨筆"}
+{"id": "zt-sum-15", "output": "- 下週三上午九點到十二點在活動中心有免費手機教學\n- 內容包括通訊軟體視訊和防止詐騙\n- 名額三十人，須先打電話報名，可領小禮物"}
+{"id": "zt-sum-16", "output": "- 退貨已核准，請在七天內寄回商品，運費由對方負擔\n- 收到商品後五個工作天內退款到原信用卡"}
+{"id": "zt-rw-01", "output": "想請問您，報告大約什麼時候可以提供呢？謝謝您。"}
+{"id": "zt-rw-02", "output": "不好意思，想請問您價格方面是否還有優惠的空間？"}
+{"id": "zt-rw-03", "output": "您好，我收到的商品似乎有誤，想麻煩您協助更換，謝謝。"}
+{"id": "zt-rw-04", "output": "很抱歉，明天的會議我無法出席，再麻煩您主持，謝謝您。"}
+{"id": "zt-rw-05", "output": "您好，家裡的冷氣已經故障三天，想請您協助盡快安排維修，謝謝。"}
+{"id": "zt-rw-06", "output": "麻煩您盡快將檔案寄給我，謝謝您。"}
+{"id": "zt-rw-07", "output": "想提醒您，這裡似乎有個錯字，再麻煩您修改，謝謝。"}
+{"id": "zt-rw-08", "output": "不好意思，我這週時間比較不方便，是否能下週再與您討論？"}
+{"id": "zt-rw-09", "output": "部門月會改到下週一上午十點，地點仍在七樓第一會議室。"}
+{"id": "zt-rw-10", "output": "本店十二月二十四日晚間六點提早打烊，敬請見諒。"}
+{"id": "zt-rw-11", "output": "三本書十一月三十日到期，請歸還或續借，逾期每本每天五元。"}
+{"id": "zt-rw-12", "output": "因颱風，週六河濱公園路跑取消，可全額退費或保留名額到明年春天。"}
+{"id": "zt-rw-13", "output": "想確認合約是否已用印，方便的話請於本週三前寄回，謝謝。"}
+{"id": "zt-rw-14", "output": "十二月三日上午九點到十二點，A 棟電梯保養暫停使用，請走樓梯。"}
+{"id": "zt-math-01", "output": "745"}
+{"id": "zt-math-02", "output": "40"}
+{"id": "zt-math-03", "output": "2660"}
+{"id": "zt-math-04", "output": "1192"}
+{"id": "zt-math-05", "output": "495"}
+{"id": "zt-math-06", "output": "30"}
+{"id": "zt-math-07", "output": "15"}
+{"id": "zt-math-08", "output": "85"}
+{"id": "zt-math-09", "output": "80"}
+{"id": "zt-math-10", "output": "2790"}
+{"id": "zt-math-11", "output": "704"}
+{"id": "zt-math-12", "output": "2"}
+{"id": "zt-math-13", "output": "3800"}
+{"id": "zt-math-14", "output": "15:55"}
+{"id": "zt-math-15", "output": "10:23"}
+{"id": "zt-math-16", "output": "2025-11-24"}
+{"id": "zt-fmt-01", "output": "1. 到官方網站註冊帳號\n2. 驗證電子郵件\n3. 登入後建立金鑰"}
+{"id": "zt-fmt-02", "output": "{\"title\": \"節省電費小筆記\", \"tags\": [\"省電\", \"電費\", \"居家\"], \"lang\": \"zh-TW\"}"}
+{"id": "zt-fmt-03", "output": "服務每天或每月讓你免費使用的用量上限。"}
+{"id": "zt-fmt-04", "output": "- 繳水費\n- 倒垃圾\n- 買牛奶"}
+{"id": "zt-fmt-05", "output": "{\"pros\": [\"不用找停車位\", \"通勤時可以休息\"], \"cons\": [\"尖峰時段很擁擠\", \"班次時間不彈性\"]}"}
+{"id": "zt-fmt-06", "output": "台北、台中、高雄"}
+{"id": "zt-fmt-07", "output": "早上九點 送小孩上學\n中午十二點 和客戶吃飯\n下午三點 開會\n晚上七點 健身"}
+{"id": "zt-fmt-08", "output": "星期五：交報告"}
+{"id": "zt-fmt-09", "output": "{\"service\": \"晴天筆記\", \"needs_card\": false, \"free\": true}"}
+{"id": "zt-fmt-10", "output": "資源回收是把可再利用的廢棄物分類收集。這樣可以減少垃圾並節省資源。"}
+{"id": "zt-fmt-11", "output": "1. 春天\n2. 夏天\n3. 秋天\n4. 冬天"}
+{"id": "zt-fmt-12", "output": "{\"steps\": [\"把水煮開\", \"放入茶葉並倒入熱水\", \"等三分鐘後倒出\"], \"count\": 3}"}
+{"id": "zt-fmt-13", "output": "□ 雞蛋\n□ 豆漿\n□ 吐司"}
+{"id": "zt-fmt-14", "output": "{\"provider\": \"北風\", \"daily_limit\": 500, \"resets\": \"daily\"}"}
+{"id": "zt-mix-01", "output": "經理您好，這份 proposal 恐怕無法在期限前完成，想請問是否能延到下週一提交？謝謝。"}
+{"id": "zt-mix-02", "output": "{\"meeting\": \"sprint review\", \"time\": \"16:30\", \"room\": \"Room 3B\"}"}
+{"id": "zt-mix-03", "output": "僅供參考"}
+{"id": "zt-mix-04", "output": "{\"answer\": \"每週二和週四晚上十點可以 deploy 到 production。\", \"sources\": [2], \"not_found\": false}"}
+{"id": "zt-mix-05", "output": "{\"answer\": \"下週的 on-call 是 Amy。\", \"sources\": [1], \"not_found\": false}"}
+{"id": "zt-mix-06", "output": "{\"answer\": \"\", \"sources\": [], \"not_found\": true}"}
+{"id": "zt-mix-07", "output": "- login 頁面改版，支援 Google 帳號登入\n- 修正 dashboard 在手機上跑版的 bug，預計週三上線"}
+{"id": "zt-mix-08", "output": "請在週會前更新 KPI 報告。"}
+{"id": "zt-mix-09", "output": "96"}
+{"id": "zt-mix-10", "output": "{\"to\": \"PM\", \"subject\": \"Demo 改期\", \"urgent\": false}"}
+{"id": "zt-mix-11", "output": "{\"answer\": \"否\", \"reason\": \"功能雖然已合併，但還沒部署上線。\"}"}
+{"id": "zt-mix-12", "output": "明早十點 all-hands meeting，請準時上線。"}
