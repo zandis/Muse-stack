@@ -119,7 +119,7 @@ The context is the whole surface a skill should use:
 | | |
 |---|---|
 | `ctx.inputs` | The inputs of this run (`--input key=value`) |
-| `ctx.llm.ask(messages, *, task=None, privacy=None, max_tokens=None, json_schema=None)` | One chat call. Returns `text` plus the route facts: `provider`, `cost_usd`, `cache`, `min_output`, `answer` (`empty-reasoning` when the model produced no visible text), `task`, `handoff`. |
+| `ctx.llm.ask(messages, *, task=None, privacy=None, max_tokens=None, json_schema=None, handoff=False)` | One chat call. `handoff=True` marks a step the person could do in their own subscription app instead (the request carries `x-muse-handoff: suggest`; whether a hand-off is offered stays the router's decision). Returns `text` plus the route facts: `provider`, `cost_usd`, `cache`, `min_output`, `answer` (`empty-reasoning` when the model produced no visible text), `task`, `handoff`. |
 | `ctx.llm.embed(texts)` | Vectors through the `embed` alias |
 | `ctx.llm.remaining()` | What is left of the budget |
 | `ctx.llm.Deferred`, `.PrivacyRefused`, `.BudgetExceeded`, `.RouterError`, `.Error` | What a call can raise. Catch one only for a step the skill can do without; let the rest reach the runner. |
@@ -127,6 +127,7 @@ The context is the whole surface a skill should use:
 | `ctx.workspace.propose_write(path, data, reason)` | A file the skill would like written. Nothing touches the disk. |
 | `ctx.data_dir` | The skill's own working folder (needs `data`) |
 | `ctx.note(text, incomplete=False)` | A plain sentence for the person. `incomplete=True` makes the result `partial`. |
+| `ctx.keep(output)` | A partial result to return if a later step cannot be done. If the router then defers or refuses a call, or the budget runs out, the runner returns this output (after the skill's check) with the status it would have given anyway: `needs_choice` with the router's options, or `partial`. |
 | `ctx.stop(text)` | End the run as failed with one plain sentence |
 | `ctx.event(kind, **facts)` | A progress fact for the app: numbers and short codes only |
 | `ctx.attempt` | 1, or 2 on the stronger retry |
@@ -188,3 +189,28 @@ It answers from the files in the folders you name and cites the file and paragra
 **Output.** `text` (the answer with a source list such as `[1] lease.md › paragraph 3`), `answer`, `claims` with their sources, `citations`, `not_found`, the `passages` that were sent (for an app to show), and how retrieval ran.
 
 **Limits.** The check is lexical: it catches a missing or wrong citation, not a subtle misreading of the right passage, and it fails an answer written in a different language from the passage it cites. Semantic search only re-ranks lexical candidates in folders with more than 64 chunks, so a passage that shares no word with the question is not found there. Paragraph numbers count blank-line-separated blocks (rows for tables), which may differ from what an editor shows. Quality on real small models is not yet measured; that is work package A9.
+
+## The shipped skill: research report
+
+```bash
+muse skills run research-report --folder ~/Documents/flat --input question="What are the money terms and key dates of my lease?"
+```
+
+A short report from your own material, built so that most of the work is light and only the last step needs a strong model. It does not use the web: a skill that reaches the internet itself is refused until the sandbox exists. The gather step sits behind one function (`gather.gather(..., source=...)`), so a fetch tool can supply passages later without changing the other steps.
+
+| Step | Tier | Calls | What happens |
+|---|---|---|---|
+| Plan | `light` | 1 | The question becomes 3 to 6 sub-questions (2 are accepted). The reply is read as an object, a list or numbered lines; if none can be read, or the call is deferred, the question is split by rules: the `outline` hints, else its own parts, else three fixed angles. |
+| Gather | none (`embed` optional) | 0 to 3 | The files-answer index and BM25 per sub-question, with a little weight on the whole question; embeddings are fused in when the router has them and the budget has room. At most 4 passages a sub-question, 3 from one file, 18 in all; a passage found twice is one source. |
+| Extract | `light` | up to 12 | Two passages a call. The model lists short claims with the passage numbers they come from. Each claim is checked at once with the files-answer citation rule and dropped if it fails; no retry. |
+| Synthesise | `heavy` | 1 | Sent with `x-muse-handoff: suggest`. The model sees the verified claims and their source numbers only, and writes one section per sub-question with `[n]` after every statement. The lists "What the sources did not answer" and "Sources" are built from data, not by the model. A sub-question the model left out gets its verified claims added as they are. |
+
+**When the heavy step is held back.** Before it, the skill calls `ctx.keep(...)` with the verified claims. If the router defers or refuses the call, the result is `needs_choice` with exactly the router's options and an output whose `stage` is `claims`: the claims by sub-question, "Not done yet: the written report", the sources, and `handoff.prompt`, a text holding the question, the claims and the source list, ready to paste into your own ChatGPT, Claude or Gemini app. Opening that app is the client's job. A deferral in the middle of extraction returns the claims found so far the same way.
+
+**Budget.** 40 requests, 150,000 tokens, 15 minutes, nothing paid; shown before first use and emitted as the `skill.budget` event. One request is kept back for the report while passages are read. When the budget stops extraction, the report is still written from what was read, the sub-questions that were not read are listed under "Not done", and the result is `partial`. When there is no room for the report either, the claims are returned as above, as `partial`.
+
+**Check.** Every claim in the table, and every sentence of the report that carries a source, must pass the citation rule against the passages it cites. A sentence with three or more terms that is not a heading, a question or a lead-in ending in a colon must carry a source. Every cited number must be in the Sources list. Every sub-question must be covered (a sentence cites one of its claims' sources and shares half that claim's terms) or listed as not answered or not done. The body may be at most about 700 tokens for `short` and 1,500 for `medium`, and must be in the language asked for. Reasons name claims, sentences and sources by number only.
+
+**Output.** `text` (the Markdown report), `stage` (`report`, `claims` or `not_found`), `claims` (id, sub-questions, text, source numbers and labels), `sources` (`[n]` to `file › paragraph`), `subquestions` with their state, `unanswered`, `not_done`, `usage` per step (requests, tokens, providers, cost), `budget`, `passages`, and the counts of dropped claims and repaired sections. A finished report is also proposed as a new file `report-<time>-<id>.md` in the output folder.
+
+**Limits.** Own material only. The check is lexical, as in files-answer: it does not catch a misreading that keeps the passage's words, and a report written in a different language from its sources usually fails. A failed check reruns the whole job once (the light steps one tier stronger, the heavy step again on `heavy`), which doubles the requests. Passages that pass the check but are beside the question can still be written up; the expected-facts score in `scripts/chores_check.py` exists to show how often that happens. Quality on real small models has not been measured here.
