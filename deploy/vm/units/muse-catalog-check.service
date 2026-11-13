@@ -1,0 +1,44 @@
+# Weekly: fetch each catalogue source page once and compare it with the last
+# check (`muse catalog check --pages`). Read-only towards the catalogue. The
+# result is kept as JSON in the VM state folder for the dashboard and the home
+# API to show later.
+[Unit]
+Description=Muse catalogue check
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=@MUSE_USER@
+Group=@MUSE_USER@
+WorkingDirectory=@MUSE_ROOT@
+EnvironmentFile=-@MUSE_CONF@
+Environment=PATH=@MUSE_VENV@/bin:/usr/bin:/bin
+Environment=PYTHONPATH=@MUSE_ROOT@
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/bin/bash @MUSE_ROOT@/deploy/vm/muse-catalog-check.sh
+TimeoutStartSec=20min
+MemoryMax=512M
+CPUQuota=50%
+TasksMax=64
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=@PROTECT_HOME@
+ReadWritePaths=@MUSE_STATE@
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+UMask=0077

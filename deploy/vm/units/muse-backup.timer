@@ -1,0 +1,11 @@
+[Unit]
+Description=Muse backup: daily
+
+[Timer]
+OnCalendar=*-*-* 02:10:00
+RandomizedDelaySec=20min
+Persistent=true
+Unit=muse-backup.service
+
+[Install]
+WantedBy=timers.target
