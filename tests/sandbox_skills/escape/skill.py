@@ -146,6 +146,14 @@ def run(ctx):
         return _try(lambda: _write(os.path.join(data, "big.bin"), b"x" * int(a["bytes"])))
     if attempt == "fill":
         return _try(lambda: _fill(data, a["files"], a["size"]))
+    if attempt == "ptrace":
+        import ctypes
+
+        libc = ctypes.CDLL(None, use_errno=True)
+        code = libc.ptrace(int(a.get("request", 0)), int(a.get("pid", 0)), 0, 0)  # 0 = PTRACE_TRACEME, 16 = PTRACE_ATTACH
+        return {"escaped": code == 0, "error": "", "detail": ctypes.get_errno()}
+    if attempt == "fill-tmp":
+        return _try(lambda: _fill(os.environ["TMPDIR"], a["files"], a["size"]))
     if attempt == "spin":
         while True:
             pass

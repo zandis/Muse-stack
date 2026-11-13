@@ -498,6 +498,13 @@ def test_filling_the_data_folder_past_the_cap_ends_the_run(box, proxy, layer):
 
 
 @posix
+def test_filling_the_private_temp_folder_ends_the_run_when_it_is_not_a_tmpfs(box, proxy):
+    policy = limited("none", tmp_bytes=2 << 20, watch_seconds=0.05)
+    out, result, report = attempt(box, "fill-tmp", "none", files=100_000, size=256 << 10, policy=policy)
+    assert result.status == "failed" and report.stopped == "data-cap"
+
+
+@posix
 @pytest.mark.parametrize("layer", ["none", "all"])
 def test_a_spinning_skill_is_ended_at_its_time_budget(box, proxy, layer):
     started = time.monotonic()

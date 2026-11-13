@@ -16,8 +16,9 @@ from muse.skills import loader, runner
 from muse.skills.format import PRIVACY, TIERS, Skill, needs_in_words
 
 STATE_WORDS = {"ready": "ready", "not-approved": "not approved", "changed": "changed since approval"}
-CAVEAT = ("Until Muse's sandbox is built, this list is what the skill declares and what Muse checks on the paths it "
-          "hands out. A skill is Python code that runs as you, so approve only code you trust.")
+CAVEAT = ("A skill of your own runs only inside Muse's sandbox, which holds it to this list where this computer can "
+          "(`muse doctor` says whether it can; where it cannot, the skill is refused). The sandbox has not had an outside "
+          "security review yet, so approve only code you trust.")
 
 
 def _say(text: str = "") -> None:

@@ -294,12 +294,14 @@ def test_a_shell_inside_bubblewrap_alone_is_still_inside(box, proxy, victim):
 @pytest.mark.parametrize("layer", ["seccomp", "all"])
 def test_cannot_trace_or_read_the_memory_of_another_process(box, proxy, layer, victim):
     need(layer)
-    out, result, _ = attempt(box, "read", layer, path=f"/proc/{victim.pid}/mem")
-    assert out["escaped"] is False, out
-    code = ("import ctypes,os;l=ctypes.CDLL(None,use_errno=True);"
-            f"print(l.ptrace(16,{victim.pid},0,0), ctypes.get_errno())")  # PTRACE_ATTACH
-    out, result, _ = attempt(box, "shell", layer, command=f"{sys.executable} -c '{code}'")
-    assert out["escaped"] is False or "-1" in out["detail"]["out"], out
+    if layer == "all":  # reading /proc is a path, which the seccomp filter does not judge: the file layers stop it
+        out, result, _ = attempt(box, "read", layer, path=f"/proc/{victim.pid}/mem")
+        assert out["escaped"] is False, out
+    out, _, _ = attempt(box, "ptrace", layer, request=16, pid=victim.pid)  # PTRACE_ATTACH to a process outside
+    assert out == {"escaped": False, "error": "", "detail": 1}, out  # EPERM
+    # PTRACE_TRACEME is something the kernel otherwise always allows, so a refusal here can only be the filter.
+    out, _, _ = attempt(box, "ptrace", layer, request=0)
+    assert out == {"escaped": False, "error": "", "detail": 1}, out
     assert victim.poll() is None
 
 

@@ -19,7 +19,9 @@ Read this before you add a skill of your own.
 - **Files.** A skill is given a `Workspace`. Every path that goes through it is resolved, symbolic links included, and must lie inside a folder you named for this run; `..` is refused. Writes are proposals that are applied only after you agree, as new files only.
 - **Approval.** One of your own skills runs only after you approved its exact bytes, and is refused again if any byte changes. What runs is the same bytes that were hashed.
 
-What is **not** protected yet: a skill is Python code running in the runner's process, as you. The `Workspace` is a checked door, not a wall: code that ignores it and calls `open()` or opens a socket is not stopped, and it could read the environment of the process it runs in. A symbolic link swapped between the check and the read is not caught either. Real isolation (one process per tool, no environment, only the named paths, network off) arrives with the sandbox package. Until then: approve only code you trust, as you would any script. A skill that declares `net` hosts is refused outright, because nothing could hold it to that list.
+**The sandbox.** A skill of your own (one in `MUSE_HOME/skills/`) now runs only inside Muse's sandbox: a separate process with no environment, no keys, no network, and only the folders of this run, enforced by the operating system where it can be (`muse doctor` says whether this computer can; where it cannot, the skill is refused). Shipped skills use it with `--sandbox auto|require` or `MUSE_SANDBOX`; the default for them is still off. What it stops, what it does not, and how it was tested: [docs/sandbox.md](sandbox.md). It has not had an outside security review.
+
+What is **not** protected when a skill runs outside the sandbox (shipped skills by default): a skill is Python code running in the runner's process, as you. The `Workspace` is a checked door, not a wall: code that ignores it and calls `open()` or opens a socket is not stopped, and it could read the environment of the process it runs in. A symbolic link swapped between the check and the read is not caught either. Approve only code you trust, as you would any script. A skill that declares `net` hosts is refused outright: the sandbox gives a skill no network at all, and cannot yet hold one to a list of hosts.
 
 ## The folder
 
@@ -165,7 +167,7 @@ muse skills show <name> [--json]
 muse skills approve <name> [--yes]
 muse skills run <name> [--input KEY=VALUE ...] [--folder PATH ...] [--out PATH]
                        [--task light|everyday|heavy|frontier] [--privacy public|standard|private|local]
-                       [--pay USD] [--yes] [--json]
+                       [--pay USD] [--sandbox off|auto|require] [--yes] [--json]
 ```
 
 `--input KEY=-` reads the value from standard input, which keeps it out of shell history. `--task` sets the tier of steps that name none. `--pay` gives this one run a money budget; without it a run never pays. The answer goes to standard output; one line saying who answered and what it cost ("Answered by groq. Nothing spent."), the notes and any choices go to standard error. The first time a skill is used, its description and what it asks for are shown first.
