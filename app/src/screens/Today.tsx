@@ -49,7 +49,7 @@ export function GaugeCard({ gauge, spending, paused, state }: { gauge: GaugeData
         body={t('g_none_b')}
         testId="nothing-connected"
         action={
-          <Link to="services" className="btn primary">
+          <Link to="welcome" className="btn primary">
             {t('g_none_btn')}
           </Link>
         }
@@ -58,8 +58,15 @@ export function GaugeCard({ gauge, spending, paused, state }: { gauge: GaugeData
   }
   const pct = gauge.percent;
   const about = gauge.estimated && pct !== null && pct > 0;
-  const spent = usdToLocal(spending.spentUsd);
-  const cap = usdToLocal(spending.capUsd);
+  // The home's own figures in the person's currency when it sends them; else the fixed rate of format.ts.
+  const money = state.status?.money;
+  const currency = money?.currency ?? DISPLAY_CURRENCY;
+  const spent = money ? Number(money.spent_today.local) : usdToLocal(spending.spentUsd);
+  const cap = money ? Number(money.daily_limit.local) : usdToLocal(spending.capUsd);
+  const spentUsd = money ? Number(money.spent_today.usd) : spending.spentUsd;
+  const capUsd = money ? Number(money.daily_limit.usd) : spending.capUsd;
+  const ratePerUsd = money ? Number(money.rate) : usdToLocal(1);
+  const pctSpent = capUsd > 0 ? Math.min(100, Math.round((100 * spentUsd) / capUsd)) : spending.percent;
   const usedUp = pct !== null && pct <= 0;
   return (
     <div className="card hero" data-testid="gauge-card">
@@ -90,17 +97,17 @@ export function GaugeCard({ gauge, spending, paused, state }: { gauge: GaugeData
       <div className="spend" data-testid="spending">
         <div className="row">
           <span className="sp">{t('spent_today')}</span>
-          <b>{t('x_of_y', fmtMoney(spent, DISPLAY_CURRENCY, lang), fmtMoney(cap, DISPLAY_CURRENCY, lang))}</b>
+          <b>{t('x_of_y', fmtMoney(spent, currency, lang), fmtMoney(cap, currency, lang))}</b>
         </div>
-        <Bar percent={spending.percent} low={spending.percent >= 90} />
-        <p className="small muted">{spending.spentUsd > 0 ? t('spent_some', fmtMoney(spent, DISPLAY_CURRENCY, lang)) : t('spent_none')}</p>
+        <Bar percent={pctSpent} low={pctSpent >= 90} />
+        <p className="small muted">{spentUsd > 0 ? t('spent_some', fmtMoney(spent, currency, lang)) : t('spent_none')}</p>
         <button type="button" className="btn link small dlink" aria-expanded={details} aria-controls="spend-details" onClick={() => setDetails(!details)}>
           {t(details ? 'details_hide' : 'details')}
         </button>
         <div id="spend-details" className="techline" hidden={!details}>
-          <b>{t('spent_usd')}</b> {t('x_of_y', fmtMoney(spending.spentUsd, 'USD', lang), fmtMoney(spending.capUsd, 'USD', lang))}
+          <b>{t('spent_usd')}</b> {t('x_of_y', fmtMoney(spentUsd, 'USD', lang), fmtMoney(capUsd, 'USD', lang))}
           <br />
-          {t('spent_rate', fmtMoney(usdToLocal(1), DISPLAY_CURRENCY, lang), fmtMoney(1, 'USD', lang))}
+          {t('spent_rate', fmtMoney(ratePerUsd, currency, lang), fmtMoney(1, 'USD', lang))}
         </div>
       </div>
       {usedUp ? <Choices refillAt={gauge.nextRefill?.at ?? null} subscriptions={state.status?.subscriptions ?? []} /> : null}

@@ -20,7 +20,9 @@
     "answered_at",
     "answered_by",
     "always",
-    "job_ref"
+    "job_ref",
+    "title_key",
+    "params"
   ],
   "properties": {
     "id": {
@@ -158,6 +160,22 @@
         }
       ],
       "description": "Opaque to clients: what on the home is waiting for the answer."
+    },
+    "title_key": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,39}$"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Null on most cards. Set on the home's own cards (a chore's, a skill's): the name of a sentence the app has in every language. The app shows that sentence, filled with `params`, in place of `title` and `under.text`, and falls back to them when it does not know the key. Cards a host bot asked for never have one. Known keys: save_file_chore (params: label), save_file_skill (params: skill)."
+    },
+    "params": {
+      "type": "object",
+      "description": "The plain values the sentence of `title_key` is filled with: at most 8, each a name of lower-case letters, digits and '_' with one line of text (200 characters at most) or a number. Empty without a title_key."
     }
   },
   "allOf": [

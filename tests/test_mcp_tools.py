@@ -565,7 +565,7 @@ def connected(rig):
 def test_skills_are_listed_and_run_through_the_home(connected):
     rig = connected
     listed = rig.call("list_skills")
-    assert listed["built"] is True and listed["folders"] == [] and "cannot add one" in listed["about_folders"]
+    assert listed["built"] is True and [f["name"] for f in listed["folders"]] == ["documents", "feeds"] and "cannot add one" in listed["about_folders"]
     by_name = {s["name"]: s for s in listed["skills"]}
     assert by_name["files-answer"]["can_run"] is True and by_name["files-answer"]["reads_folders"] is True
     assert set(by_name["files-answer"]) == {"name", "summary", "can_run", "reads_folders", "proposes_files"}

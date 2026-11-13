@@ -92,6 +92,49 @@ CREATE INDEX IF NOT EXISTS cards_status ON cards (status, expires_at);
 """
 
 
+# Added after the first release: a title the app can show in the person's language (the home's own cards only).
+_ADDED_COLUMNS = (("title_key", "TEXT"), ("params", "TEXT"))
+TITLE_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
+MAX_PARAMS = 8
+MAX_PARAM_CHARS = 200
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    have = {row["name"] for row in conn.execute("PRAGMA table_info(cards)")}
+    for name, kind in _ADDED_COLUMNS:
+        if name not in have:
+            try:
+                conn.execute(f"ALTER TABLE cards ADD COLUMN {name} {kind}")
+            except sqlite3.OperationalError:
+                pass  # another process added it between the look and the change
+
+
+def validate_title_key(title_key: Any, params: Any) -> tuple[str | None, dict[str, Any]]:
+    """`title_key` names a sentence the app has in every language; `params` are the few plain values it fills in.
+
+    Only the home's own cards carry them (a chore's, a skill's). A card from a host bot keeps its free text."""
+    if title_key is None:
+        if params:
+            raise CardError("params need a title_key")
+        return None, {}
+    if not isinstance(title_key, str) or not TITLE_KEY_RE.fullmatch(title_key):
+        raise CardError("title_key is 1-40 lower-case letters, digits and '_'")
+    if params is None:
+        return title_key, {}
+    if not isinstance(params, Mapping) or len(params) > MAX_PARAMS:
+        raise CardError(f"params is an object of at most {MAX_PARAMS} values")
+    out: dict[str, Any] = {}
+    for name, value in params.items():
+        if not isinstance(name, str) or not TITLE_KEY_RE.fullmatch(name):
+            raise CardError("a params name is lower-case letters, digits and '_'")
+        if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+            raise CardError("a params value is text or a number")
+        if isinstance(value, str) and (len(value) > MAX_PARAM_CHARS or any(ord(c) < 32 for c in value)):
+            raise CardError(f"a params value is one line of at most {MAX_PARAM_CHARS} characters")
+        out[name] = value
+    return title_key, out
+
+
 class CardError(ValueError):
     """A card that is not valid, or a request the store refuses. The message is safe to show."""
 
@@ -254,6 +297,8 @@ def _to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "answered_by": row["answered_by"],
         "always": bool(row["always"]),
         "job_ref": row["job_ref"],
+        "title_key": row["title_key"] if "title_key" in row.keys() else None,
+        "params": json.loads(row["params"]) if "params" in row.keys() and row["params"] else {},
     }
 
 
@@ -288,6 +333,7 @@ class CardStore:
             conn.execute("PRAGMA journal_mode=DELETE")
             conn.execute("PRAGMA secure_delete=ON")
             conn.executescript(SCHEMA)
+            _migrate(conn)
             if write:
                 conn.execute("BEGIN IMMEDIATE")
             try:
@@ -322,8 +368,13 @@ class CardStore:
         mandate_id: str | None = None,
         job_ref: str | None = None,
         ttl_s: float | None = None,
+        title_key: str | None = None,
+        params: Mapping[str, Any] | None = None,
     ) -> str:
-        """Add a pending card and return its id. `cost=None` means it costs nothing."""
+        """Add a pending card and return its id. `cost=None` means it costs nothing.
+
+        `title_key` and `params` are for the home's own cards: the app shows the sentence it has for the key, in the
+        person's language, and falls back to `title` / `under` when it does not know the key."""
         if kind not in KINDS:
             raise CardError(f"kind must be one of {', '.join(KINDS)}")
         if isinstance(under, Mapping):
@@ -342,13 +393,14 @@ class CardStore:
         if kind == "spend" and "amount" not in cost_obj:
             raise CardError("a spend card needs an amount and a currency")
         extra_obj = validate_extra(kind, extra)
+        title_key, params_obj = validate_title_key(title_key, params)
         if ttl_s is None:
             ttl_s = SPEND_TTL_S if kind == "spend" else DEFAULT_TTL_S
         if isinstance(ttl_s, bool) or not isinstance(ttl_s, (int, float)) or not 0 < ttl_s <= MAX_TTL_S:
             raise CardError("a card must expire between a moment and 30 days from now")
         _refuse_secrets({
             "title": title, "thing": thing, "where": where, "under": under_text, "mandate_id": mandate_id,
-            "job_ref": job_ref, "cost": cost_obj, "extra": extra_obj,
+            "job_ref": job_ref, "cost": cost_obj, "extra": extra_obj, "params": params_obj,
         })
         now = self.clock()
         card_id = secrets.token_hex(8)
@@ -359,9 +411,10 @@ class CardStore:
                 raise CardError(f"there are already {MAX_PENDING} cards waiting for an answer")
             conn.execute(
                 "INSERT INTO cards (id, kind, title, thing, place, under_text, mandate_id, cost, extra, created_at, expires_at,"
-                " status, job_ref) VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pending', ?)",
+                " status, job_ref, title_key, params) VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)",
                 (card_id, kind, title, thing, where, under_text, mandate_id, json.dumps(cost_obj, ensure_ascii=False),
-                 json.dumps(extra_obj, ensure_ascii=False), now, now + float(ttl_s), job_ref),
+                 json.dumps(extra_obj, ensure_ascii=False), now, now + float(ttl_s), job_ref, title_key,
+                 json.dumps(params_obj, ensure_ascii=False) if title_key else None),
             )
         return card_id
 

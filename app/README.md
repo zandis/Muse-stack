@@ -127,14 +127,15 @@ Every dependency is pinned to an exact version in `package.json` and `src-tauri/
 
 | Screen | State |
 |---|---|
-| Today | Real, all states |
-| Tray panel (`/tray`) | Real in the browser; the Tauri tray window is written, not seen |
-| Navigation, Pause, the "Everything is paused" bar, cards | Real |
-| Settings | Language switch is real; the rest is a placeholder |
-| More (phone) | Real list; the Services line shows the real count |
-| Ask, Chores, Records, Permissions, Devices, For apps | Placeholder: the screen's empty state and "This screen comes in a later build." |
-| Services | Placeholder; says how many are connected |
-| Wallet | Placeholder with the test-network header. Hidden from the menus (nothing on the home says a wallet exists yet); reachable at `/wallet` |
-| The three choices on Today | Placeholder component fed by the snapshot: Wait (refill time) and Open in my … (first subscription whose address is on the allow-list). No Spend: the router's `options=` list and its estimate are not on the home API yet |
-| "Use this device for now" | Shows the note only; there is nothing to switch to yet |
-| Tapping a Running / Done line, "See all records" | Go to the Records placeholder |
+| Today | Real, all states. Spending in the person's currency from the home's `money` (fixed rate setting). "Connect your first service" leads to the first run |
+| Ask (`/ask`) | Real: conversations, privacy badge, attach an allowed folder (the files skill, with sources as file › paragraph and the quoted words), the grey line with Details, "Open in my …", "Make this a chore", the three choices (wait, hand off, pay, and the over-limit second step), Continue for a cut-short answer, offline queue, private-with-no-private-service. Answers are Markdown rendered by `src/lib/markdown.tsx` (no HTML from strings, links through the opener, images never loaded). No streaming |
+| Chores (`/chores`) | Real: sentences, add by one sentence with "what I understood" or its questions, run now, pause, edit, delete, history, spare-allowance label, no-home note. The sentences the home writes are in the chore's own language |
+| Services (`/services`) | Real: connected services, test, disconnect, the add list, guided key (one step at a time, the service's page through the opener, key pasted into a password field and cleared at once), one tap, other allowances, subscriptions, restart note |
+| Settings (`/settings`) | Real: daily limit in the person's currency, default privacy, language, currency and its fixed rate, memory (honest: nothing is remembered; "Forget everything" erases kept conversations), About with the supply-chain check. Recovery key and export say they come later (`features.recovery: false`) |
+| First run (`/welcome`) | Real: welcome, one-tap OpenRouter with its two facts, try it, the answer with its grey line. The recovery-key step is hidden until the vault is wired in |
+| For apps (`/apps`, desktop) | Real: the address with Copy, the programs, add a program from a preset; its key is copied to the clipboard on a tap and never shown |
+| Records, Permissions, Devices | Placeholder |
+| Wallet | Placeholder with the test-network header, hidden from the menus |
+| Tray panel | Real in the browser; the Tauri tray window is written, not seen |
+
+Not done: inside the desktop app the Rust side's link list (`src-tauri/crates/home-link`) still holds only the three subscription hosts, so a service's key page or the one-tap page opens in the browser build but not yet from Tauri.

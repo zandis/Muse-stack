@@ -82,7 +82,8 @@ def test_status_is_the_snapshot_plus_api_version(rig):
     snap = rig.ok("GET", "/v1/status")
     direct = build_snapshot()
     assert snap["api_version"] == "1" and snap["paused"] is False
-    assert set(snap) == set(direct) | {"api_version"}  # the shape is unchanged
+    # The snapshot's own shape is unchanged; the app's handler adds four fields beside it (muse/home/app_api.py).
+    assert set(snap) == set(direct) | {"api_version", "money", "activity", "local_runtime", "restart_pending"}
     for key in ("providers", "aliases", "apps", "paid", "queue", "suggestions", "resources", "subscriptions", "totals"):
         assert snap[key] == json.loads(json.dumps(direct[key])), key
     assert rig.last_headers["content-type"] == "application/json; charset=utf-8"
@@ -199,7 +200,8 @@ def test_a_key_is_stored_through_the_key_store_and_never_echoed(rig, caplog):
         got = rig.ok("POST", "/v1/keys/groq", {"key": f"  {KEY_CANARY}\n"})
     assert got == {
         "provider": "groq", "stored": ["GROQ_API_KEY"], "backend": "dotenv", "warnings": [], "still_needed": [],
-        "restart": {"needed": True, "proxy_running": True, "command": "muse restart"}, "recorded": True,
+        "restart": {"needed": True, "proxy_running": True, "command": "muse restart", "managed": False, "next": None},
+        "recorded": True, "limit_written": True,  # the app's wrapper: the default daily limit, written for the router
     }
     assert KEY_CANARY not in json.dumps(got) and KEY_CANARY not in caplog.text
     assert f"GROQ_API_KEY={KEY_CANARY}" in rig.env_file.read_text()  # cleaned of the stray space and newline
@@ -218,7 +220,7 @@ def test_a_key_of_an_unexpected_shape_is_stored_with_a_warning_that_does_not_quo
     got = rig.ok("POST", "/v1/keys/groq", {"key": odd})
     assert got["stored"] == ["GROQ_API_KEY"] and len(got["warnings"]) == 1 and "gsk_" in got["warnings"][0]
     assert odd not in json.dumps(got)
-    assert got["restart"] == {"needed": True, "proxy_running": False, "command": "muse up"}
+    assert got["restart"] == {"needed": True, "proxy_running": False, "command": "muse up", "managed": False, "next": None}
 
 
 def test_extra_settings_travel_in_also(rig):

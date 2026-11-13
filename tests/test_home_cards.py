@@ -95,7 +95,7 @@ def test_a_created_card_has_every_field_of_the_shape(store, clock):
         "id": card_id, "kind": "save_file", "title": "Save a file", "thing": "Weekly digest 13 Nov.md", "where": "Documents/Muse",
         "under": {"text": "Weekly digest chore", "mandate_id": None}, "cost": {"nothing": True}, "extra": {},
         "created_at": "2027-01-15T08:00:00Z", "expires_at": "2027-01-16T08:00:00Z", "status": "pending", "answered_at": None,
-        "answered_by": None, "always": False, "job_ref": None,
+        "answered_by": None, "always": False, "job_ref": None, "title_key": None, "params": {},
     }
 
 
@@ -202,7 +202,7 @@ def test_the_schema_refuses_what_the_store_refuses():
         "under": {"text": "Paid services", "mandate_id": None}, "cost": {"amount": "6", "currency": "TWD"},
         "extra": {"payee": "Deepgram", "limit_left": {"amount": "24", "currency": "TWD"}},
         "created_at": "2026-11-13T06:00:00Z", "expires_at": "2026-11-13T06:05:00Z", "status": "pending",
-        "answered_at": None, "answered_by": None, "always": False, "job_ref": None,
+        "answered_at": None, "answered_by": None, "always": False, "job_ref": None, "title_key": None, "params": {},
     }
     assert schema_errors(good, schema) == []
     breaks = [

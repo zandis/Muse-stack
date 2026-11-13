@@ -1,0 +1,429 @@
+/* The app's screens: Ask, Chores, Services, Settings, For apps, first run. Same tokens as styles.css. */
+textarea,
+input[type='password'],
+input:not([type]),
+input[inputmode],
+select {
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 12px;
+  min-height: 48px;
+  width: 100%;
+  max-width: 100%;
+}
+textarea {
+  resize: vertical;
+  line-height: 1.45;
+}
+select {
+  width: auto;
+}
+textarea:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  border-color: var(--accent);
+}
+.tag.warn {
+  background: var(--warn-soft);
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.warnline {
+  color: var(--warn);
+  font-weight: 600;
+}
+.row.wrap {
+  flex-wrap: wrap;
+}
+.kv {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+.kv > div {
+  display: grid;
+  grid-template-columns: minmax(7em, 38%) minmax(0, 1fr);
+  gap: 10px;
+}
+.kv dt {
+  color: var(--muted);
+  font-weight: 600;
+}
+.kv dd {
+  margin: 0;
+  min-width: 0;
+}
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+/* Ask */
+.askgrid {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+.askgrid.withdetails {
+  grid-template-columns: 220px minmax(0, 1fr) 260px;
+}
+.convlist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
+.convlist .ln {
+  background: none;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  color: inherit;
+  font: inherit;
+  font-size: 0.9375rem;
+}
+.convlist .ln[aria-current='true'] {
+  background: var(--accent-soft);
+  font-weight: 700;
+}
+.convo {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.turns {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.turn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.turn .q {
+  align-self: flex-end;
+  max-width: 88%;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: 18px 18px 4px 18px;
+  padding: 10px 14px;
+}
+.turn .q p {
+  white-space: pre-wrap;
+}
+.turn .a {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px 18px 18px 4px;
+  padding: 12px 14px;
+  box-shadow: var(--shadow);
+  min-width: 0;
+}
+.answer-text {
+  min-width: 0;
+}
+.md {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.md p {
+  white-space: pre-wrap;
+}
+.md h3,
+.md h4,
+.md h5,
+.md h6 {
+  font-size: 1.0625rem;
+  font-weight: 750;
+}
+.md ul {
+  list-style: disc;
+  padding-left: 22px;
+}
+.md ol {
+  list-style: decimal;
+  padding-left: 24px;
+}
+.md blockquote {
+  margin: 0;
+  border-left: 3px solid var(--line);
+  padding-left: 10px;
+  color: var(--muted);
+}
+.md code,
+.steps code,
+.addr {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  background: var(--surface2);
+  border-radius: 6px;
+  padding: 1px 5px;
+}
+.md pre {
+  margin: 0;
+  overflow-x: auto;
+  background: var(--surface2);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.md pre code {
+  background: none;
+  padding: 0;
+}
+.mdtable {
+  overflow-x: auto;
+}
+.mdtable table {
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+.mdtable th,
+.mdtable td {
+  border: 1px solid var(--line);
+  padding: 4px 10px;
+  text-align: left;
+}
+.mdlink {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  text-decoration: underline;
+  font: inherit;
+}
+.mdimg {
+  color: var(--muted);
+}
+.steps code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.sources {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+.sources h3 {
+  font-weight: 700;
+}
+.sources ol {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.srcfile {
+  font-weight: 650;
+  font-size: 0.9375rem;
+}
+.sources .quote {
+  margin: 4px 0 0;
+  font-size: 0.9375rem;
+}
+.greyline {
+  align-self: flex-start;
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  min-height: 32px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9375rem;
+  text-align: left;
+  text-decoration: underline dotted;
+  text-underline-offset: 4px;
+}
+.greyline.static {
+  text-decoration: none;
+}
+.cutshort {
+  flex-wrap: wrap;
+}
+.askbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  position: relative;
+}
+.askopts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.askopts .send {
+  margin-left: auto;
+}
+.attach {
+  position: relative;
+}
+.attach summary {
+  list-style: none;
+}
+.attach summary::-webkit-details-marker {
+  display: none;
+}
+.attachlist {
+  position: absolute;
+  z-index: 5;
+  bottom: calc(100% + 6px);
+  left: 0;
+  width: min(320px, 80vw);
+  padding: 12px;
+}
+.attachlist fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.detailspane {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.convtop {
+  flex-wrap: wrap;
+}
+
+/* Chores */
+.chore {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.chore.sel {
+  border-color: var(--accent);
+}
+.chorehead {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  min-height: 44px;
+}
+.chorehead b {
+  flex: 1;
+}
+.chorehead .chev {
+  color: var(--muted);
+  margin-top: 2px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chips:empty {
+  display: none;
+}
+.chorebody {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+/* Services */
+.svcgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+}
+.svc {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.svc h3 {
+  font-size: 1.125rem;
+}
+.guide {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.guide h3:focus {
+  outline: none;
+}
+details.card summary {
+  cursor: pointer;
+  min-height: 32px;
+}
+
+/* Settings, For apps, first run */
+.limitrow input {
+  flex: 1;
+  min-width: 0;
+}
+.firstrun {
+  height: 100%;
+  overflow-y: auto;
+  padding: 24px 16px;
+}
+.firstrun h1 {
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+.firstrun h1:focus {
+  outline: none;
+}
+.addr {
+  padding: 6px 10px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 799px) {
+  .split {
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+/* A line that is a button: the same look as a line that is a link. */
+button.ln {
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  color: inherit;
+  font: inherit;
+  font-size: 1rem;
+}
+button.ln:hover {
+  background: var(--surface2);
+}
+/* The three choices and the over-limit card stand on their own, not inside a second box. */
+.turn .a:has(> .cardx:only-child) {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+.turn .a > .cardx {
+  margin-top: 0;
+}

@@ -585,7 +585,7 @@ def test_the_fake_home_lists_skills_and_finishes_a_run_with_a_canned_answer():
     try:
         dev = auth.Device(fake.FAKE_DEVICE)
         listed = ok(home, dev, "GET", "/v1/skills")
-        assert any(s["name"] == "files-answer" for s in listed["skills"]) and listed["folders"] == []
+        assert any(s["name"] == "files-answer" for s in listed["skills"]) and [f["name"] for f in listed["folders"]] == ["documents", "feeds"]  # the fake home's demo folders
         got = run(home, dev, "files-answer", {"inputs": {"question": "x"}})
         assert got["status"] == "done" and "fake home" in got["result"]["output"]["text"] and got["writes"] == []
     finally:
