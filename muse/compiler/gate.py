@@ -107,9 +107,24 @@ def mark_stopped(mandate_ids: Iterable[str], environ: Mapping[str, str] | None =
     """Add ids to the stopped list (it only grows), and the hashes of app keys about to be removed with them.
     Written 0600 through a temp file and os.replace.
 
-    A file that cannot be read is replaced by one holding the ids given: `sweep` gives every revoked id."""
+    A file that cannot be read is replaced by one holding the ids given: `sweep` gives every revoked id.
+    One writer at a time (an advisory lock), so two stops at once cannot lose each other's id."""
     path = stopped_path(environ)
     path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(path.with_name(".stopped.lock")), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        try:
+            import fcntl
+
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        except ImportError:  # pragma: no cover - Windows
+            pass
+        _mark_locked(path, mandate_ids, now, app_keys)
+    finally:
+        os.close(fd)
+
+
+def _mark_locked(path: Path, mandate_ids: Iterable[str], now: float | None, app_keys: Mapping[str, str] | None) -> None:
     try:
         current: tuple[dict[str, int], dict[str, str]] | None = _parse(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
