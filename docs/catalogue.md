@@ -116,7 +116,7 @@ It cannot read.
 - A page drawn by scripts has little visible text to compare.
 - A page can stay the same while the provider changes the allowance somewhere else.
 
-So `text_changed` means "probably nothing", never "nothing". An entry still goes stale after 30 days whatever its pages say. The effect on real pages has not been measured yet; that needs a few weeks of reports.
+So `text_changed` means "probably nothing", never "nothing". An entry still goes stale after 30 days whatever its pages say. One live measurement so far, on 2026-11-13: two runs a few minutes apart over the catalogue's 38 source pages. One page was unreachable both times. Of the other 37, 36 were `unchanged` and one, a Google help page, differed between the runs with nothing real changed. It was reported as `text_changed`, where the earlier check would have said "changed". Whether `facts_changed` stays quiet over weeks has not been measured; that needs a few weeks of reports.
 
 ## Checked on 2026-11-13
 
