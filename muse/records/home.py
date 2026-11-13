@@ -191,9 +191,13 @@ class HomeRecords:
         return export(records, cp, select, redact_summaries)
 
 
-def record_pause(environ: Mapping[str, str] | None, paused: bool, clock: Callable[[], float] = time.time) -> dict[str, Any]:
+def record_pause(environ: Mapping[str, str] | None, paused: bool, clock: Callable[[], float] = time.time,
+                 chain: HomeRecords | None = None) -> dict[str, Any]:
     """The record a pause or a resume leaves. One function for `muse pause` / `muse resume` and for the
     home API's pause and resume calls, so both write the same thing. Raises when it cannot be written;
-    the caller decides what that means (the pause itself has already happened and must stand)."""
+    the caller decides what that means (the pause itself has already happened and must stand).
+
+    `chain`: the home's chain when the caller already holds it; otherwise the one under `environ`."""
     action, summary = ("home.pause", "Paused the queue") if paused else ("home.resume", "Resumed the queue")
-    return HomeRecords(environ, clock=clock).write(action, summary, actor="person", egress="none")
+    chain = chain if chain is not None else HomeRecords(environ, clock=clock)
+    return chain.write(action, summary, actor="person", egress="none")

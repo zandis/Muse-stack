@@ -35,6 +35,12 @@ info:
       The only secret that ever leaves is a new app token, once, when it is created or rotated.
     * A request that holds anything shaped like a key or token is refused with a generic 400
       (`invalid_request`), everywhere except `POST /v1/keys/{provider}`.
+    * The home writes a signed record (`docs/spec/interfaces/record-format.md`) of what it does
+      through this API: a card asked or answered, pause and resume, an app added, changed,
+      removed or given a new token, a key stored (the service's id only), a job queued or
+      cancelled, a skill run, a file written. Those replies carry `recorded`: true when the
+      record was written, false when it could not be (the action itself still happened, and is
+      never undone or refused because of that) or when the call changed nothing.
     * Every error has one shape (`Error`). `code` is stable and listed below; `message` is one
       plain sentence for the person; `retry_after` (seconds) is present when waiting helps.
     * No CORS headers are sent. Every reply has `Cache-Control: no-store`.
@@ -384,9 +390,10 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [paused]
+                required: [paused, recorded]
                 properties:
                   paused: {const: true}
+                  recorded: {$ref: "#/components/schemas/Recorded"}
         default: {$ref: "#/components/responses/Error"}
 
   /v1/resume:
@@ -395,7 +402,7 @@ paths:
       x-scope: pause.write
       x-roles: [owner]
       summary: The one switch, on.
-      description: Same as `muse resume`. No request body. Idempotent.
+      description: Same as `muse resume`. No request body. Idempotent. A resume that changed nothing leaves no record.
       responses:
         "200":
           description: Running again.
@@ -403,10 +410,11 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [paused, was_paused]
+                required: [paused, was_paused, recorded]
                 properties:
                   paused: {const: false}
                   was_paused: {type: boolean}
+                  recorded: {$ref: "#/components/schemas/Recorded"}
         default: {$ref: "#/components/responses/Error"}
 
   /v1/apps:
@@ -475,9 +483,10 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [app]
+                required: [app, recorded]
                 properties:
                   app: {$ref: "#/components/schemas/App"}
+                  recorded: {$ref: "#/components/schemas/Recorded"}
         "400": {$ref: "#/components/responses/Invalid"}
         "404": {$ref: "#/components/responses/NotFound"}
         "503": {$ref: "#/components/responses/Unavailable"}
@@ -496,9 +505,10 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [removed]
+                required: [removed, recorded]
                 properties:
                   removed: {const: true}
+                  recorded: {$ref: "#/components/schemas/Recorded"}
         "404": {$ref: "#/components/responses/NotFound"}
         "503": {$ref: "#/components/responses/Unavailable"}
         default: {$ref: "#/components/responses/Error"}
@@ -527,15 +537,109 @@ paths:
       operationId: listReceipts
       x-scope: receipts.read
       x-roles: [owner, viewer]
-      summary: Planned. Receipts written on the home.
-      description: Not built yet; answers 501 `not_built` until the records module exists.
-      x-planned: true
+      summary: The home's records, newest first, with whether they check out.
+      description: |
+        A page of the signed records on the home (`muse records list` shows the same). Newest
+        first, by `seq` descending: `seq` is the order the home signed them in, and it never
+        repeats. At most 200 a page (default 50); `next_before` is the `before` value that
+        fetches the next, older page, or null on the last one.
+
+        Every reply also says whether the whole chain checks out (`verify`) and what the last
+        seal covers (`sealed`). When `verify.ok` is false the records that can still be read
+        are returned, and `kind` and `index` name the first problem (the kinds are those of
+        `muse records verify`). The check is redone whenever the records file has changed.
       parameters:
         - name: since
           in: query
+          description: Only records at or after this time. A time with a zone.
+          schema: {type: string, examples: ["2026-11-01T00:00:00Z"]}
+        - name: action
+          in: query
+          description: One action (`files.write`) or a family (`files`).
           schema: {type: string}
+        - name: left_device
+          in: query
+          description: "`true`: only records whose content left the person's devices (`egress` is `service:...` or `host:...`). Records that do not say are not among them."
+          schema: {enum: ["true", "false"], default: "false"}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+        - name: before
+          in: query
+          description: Only records with a `seq` below this. Pass the previous page's `next_before`.
+          schema: {type: integer, minimum: 0}
       responses:
-        "501": {$ref: "#/components/responses/NotBuilt"}
+        "200":
+          description: A page of records.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [records, order, next_before, verify, sealed, device]
+                properties:
+                  records: {type: array, maxItems: 200, items: {$ref: "#/components/schemas/Record"}}
+                  order: {const: newest_first}
+                  next_before: {type: [integer, "null"]}
+                  verify:
+                    type: object
+                    required: [ok, size]
+                    properties:
+                      ok: {type: boolean, description: Every record and the last seal check out.}
+                      size: {type: integer, description: How many records the home holds.}
+                      kind: {type: string, description: "When not ok: the first problem, such as `bad_signature` or `size_mismatch`."}
+                      index: {type: [integer, "null"], description: "When not ok: the position of the first bad record, if there is one."}
+                  sealed:
+                    type: [object, "null"]
+                    description: The last seal (checkpoint), or null when nothing was sealed yet.
+                    required: [size, root, time]
+                    properties:
+                      size: {type: integer, description: How many records it covers.}
+                      root: {type: string}
+                      time: {$ref: "#/components/schemas/Time"}
+                  device: {type: [string, "null"], description: "The home's signing key (64 hex), or null before the first record."}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+    post:
+      operationId: addReceipt
+      x-scope: receipts.write
+      x-roles: [owner, host]
+      summary: Report something a device did. The home signs it into the records.
+      description: |
+        For a device that acts for the person and wants it written down, such as the Muse tools
+        server a host bot runs (its `record_action` tool). The home decides who did it and when;
+        a caller cannot: `actor` is `helper` for a `host` device and `person` for an `owner`,
+        `mandate` is `device:<name>` for a helper, the time is the home's clock, and the record is
+        signed by the home's key. The record's fields are checked by the records module: the
+        summary rule (one line, at most 200 characters, nothing shaped like a key) and the
+        shapes of `cost`, `links` and `egress`.
+
+        This is the device's own report. The home writes down what it was told and cannot check
+        it. A device may add at most 600 records an hour (`too_many_requests`, 429, beyond that).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/NewRecord"}
+      responses:
+        "201":
+          description: The signed record and its hash.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [record, hash, recorded]
+                properties:
+                  record: {$ref: "#/components/schemas/Record"}
+                  hash: {type: string, pattern: "^[0-9a-f]{64}$", description: "The record's hash: what the next record links to."}
+                  recorded: {const: true}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "429":
+          description: "`too_many_requests`: this device added too many records in the last hour."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "503": {$ref: "#/components/responses/Unavailable"}
         default: {$ref: "#/components/responses/Error"}
 
   /v1/mandates/artifacts:
@@ -632,6 +736,88 @@ components:
                      too_many_requests, internal, not_built, unavailable]
             message: {type: string, description: One plain sentence. Never a secret, a prompt or internal error text.}
             retry_after: {type: integer, minimum: 0, description: Seconds. Also sent as the Retry-After header.}
+
+    Recorded:
+      type: boolean
+      description: |
+        True when the home wrote a record of this call. False when it could not (the action still
+        happened) or when the call changed nothing. Present on calls that change something;
+        calls that only read do not carry it.
+
+    Record:
+      type: object
+      description: |
+        One signed record, exactly as `docs/spec/interfaces/record-format.md` section 1 defines it.
+        `summary` and `summary_salt` are present unless the record was redacted; `links` and
+        `egress` only when the record has them.
+      required: [v, device, seq, time, mandate, actor, action, resource, summary_hash, outcome, cost, prev, sig]
+      additionalProperties: false
+      properties:
+        v: {const: 1}
+        device: {type: string, pattern: "^[0-9a-f]{64}$", description: The home's signing key.}
+        seq: {type: integer, minimum: 0}
+        time: {type: integer, minimum: 0, description: Milliseconds since 1970-01-01T00:00:00Z.}
+        mandate: {type: [string, "null"], description: "`device:<name>` for a record a helper device caused; null for the person's own."}
+        actor: {enum: [person, helper, system]}
+        action: {type: string, description: "A dotted name such as `card.answer`; the list is in record-format.md section 1.3."}
+        resource: {type: [string, "null"], pattern: "^[0-9a-f]{64}$", description: A keyed reference; never a name or content.}
+        summary_hash: {type: string, pattern: "^[0-9a-f]{64}$"}
+        outcome: {enum: [ok, declined, failed, undone]}
+        cost:
+          type: [object, "null"]
+          required: [currency, minor]
+          additionalProperties: false
+          properties:
+            currency: {type: string, pattern: "^[A-Z0-9]{3,8}$"}
+            minor: {type: integer, minimum: 0, description: "A count of the currency's smallest unit: NT$30 is 3000."}
+        links:
+          type: object
+          additionalProperties: false
+          properties:
+            job: {type: string}
+            card: {type: string}
+            payment_ref: {type: string}
+            undo_of: {type: string, pattern: "^[0-9a-f]{64}$"}
+        egress:
+          type: string
+          pattern: "^(?:none|home|(?:service|host):[a-z0-9][a-z0-9._-]{0,63})$"
+          description: |
+            Where the content of the action went: `none`, `home`, `service:<id>` or `host:<name>`.
+            Absent: the record does not say. "Left my devices" is `service:` or `host:`.
+        prev: {type: string, pattern: "^[0-9a-f]{64}$"}
+        sig: {type: string, pattern: "^[0-9a-f]{128}$"}
+        summary: {type: string, maxLength: 200, description: Short plain text that is safe to show. Render it as text.}
+        summary_salt: {type: string, pattern: "^[0-9a-f]{32}$"}
+
+    NewRecord:
+      type: object
+      additionalProperties: false
+      required: [action, summary]
+      properties:
+        action:
+          type: string
+          description: |
+            A dotted lower-case name, two to four segments, such as `files.write` or `message.send`.
+            Not one of the home's own families: `home`, `card`, `app`, `key`, `job`, `skill`, `mandate`, `records`.
+        summary: {type: string, minLength: 1, maxLength: 200, description: "What was done, in words, on one line. No content, no names of people, nothing shaped like a key."}
+        outcome: {enum: [ok, declined, failed, undone], default: ok}
+        cost:
+          type: [object, "null"]
+          required: [currency, minor]
+          additionalProperties: false
+          properties:
+            currency: {type: string, pattern: "^[A-Z0-9]{3,8}$"}
+            minor: {type: integer, minimum: 0}
+        links:
+          type: object
+          additionalProperties: false
+          properties:
+            job: {type: string}
+            card: {type: string}
+            payment_ref: {type: string}
+            undo_of: {type: string, pattern: "^[0-9a-f]{64}$"}
+        egress: {type: string, pattern: "^(?:none|home|(?:service|host):[a-z0-9][a-z0-9._-]{0,63})$", description: Where the content went. Leave it out when not known.}
+        resource: {type: [string, "null"], maxLength: 1024, description: "The thing acted on, as a name such as `file:/Notes/a.md`. Only a keyed reference to it is stored."}
 
     Time:
       type: string
@@ -765,9 +951,10 @@ components:
 
     KeyStored:
       type: object
-      required: [provider, stored, backend, warnings, still_needed, restart]
+      required: [provider, stored, backend, warnings, still_needed, restart, recorded]
       properties:
         provider: {type: string}
+        recorded: {$ref: "#/components/schemas/Recorded"}
         stored: {type: array, items: {type: string}, description: The names that were stored. Never values.}
         backend: {type: [string, "null"], description: "keychain or dotenv (fake on a fake home)."}
         warnings: {type: array, items: {type: string}}
@@ -857,6 +1044,7 @@ components:
       required: [job]
       properties:
         job: {$ref: "#/components/schemas/Job"}
+        recorded: {$ref: "#/components/schemas/Recorded"}
 
     Card:
       $ref: "card.schema.json"
@@ -866,6 +1054,7 @@ components:
       required: [card]
       properties:
         card: {$ref: "#/components/schemas/Card"}
+        recorded: {$ref: "#/components/schemas/Recorded"}
 
     AppName:
       type: string
@@ -896,8 +1085,9 @@ components:
 
     AppWithToken:
       type: object
-      required: [app, token, token_shown_once]
+      required: [app, token, token_shown_once, recorded]
       properties:
         app: {$ref: "#/components/schemas/App"}
+        recorded: {$ref: "#/components/schemas/Recorded"}
         token: {type: string, readOnly: true, description: The app's router token. Shown this once; store it on the device that needs it.}
         token_shown_once: {const: true}

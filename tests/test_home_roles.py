@@ -43,6 +43,7 @@ EXPECTED: dict[tuple[str, str], set[str]] = {
     ("DELETE", "/v1/apps/{name}"): {O},
     ("POST", "/v1/apps/{name}/rotate"): {O},
     ("GET", "/v1/receipts"): {O, V},
+    ("POST", "/v1/receipts"): {O, H},
     ("GET", "/v1/mandates/artifacts"): {O},
 }
 

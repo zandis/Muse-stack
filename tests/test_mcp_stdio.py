@@ -45,7 +45,7 @@ class Rig:
     def __init__(self, tmp_path: Path, state: str = "normal") -> None:
         self.tmp = tmp_path
         self.home = fake.FakeHome(state)
-        self._ctx = running(self.home, StaticVerifier({HOST: HOST_TOKEN, PHONE: PHONE_TOKEN}))
+        self._ctx = running(self.home, StaticVerifier({HOST: HOST_TOKEN, PHONE: PHONE_TOKEN}, roles={HOST: "host"}))
         self.srv = self._ctx.__enter__()
         self.phone = client_for(self.srv, PHONE_TOKEN)
         self.token_file = tmp_path / "host.token"
@@ -176,7 +176,7 @@ def test_every_tool_answers_over_stdio(rig):
     assert got["pause"]["paused"] is False and got["pause"]["scope_note"] == SCOPE_NOTE
     assert got["suggest"]["suggestion"]["id"]
     assert got["permission"]["decision"] == "ask" and got["permission"]["scope_note"] == SCOPE_NOTE
-    assert got["record"]["recorded"] is False and got["record"]["reason"] == "records are not built yet"
+    assert got["record"]["recorded"] is True and got["record"]["action"] == "host.saved_a_file" and len(got["record"]["hash"]) == 64
     assert got["job"]["job"]["status"] == "queued" and got["job_status"]["job"]["id"] == got["job"]["job"]["id"]
     assert rig.home.queue().get(got["job"]["job"]["id"]).payload == PROMPT_CANARY  # it arrived; it never comes back
     assert got["skills"]["built"] is False and got["run_skill"]["ran"] is False

@@ -30,7 +30,7 @@ import re
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Mapping
 from urllib.parse import parse_qsl, urlsplit
 
@@ -47,6 +47,11 @@ MAX_BODY_BYTES = 512 * 1024
 MAX_PATH_CHARS = 512
 MAX_KEY_CHARS = 512
 MAX_JSON_DEPTH = 8
+MAX_RECEIPTS_PAGE = 200  # records in one reply of GET /v1/receipts
+DEFAULT_RECEIPTS_PAGE = 50
+MAX_RECORDS_PER_HOUR = 600  # records one device may add with POST /v1/receipts; they are kept for ever
+# Action families only the home itself writes; POST /v1/receipts refuses them (record-format.md section 1.3).
+HOME_ACTIONS = ("home", "card", "app", "key", "job", "skill", "mandate", "records")
 
 # Every code a client can meet, with the status it comes with. The OpenAPI file lists the same set.
 ERROR_CODES: dict[str, int] = {
@@ -161,6 +166,35 @@ def _no_body(req: Request) -> None:
 _NONE = type(None)
 
 
+def _iso_ms(ms: int) -> str:
+    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# ---------------------------------------------------------------- who did it, for a record
+
+
+def actor_of(device: Device) -> str:
+    """`person` for the person's own device, `helper` for anything acting for them. A caller cannot choose."""
+    return "person" if device.role == "owner" else "helper"
+
+
+def mandate_of(device: Device) -> str | None:
+    """What a record names as the permission it ran under. A device token is today's stand-in for a
+    permission token (muse/home/auth.py), so a helper's records name its device; the person's own name none."""
+    return None if device.role == "owner" else f"device:{device.name}"
+
+
+def _word(name: str) -> str:
+    """A device or app name as it may appear in a record's summary: itself, unless it is shaped like a key."""
+    from muse.records.format import key_shaped
+
+    return "(a long name)" if key_shaped(name) or len(name) > 64 else name
+
+
+def _who(device: Device) -> dict[str, Any]:
+    return {"actor": actor_of(device), "mandate": mandate_of(device)}
+
+
 # ---------------------------------------------------------------- the home
 
 
@@ -187,6 +221,9 @@ class Home:
         self.book = HomeState(environ, clock=clock)
         self._snapshot_fn = snapshot_fn
         self._proxy_running_fn = proxy_running
+        self._verify_cache: tuple[Any, Any] | None = None
+        self._record_lock = threading.Lock()
+        self._record_times: dict[str, list[float]] = {}
 
     @property
     def env(self) -> Mapping[str, str]:
@@ -272,6 +309,92 @@ class Home:
     def default_privacy(self) -> str | None:
         return self.env.get("MUSE_DEFAULT_PRIVACY", "").strip().lower() or None
 
+    # ---- records (muse/records): what was done in the person's name through this home
+
+    def records(self) -> Any:
+        from muse.records.home import HomeRecords
+
+        return HomeRecords(self.environ, clock=self.clock)
+
+    def record(self, action: str, summary: str, **fields: Any) -> dict[str, Any] | None:
+        """Append one record of something that has already happened. Never raises.
+
+        Returns the record, or None when it could not be written (no `cryptography`, a full disk, a
+        damaged file). The action itself stands either way; the caller reports `recorded: false`.
+        Only the type of the failure is logged: never its message, a path or the summary."""
+        try:
+            return self.records().write(action, summary, **fields)
+        except Exception as exc:  # ImportError included: records are optional, the action is not
+            log.warning("records: no record was written for %s (%s)", action, type(exc).__name__)
+            return None
+
+    def record_pause(self, paused: bool) -> dict[str, Any] | None:
+        """The record of a pause or resume: the same function `muse pause` and `muse resume` use."""
+        try:
+            from muse.records.home import record_pause
+
+            return record_pause(self.environ, paused, clock=self.clock, chain=self.records())
+        except Exception as exc:
+            log.warning("records: no record was written for home.%s (%s)", "pause" if paused else "resume", type(exc).__name__)
+            return None
+
+    def records_state(self) -> dict[str, Any]:
+        """Every well-formed record, whether the chain checks out, and the last seal. Raises what the store raises.
+
+        The check walks the whole chain (one signature per record), so its answer is kept until the
+        records file changes on disk."""
+        from muse.records import format as fmt
+        from muse.records.errors import RecordError
+        from muse.records.home import records_path
+
+        chain = self.records()
+        try:
+            stat = os.stat(records_path(self.environ))
+            stamp: Any = (stat.st_ino, stat.st_size, stat.st_mtime_ns)
+        except OSError:
+            stamp = None
+        records = chain.records()
+        cached = self._verify_cache
+        if cached is not None and stamp is not None and cached[0] == stamp:
+            verify, sealed, device = cached[1]
+        else:
+            try:
+                state = chain.verify()
+                verify, cp, device = {"ok": True, "size": state["size"]}, state["checkpoint"], state["device"]
+            except RecordError as exc:
+                verify, cp, device = {"ok": False, "size": len(records), "kind": exc.kind, "index": exc.index}, None, chain.device()
+                try:
+                    cp = chain.store.last_checkpoint()
+                except RecordError:
+                    cp = None
+            sealed = None if cp is None else {"size": cp["size"], "root": cp["root"], "time": _iso_ms(cp["time"])}
+            self._verify_cache = (stamp, (verify, sealed, device))
+        if not verify["ok"]:
+            def well_formed(record: Any) -> bool:
+                try:
+                    fmt.check_record(record)
+                except RecordError:
+                    return False
+                return True
+
+            records = [r for r in records if well_formed(r)]  # show what can be shown
+        return {"records": records, "verify": dict(verify), "sealed": sealed, "device": device}
+
+    def allow_record_from(self, device: Device) -> int | None:
+        """None when this device may add a record now; otherwise the seconds to wait. Records are kept for
+        ever, so one device cannot add more than MAX_RECORDS_PER_HOUR of them in an hour."""
+        now = self.clock()
+        with self._record_lock:
+            times = self._record_times.setdefault(device.name, [])
+            times[:] = [t for t in times if t > now - 3600.0]
+            if len(times) >= MAX_RECORDS_PER_HOUR:
+                return max(1, int(times[0] + 3600.0 - now + 0.999))
+            times.append(now)
+            if len(self._record_times) > 256:
+                for name in [n for n, ts in self._record_times.items() if not ts][:64]:
+                    del self._record_times[name]
+            return None
+
 
 # ---------------------------------------------------------------- handlers: status, pause
 
@@ -294,14 +417,15 @@ def h_status(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
 def h_pause(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
     _no_body(req)
     home.set_paused(True)
-    return 200, {"paused": True}
+    return 200, {"paused": True, "recorded": home.record_pause(True) is not None}
 
 
 def h_resume(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
     _no_body(req)
     was = bool(home.is_paused())
     home.set_paused(False)
-    return 200, {"paused": False, "was_paused": was}
+    # As `muse resume`: a resume that changed nothing leaves no record.
+    return 200, {"paused": False, "was_paused": was, "recorded": was and home.record_pause(False) is not None}
 
 
 # ---------------------------------------------------------------- handlers: catalogue, connect, keys
@@ -432,6 +556,8 @@ def h_keys(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
         warnings.extend(f"{name}: {w}" for w in warned)
     missing = [n for n in provider.also_env if n not in stored and not home.key_configured(n)]
     running = home.proxy_running()
+    # The record names the service's id and nothing else: never the key, a part of it, or its hash.
+    record = home.record("key.store", f"Stored a key for the service {_word(provider.id)}", egress="none", **_who(req.device))
     return 200, {
         "provider": provider.id,
         "stored": stored,
@@ -439,6 +565,7 @@ def h_keys(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
         "warnings": warnings,
         "still_needed": missing,
         "restart": {"needed": True, "proxy_running": running, "command": home.restart_command(running)},
+        "recorded": record is not None,
     }
 
 
@@ -533,7 +660,10 @@ def h_jobs_add(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
         except queue.QueueError:
             pass
         raise ApiError("unavailable", "The home could not keep track of the job, so it was not queued.") from None
-    return 201, {"job": job.public()}
+    # The prompt stays on the home until the job runs; what a run then sends to a service is that run's own record.
+    record = home.record("job.queue", "Queued a background job" + (" that may use paid services" if allow_paid else ""),
+                         links={"job": job.id}, egress="none", **_who(req.device))
+    return 201, {"job": job.public(), "recorded": record is not None}
 
 
 def _job_id(home: Home, req: Request) -> str:
@@ -565,7 +695,8 @@ def h_job_cancel(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
         job = home.queue().cancel(_job_id(home, req))
     except queue.QueueError as exc:
         raise _job_error(exc) from None
-    return 200, {"job": job.public()}
+    record = home.record("job.cancel", "Cancelled a background job", links={"job": job.id}, egress="none", **_who(req.device))
+    return 200, {"job": job.public(), "recorded": record is not None}
 
 
 # ---------------------------------------------------------------- handlers: cards
@@ -620,6 +751,13 @@ def asked_by(device: Device) -> str:
     return f"device:{device.name}"
 
 
+# What each kind of card asks, for a record's summary. Never the card's own text: that is content.
+CARD_WORDS = {
+    "save_file": "save a file", "message": "send a message", "spend": "spend money", "grant_permission": "give a permission",
+    "oneoff_credit": "use one-off credit", "send_private": "send private data to a service", "install_skill": "install a skill",
+}
+
+
 def h_card_ask(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
     """A device asks the person a question: one pending card, made by the store's own rules."""
     body = req.body
@@ -640,7 +778,9 @@ def h_card_ask(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
         except CardError:  # the store's sentence may repeat part of the request; this reply never does
             raise ApiError("invalid_request", "The card was not accepted. Check its kind, text lengths, cost and the "
                                               "extra fields for that kind (card.schema.json).") from None
-    return 201, {"card": home.cards.get(card_id)}
+    record = home.record("card.create", f"Asked whether to {CARD_WORDS.get(body['kind'], 'do something')}",
+                         links={"card": card_id}, egress="none", **_who(req.device))
+    return 201, {"card": home.cards.get(card_id), "recorded": record is not None}
 
 
 def h_card_answer(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
@@ -656,7 +796,11 @@ def h_card_answer(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
         card = home.cards.answer(req.params["id"], decision, req.device.name, always)
     except CardError as exc:
         raise _card_error(exc) from None
-    return 200, {"card": card}
+    said = ("Approved" + (", and always from now on" if always else "")) if decision == "approve" else "Declined"
+    record = home.record("card.answer", f"{said}: {CARD_WORDS.get(card['kind'], 'a question')} (answered on {_word(req.device.name)})",
+                         outcome="ok" if decision == "approve" else "declined", links={"card": card["id"]}, egress="none",
+                         **_who(req.device))
+    return 200, {"card": card, "recorded": record is not None}
 
 
 # ---------------------------------------------------------------- handlers: apps
@@ -737,7 +881,8 @@ def h_apps_add(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
         )
     except apps.AppError as exc:
         raise _app_error(exc) from None
-    return 201, {"app": _app_record(app), "token": token, "token_shown_once": True}
+    return 201, {"app": _app_record(app), "token": token, "token_shown_once": True,
+                 "recorded": _record_app(home, req, "app.create", "Added the app", app.name)}
 
 
 def h_app_update(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
@@ -752,20 +897,21 @@ def h_app_update(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
         app = apps.update_app(name, home.environ, **req.body)
     except apps.AppError as exc:
         raise _app_error(exc) from None
-    return 200, {"app": _app_record(app)}
+    return 200, {"app": _app_record(app), "recorded": _record_app(home, req, "app.update", "Changed the settings of the app", name)}
 
 
 def h_app_remove(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
     from muse import apps
 
     _no_body(req)
+    name = _app_name(req)
     try:
-        removed = apps.remove_app(_app_name(req), home.environ)
+        removed = apps.remove_app(name, home.environ)
     except apps.AppError as exc:
         raise _app_error(exc) from None
     if not removed:
         raise ApiError("not_found", "There is no app with that name.")
-    return 200, {"removed": True}
+    return 200, {"removed": True, "recorded": _record_app(home, req, "app.remove", "Removed the app", name)}
 
 
 def h_app_rotate(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
@@ -776,7 +922,107 @@ def h_app_rotate(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
         app, token = apps.rotate_token(_app_name(req), home.environ)
     except apps.AppError as exc:
         raise _app_error(exc) from None
-    return 200, {"app": _app_record(app), "token": token, "token_shown_once": True}
+    return 200, {"app": _app_record(app), "token": token, "token_shown_once": True,
+                 "recorded": _record_app(home, req, "app.rotate", "Replaced the token of the app", app.name)}
+
+
+def _record_app(home: Home, req: Request, action: str, words: str, name: str) -> bool:
+    """The record of a change to an app: its name, never its token or the token's hash."""
+    return home.record(action, f"{words} {_word(name)}", egress="none", **_who(req.device)) is not None
+
+
+# ---------------------------------------------------------------- handlers: records
+
+
+_ACTION_FILTER = re.compile(r"[a-z][a-z0-9_]{0,31}(?:\.[a-z][a-z0-9_]{0,31}){0,3}\Z")
+
+
+def _records_unavailable(exc: Exception) -> ApiError:
+    log.warning("records: the records could not be used (%s)", type(exc).__name__)
+    if isinstance(exc, ImportError):
+        return ApiError("unavailable", "Records need the `cryptography` package on the home. Install it there with: "
+                                       "pip install 'muse-stack[records]'")
+    return ApiError("unavailable", "The home could not use its records file. Run `muse records verify` on the home.")
+
+
+def _number(text: str, what: str, low: int, high: int) -> int:
+    if not text.isascii() or not text.isdigit() or len(text) > 16 or not low <= int(text) <= high:
+        raise ApiError("invalid_request", f"{what} must be a whole number from {low} to {high}.")
+    return int(text)
+
+
+def h_receipts_list(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
+    """A page of the home's records, newest first, with whether the chain checks out and the last seal."""
+    from muse.records.commands import make_filter
+
+    _query(req, "since", "action", "limit", "before", "left_device")
+    q = req.query
+    limit = _number(q["limit"], "limit", 1, MAX_RECEIPTS_PAGE) if "limit" in q else DEFAULT_RECEIPTS_PAGE
+    before = _number(q["before"], "before", 0, 2**53 - 1) if "before" in q else None
+    since_ms = None
+    if "since" in q:
+        try:
+            parsed = datetime.fromisoformat(q["since"].replace("Z", "+00:00"))
+        except ValueError:
+            parsed = None
+        if parsed is None or parsed.tzinfo is None or parsed.timestamp() < 0:
+            raise ApiError("invalid_request", "since must be a time with a zone, such as 2026-11-01T00:00:00Z.")
+        since_ms = int(parsed.timestamp() * 1000)
+    action = q.get("action")
+    if action is not None and not _ACTION_FILTER.match(action):
+        raise ApiError("invalid_request", "action must be an action name such as files.write, or a family such as files.")
+    if q.get("left_device", "false") not in ("true", "false"):
+        raise ApiError("invalid_request", "left_device must be true or false.")
+    left = q.get("left_device") == "true"
+    try:
+        state = home.records_state()
+    except Exception as exc:
+        raise _records_unavailable(exc) from None
+    keep = make_filter(since_ms, action, False, left)
+    matching = [r for r in reversed(state["records"]) if (before is None or r["seq"] < before) and (keep is None or keep(r))]
+    page = matching[:limit]
+    return 200, {
+        "records": page,
+        "order": "newest_first",
+        "next_before": page[-1]["seq"] if len(matching) > len(page) else None,
+        "verify": state["verify"],
+        "sealed": state["sealed"],
+        "device": state["device"],
+    }
+
+
+def h_receipts_add(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
+    """A device reports something it did. Who did it (`actor`, `mandate`) and when come from the home, never the caller."""
+    from muse.records import format as fmt
+    from muse.records.errors import RecordError
+
+    body = req.body
+    _fields(body, {"action": str, "summary": str, "outcome": str, "cost": (dict, _NONE), "links": dict, "egress": str,
+                   "resource": (str, _NONE)}, required=("action", "summary"))
+    if body["action"].split(".")[0] in HOME_ACTIONS:
+        raise ApiError("invalid_request", "That action name is one only the home itself writes. Use a name of your own, "
+                                          "such as files.write or message.send.")
+    wait = home.allow_record_from(req.device)
+    if wait is not None:
+        raise ApiError("too_many_requests", "This device has added a great many records in the last hour. Wait before adding more.",
+                       retry_after=wait)
+    fields: dict[str, Any] = {"outcome": body.get("outcome", "ok"), "cost": body.get("cost"), "resource": body.get("resource"),
+                              "egress": body.get("egress"), **_who(req.device)}
+    if "links" in body:
+        fields["links"] = body["links"]
+    try:
+        record = home.records().write(body["action"], body["summary"], **fields)
+    except RecordError as exc:
+        if exc.kind == "summary":
+            raise ApiError("invalid_request", f"The summary was not accepted. It must be 1 to {fmt.MAX_SUMMARY_CHARS} characters "
+                                              "on one line, with nothing shaped like a key in it.") from None
+        if exc.kind == "malformed":
+            raise ApiError("invalid_request", "The record was not accepted. Check the action name (dotted, lower-case), the "
+                                              "outcome, the cost, the links and egress (record-format.md).") from None
+        raise _records_unavailable(exc) from None
+    except Exception as exc:
+        raise _records_unavailable(exc) from None
+    return 201, {"record": record, "hash": fmt.record_hash(record), "recorded": True}
 
 
 # ---------------------------------------------------------------- handlers: planned
@@ -839,7 +1085,8 @@ ROUTES: tuple[Route, ...] = (
     _r("PATCH", "/apps/{name}", "apps.write", h_app_update),
     _r("DELETE", "/apps/{name}", "apps.write", h_app_remove),
     _r("POST", "/apps/{name}/rotate", "apps.write", h_app_rotate),
-    _r("GET", "/receipts", "receipts.read", h_not_built, planned=True),
+    _r("GET", "/receipts", "receipts.read", h_receipts_list),
+    _r("POST", "/receipts", "receipts.write", h_receipts_add),
     _r("GET", "/mandates/artifacts", "mandates.read", h_not_built, planned=True),
 )
 

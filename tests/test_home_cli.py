@@ -140,7 +140,7 @@ def test_call_sends_one_request_and_prints_the_reply(monkeypatch, served):
     code, out, err = run(["home", "call", "GET", "/v1/status", *sock], monkeypatch)
     assert code == 0 and json.loads(out)["api_version"] == "1" and token not in out + err
     code, out, err = run(["home", "call", "post", "/v1/pause", *sock], monkeypatch)
-    assert code == 0 and json.loads(out) == {"paused": True}
+    assert code == 0 and json.loads(out) == {"paused": True, "recorded": True}
     code, out, err = run(["home", "call", "POST", "/v1/apps", "--data", '{"name": "one", "priority": "normal"}', *sock], monkeypatch)
     assert code == 0 and json.loads(out)["app"]["name"] == "one"
     code, out, err = run(["home", "call", "GET", "/v1/nope", *sock], monkeypatch)

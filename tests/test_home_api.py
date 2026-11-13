@@ -100,13 +100,13 @@ def test_status_failure_is_a_plain_503_without_the_exception(rig, caplog):
 
 
 def test_pause_and_resume_are_the_same_switch_as_the_cli(rig):
-    assert rig.ok("POST", "/v1/pause") == {"paused": True}
+    assert rig.ok("POST", "/v1/pause") == {"paused": True, "recorded": True}
     assert queue.is_paused() and (Path(os.environ["MUSE_HOME"]) / "paused").exists()
     assert rig.ok("GET", "/v1/status")["paused"] is True
-    assert rig.ok("POST", "/v1/pause") == {"paused": True}  # idempotent
-    assert rig.ok("POST", "/v1/resume") == {"paused": False, "was_paused": True}
+    assert rig.ok("POST", "/v1/pause") == {"paused": True, "recorded": True}  # idempotent
+    assert rig.ok("POST", "/v1/resume") == {"paused": False, "was_paused": True, "recorded": True}
     assert not queue.is_paused() and rig.ok("GET", "/v1/status")["paused"] is False
-    assert rig.ok("POST", "/v1/resume") == {"paused": False, "was_paused": False}
+    assert rig.ok("POST", "/v1/resume") == {"paused": False, "was_paused": False, "recorded": False}  # nothing happened
     queue.set_paused()  # `muse pause` in a terminal shows up here too
     assert rig.ok("GET", "/v1/status")["paused"] is True
     rig.fails("POST", "/v1/pause", {"why": "x"}, 400, "invalid_request")
@@ -168,7 +168,7 @@ def test_a_key_is_stored_through_the_key_store_and_never_echoed(rig, caplog):
         got = rig.ok("POST", "/v1/keys/groq", {"key": f"  {KEY_CANARY}\n"})
     assert got == {
         "provider": "groq", "stored": ["GROQ_API_KEY"], "backend": "dotenv", "warnings": [], "still_needed": [],
-        "restart": {"needed": True, "proxy_running": True, "command": "muse restart"},
+        "restart": {"needed": True, "proxy_running": True, "command": "muse restart"}, "recorded": True,
     }
     assert KEY_CANARY not in json.dumps(got) and KEY_CANARY not in caplog.text
     assert f"GROQ_API_KEY={KEY_CANARY}" in rig.env_file.read_text()  # cleaned of the stray space and newline
@@ -395,7 +395,7 @@ def test_apps_are_created_changed_rotated_and_removed(rig):
     rotated = rig.ok("POST", "/v1/apps/notes-batch/rotate")
     assert rotated["token"] != token and rotated["app"]["name"] == "notes-batch"
     assert apps.find_by_token(token) is None and apps.find_by_token(rotated["token"]).name == "notes-batch"
-    assert rig.ok("DELETE", "/v1/apps/notes-batch") == {"removed": True}
+    assert rig.ok("DELETE", "/v1/apps/notes-batch") == {"removed": True, "recorded": True}
     assert rig.ok("GET", "/v1/apps") == {"apps": []} and apps.find_by_token(rotated["token"]) is None
     # A token appears in exactly the reply that issued it, and no hash appears anywhere.
     everything = "".join(rig.replies)
@@ -441,7 +441,7 @@ def test_a_malformed_registry_is_reported_and_never_overwritten(rig):
 # ---------------------------------------------------------------- planned, and the error shape
 
 
-@pytest.mark.parametrize("path", ["/v1/receipts", "/v1/receipts?since=2026-11-13T00:00:00Z", "/v1/mandates/artifacts"])
+@pytest.mark.parametrize("path", ["/v1/mandates/artifacts"])
 def test_planned_calls_answer_not_built(rig, path):
     err = rig.fails("GET", path, None, 501, "not_built")
     assert set(err) == {"code", "message"}
@@ -585,7 +585,9 @@ def test_no_secret_or_prompt_in_any_reply_or_log_line(rig, caplog, capfd):
         rig.ok("POST", "/v1/pause")
         rig.ok("POST", "/v1/resume")
         rig.ok("DELETE", f"/v1/jobs/{job}")
-        rig.fails("GET", "/v1/receipts", None, 501, "not_built")
+        rig.ok("POST", "/v1/receipts", {"action": "files.write", "summary": "Wrote a file"}, status=201)
+        rig.fails("POST", "/v1/receipts", {"action": "files.write", "summary": PROMPT_CANARY + "\nsecond line"}, 400, "invalid_request")
+        rig.ok("GET", "/v1/receipts")
         rig.fails("GET", "/v1/mandates/artifacts", None, 501, "not_built")
         rig.fails("GET", f"/v1/cards/{ERR_CANARY}", None, 404, "not_found")
         rig.ok("DELETE", "/v1/apps/one")

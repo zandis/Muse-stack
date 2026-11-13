@@ -161,6 +161,31 @@ class FakeHome(api.Home):
         if self.state != "cards":
             wanted = [c for c in wanted if c["state"] != "pending"] + [c for c in wanted if c["state"] == "pending"][:1]
         seed_cards(self.cards, wanted, self.clock())
+        self._seed_records()
+
+    def _seed_records(self) -> None:
+        """A few signed demo records, oldest first, so the Records screen and its filters have something to show:
+        the person's own actions, a host bot's, something sent to a service, and one that does not say where it went."""
+        from muse.records.home import HomeRecords
+
+        now = self.clock()
+        bot = {"actor": "helper", "mandate": "device:openmausbot-tools"}
+        demo: tuple[tuple[float, str, str, dict[str, Any]], ...] = (
+            (86400 * 2, "key.store", "Stored a key for the service gemini", {"egress": "none"}),
+            (86400 + 7200, "card.create", "Asked whether to save a file", {**bot, "egress": "none"}),
+            (86400 + 7100, "card.answer", "Approved: save a file (answered on desktop)", {"egress": "none"}),
+            (86400 + 7000, "files.write", "A host bot says it saved a file", bot),  # its own report: it did not say
+            (7200, "llm.call", "A skill used Gemini: 3 requests", {**bot, "egress": "service:gemini"}),
+            (7190, "skill.run", "Ran the skill files-answer for a host bot", {**bot, "egress": "host:openmausbot-tools"}),
+            (3600, "home.pause", "Paused the queue", {"egress": "none"}),
+            (3000, "home.resume", "Resumed the queue", {"egress": "none"}),
+            (600, "card.answer", "Declined: spend money (answered on desktop)", {"egress": "none", "outcome": "declined"}),
+        )
+        try:
+            for age, action, summary, fields in demo:
+                HomeRecords(self.environ, clock=lambda t=now - age: t).write(action, summary, **fields)
+        except Exception:
+            pass  # no `cryptography` here: the fake home simply has no records, as a real one would not
 
     def _seed_apps(self) -> None:
         from muse import apps

@@ -409,15 +409,67 @@ def t_check_permission(ctx: Context, args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_RECORD_ACTION = re.compile(r"[a-z][a-z0-9_]{0,31}(?:\.[a-z][a-z0-9_]{0,31}){1,3}")
+# Action families only the home writes (muse.home.api.HOME_ACTIONS); a host's report cannot use them.
+HOME_ACTIONS = ("home", "card", "app", "key", "job", "skill", "mandate", "records")
+_RECORD_OUTCOMES = {"done": "ok", "failed": "failed", "declined": "declined", "skipped": "declined"}
+RECORD_NOTE = ("This is this host's own report: Muse wrote down what it was told and cannot check it. It is marked as done by "
+               "a helper under this host's device, never as done by the person.")
+
+
+def record_action_name(text: str) -> str:
+    """The dotted action name a record carries. A name already in that form is kept (unless it is one of the
+    home's own families); anything else, such as 'sent an email', becomes `host.sent_an_email`."""
+    text = text.strip().lower()
+    if _RECORD_ACTION.fullmatch(text) and text.split(".")[0] not in HOME_ACTIONS:
+        return text
+    slug = re.sub(r"[^a-z0-9]+", "_", text).strip("_")[:32].strip("_")
+    if not slug or not slug[0].isalpha():
+        slug = ("x_" + slug)[:32].strip("_")
+    return f"host.{slug}"
+
+
+def _minor_units(cost: Mapping[str, Any]) -> dict[str, Any]:
+    """{"amount": "30", "currency": "TWD"} as the record's {"currency": "TWD", "minor": 3000}."""
+    from decimal import Decimal, InvalidOperation
+
+    from muse.records.commands import MINOR_DIGITS  # a table of decimal places; nothing secret, no signing code
+
+    digits = MINOR_DIGITS.get(cost["currency"])
+    if digits is None:
+        raise ToolError("invalid_input", "Muse does not know that currency's smallest unit, so it cannot record the cost. "
+                                         "Leave 'cost' out and say the amount in the summary.")
+    try:
+        minor = Decimal(cost["amount"]).scaleb(digits)
+    except InvalidOperation:
+        raise _invalid("'cost'", "is not an amount") from None
+    if minor != minor.to_integral_value() or not 0 <= minor < 2**53:
+        raise _invalid("'cost'", "has more decimal places than that currency has, or is too large")
+    return {"currency": cost["currency"], "minor": int(minor)}
+
+
 def t_record_action(ctx: Context, args: dict[str, Any]) -> dict[str, Any]:
-    body = {k: args[k] for k in ("action", "summary", "outcome", "cost") if k in args}
-    outcome, payload = ctx.home.call("POST", "/v1/receipts", body, also_ok=("not_built", "method_not_allowed", "not_found"))
-    if outcome != "ok":
-        return {"recorded": False, "reason": "records are not built yet",
+    action = record_action_name(args["action"])
+    body: dict[str, Any] = {"action": action, "summary": args["summary"], "outcome": _RECORD_OUTCOMES[args["outcome"]]}
+    if "cost" in args:
+        body["cost"] = _minor_units(args["cost"])
+    if "sent_to" in args:
+        body["egress"] = args["sent_to"]
+    try:
+        outcome, payload = ctx.home.call("POST", "/v1/receipts", body,
+                                         also_ok=("not_built", "method_not_allowed", "not_found", "unavailable"))
+    except ToolError as err:
+        if err.code == "invalid_input":
+            raise ToolError("invalid_input", "Muse did not accept the record. The summary must be one line of at most 200 "
+                                             "characters with no key, password or long code in it.") from None
+        raise
+    record = payload.get("record") if outcome == "ok" else None
+    if not isinstance(record, Mapping) or not isinstance(record.get("seq"), int):
+        return {"recorded": False, "reason": "this home cannot write records right now",
                 "what_to_do": "Carry on. Nothing was written anywhere; do not tell the person it was recorded.",
                 "scope_note": SCOPE_NOTE}
-    record_id = payload.get("id") if isinstance(payload.get("id"), str) else None
-    return {"recorded": True, "id": record_id, "scope_note": SCOPE_NOTE}
+    return {"recorded": True, "seq": record["seq"], "hash": _text(payload.get("hash")), "action": action,
+            "recorded_as": _text(record.get("actor")), "about": RECORD_NOTE, "scope_note": SCOPE_NOTE}
 
 
 # ---------------------------------------------------------------- queue_job, job_status
@@ -607,15 +659,22 @@ TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         "record_action", "Write down what was done",
-        "Add an entry to the person's Muse records saying what you did, so they can see it later. Records are NOT BUILT "
-        "YET: until they are, this returns recorded = false and writes nothing anywhere. Never tell the person something "
-        "was recorded unless recorded is true. Only what you report here would be recorded; Muse does not see what this "
-        "host does with its own tools.",
+        "Add an entry to the person's Muse records saying what you did, so they can see it later. The entry is signed "
+        "by the person's home and cannot be changed afterwards. It returns recorded = true with the entry's number (seq) "
+        "and hash; never tell the person something was recorded unless recorded is true. Only what you report here is "
+        "recorded, as this host's own report: Muse does not see what this host does with its own tools and cannot check "
+        "the report. The entry is marked as done by a helper under this host, never as done by the person. "
+        + SCOPE_NOTE,
         _obj({
-            "action": _str(80, "What kind of action, in a few words.", minLength=1),
-            "summary": _str(300, "What was done, in one or two plain sentences. No private content, no keys.", minLength=1),
+            "action": _str(80, "What kind of action: a dotted name such as files.write, message.send or web.search, or a "
+                               "few words (Muse then files it under host.<your words>).", minLength=1),
+            "summary": _str(200, "What was done, in one plain sentence on one line. Say it in words: no private content, "
+                                 "no names of people, no keys or long codes.", minLength=1),
             "outcome": {"type": "string", "maxLength": 12, "enum": ["done", "failed", "declined", "skipped"], "description": "How it ended."},
             "cost": _MONEY,
+            "sent_to": _str(72, 'Where the content went: "none" if it stayed on this computer, or "service:<name>" in '
+                                'lower case (such as service:gmail) if it was sent to an outside service. Leave it out if '
+                                "you do not know.", minLength=1, pattern=r"^(?:none|service:[a-z0-9][a-z0-9._-]{0,63})$"),
         }, ("action", "summary", "outcome")),
         t_record_action, False,
     ),

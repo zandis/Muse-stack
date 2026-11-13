@@ -27,7 +27,7 @@ def test_every_route_is_in_the_file_and_every_listed_route_is_served(spec):
     listed = documented(spec)
     assert served - listed == set(), "served but missing from home-api.v1.yaml"
     assert listed - served == set(), "in home-api.v1.yaml but not served"
-    assert len(api.route_table()) == len(served) == 21  # no route is declared twice
+    assert len(api.route_table()) == len(served) == 22  # no route is declared twice
 
 
 def test_a_route_added_to_the_table_would_fail_this_test(spec, monkeypatch):
@@ -45,7 +45,8 @@ def test_the_table_is_exactly_the_architecture_list_plus_today(spec):
         ("GET", "/v1/cards"), ("POST", "/v1/cards"), ("GET", "/v1/cards/{id}"), ("POST", "/v1/cards/{id}/answer"),
         ("POST", "/v1/pause"), ("POST", "/v1/resume"),
         ("GET", "/v1/apps"), ("POST", "/v1/apps"), ("PATCH", "/v1/apps/{name}"), ("DELETE", "/v1/apps/{name}"),
-        ("POST", "/v1/apps/{name}/rotate"), ("GET", "/v1/receipts"), ("GET", "/v1/mandates/artifacts"),
+        ("POST", "/v1/apps/{name}/rotate"), ("GET", "/v1/receipts"), ("POST", "/v1/receipts"),
+        ("GET", "/v1/mandates/artifacts"),
     ])
     assert all(path.startswith(f"/v{API_VERSION}/") for _, path in api.route_table())
     assert spec["info"]["version"] == API_VERSION and spec["openapi"].startswith("3.1")
@@ -53,7 +54,7 @@ def test_the_table_is_exactly_the_architecture_list_plus_today(spec):
 
 def test_planned_routes_are_marked_planned_in_both_places(spec):
     planned = {(r.method, r.path) for r in api.ROUTES if r.planned}
-    assert planned == {("GET", "/v1/receipts"), ("GET", "/v1/mandates/artifacts")}
+    assert planned == {("GET", "/v1/mandates/artifacts")}
     for path, item in spec["paths"].items():
         for method, op in item.items():
             is_planned = (method.upper(), path) in planned
@@ -81,7 +82,7 @@ def test_path_parameters_are_declared(spec):
 
 def test_bodies_are_documented_where_the_server_takes_one(spec):
     takes_body = {("POST", "/v1/keys/{provider}"), ("POST", "/v1/jobs"), ("POST", "/v1/cards"), ("POST", "/v1/cards/{id}/answer"), ("POST", "/v1/apps"),
-                  ("PATCH", "/v1/apps/{name}")}
+                  ("PATCH", "/v1/apps/{name}"), ("POST", "/v1/receipts")}
     for path, item in spec["paths"].items():
         for method, op in item.items():
             assert ("requestBody" in op) == ((method.upper(), path) in takes_body), (method, path)

@@ -33,7 +33,8 @@ EXPECTED_TOOLS = ["allowance_status", "pause_status", "suggest_service", "ask_ap
 class Rig:
     def __init__(self, state: str = "normal") -> None:
         self.home = fake.FakeHome(state)
-        self._ctx = running(self.home, StaticVerifier({HOST: HOST_TOKEN, PHONE: PHONE_TOKEN}))
+        # As `muse hosts setup` makes it: the tools server's device is a `host`, the person's phone an `owner`.
+        self._ctx = running(self.home, StaticVerifier({HOST: HOST_TOKEN, PHONE: PHONE_TOKEN}, roles={HOST: "host"}))
         self.srv = self._ctx.__enter__()
         self.phone = client_for(self.srv, PHONE_TOKEN)
         self.ctx = tools.Context(home=tools.HomeLink(client_for(self.srv, HOST_TOKEN)))
@@ -137,7 +138,8 @@ def test_tools_that_touch_approval_or_permission_say_what_muse_does_not_control(
     for name in ("ask_approval", "check_approval", "check_permission", "run_skill"):
         assert SCOPE_NOTE in tools.BY_NAME[name].description
     assert "advisory" in tools.BY_NAME["check_permission"].description.lower()
-    assert "not built" in tools.BY_NAME["record_action"].description.lower()
+    assert "not built" not in tools.BY_NAME["record_action"].description.lower()
+    assert SCOPE_NOTE in tools.BY_NAME["record_action"].description and "own report" in tools.BY_NAME["record_action"].description
     assert "cannot stop this host's own shell or file tools" in SCOPE_NOTE
 
 
@@ -389,22 +391,56 @@ def test_check_permission_bad_input(rig):
 # ---------------------------------------------------------------- records
 
 
-def test_record_action_says_plainly_that_nothing_was_recorded(rig, tmp_path):
+def test_record_action_writes_a_signed_record_on_the_home_and_returns_its_number_and_hash(rig):
+    pytest.importorskip("cryptography")
+    from muse.records import format as fmt
+    from muse.records.home import HomeRecords
+
+    before = len(HomeRecords(rig.home.environ).records())
     got = rig.call("record_action", {"action": "saved a file", "summary": "Wrote the weekly digest.", "outcome": "done",
-                                     "cost": {"amount": "0", "currency": "USD"}})
-    assert got["recorded"] is False and got["reason"] == "records are not built yet" and "do not tell the person" in got["what_to_do"]
-    assert not list(Path(os.environ["MUSE_HOME"]).iterdir())  # no local fallback log anywhere
-    assert not [p for p in rig.home.root.iterdir() if "record" in p.name or "receipt" in p.name]
-    for bad in ({}, {"action": "a", "summary": "s", "outcome": "great"}, {"action": "a", "summary": "s" * 301, "outcome": "done"}):
+                                     "cost": {"amount": "30", "currency": "TWD"}, "sent_to": "none"})
+    record = HomeRecords(rig.home.environ).records()[-1]
+    assert got == {"recorded": True, "seq": before, "hash": fmt.record_hash(record), "action": "host.saved_a_file",
+                   "recorded_as": "helper", "about": tools.RECORD_NOTE, "scope_note": SCOPE_NOTE}
+    assert (record["action"], record["actor"], record["mandate"], record["outcome"]) == ("host.saved_a_file", "helper", f"device:{HOST}", "ok")
+    assert record["summary"] == "Wrote the weekly digest." and record["cost"] == {"currency": "TWD", "minor": 3000} and record["egress"] == "none"
+    assert fmt.verify_chain(HomeRecords(rig.home.environ).records()) == before + 1
+    assert not list(Path(os.environ["MUSE_HOME"]).iterdir())  # written by the home, in the home's folder: no copy here
+    sent = rig.call("record_action", {"action": "message.send", "summary": "Sent a message", "outcome": "skipped", "sent_to": "service:gmail"})
+    last = HomeRecords(rig.home.environ).records()[-1]
+    assert sent["seq"] == before + 1 and (last["action"], last["outcome"], last["egress"]) == ("message.send", "declined", "service:gmail")
+    for bad in ({}, {"action": "a", "summary": "s", "outcome": "great"}, {"action": "a", "summary": "s" * 201, "outcome": "done"},
+                {"action": "a", "summary": "two\nlines", "outcome": "done"}, {"action": "a", "summary": "s", "outcome": "done", "sent_to": "host:me"},
+                {"action": "a", "summary": "s", "outcome": "done", "sent_to": "home"}, {"action": "a", "summary": "s", "outcome": "done", "actor": "person"},
+                {"action": "a", "summary": "s", "outcome": "done", "cost": {"amount": "1", "currency": "XTS"}},
+                {"action": "a", "summary": "s", "outcome": "done", "cost": {"amount": "0.001", "currency": "USD"}}):
         rig.call("record_action", bad, error="invalid_input")
+    assert len(HomeRecords(rig.home.environ).records()) == before + 2
 
 
-def test_record_action_reports_a_record_once_the_home_keeps_them(rig, monkeypatch):
+@pytest.mark.parametrize("given,stored", [
+    ("files.write", "files.write"), ("Message.Send", "message.send"), ("saved a file", "host.saved_a_file"), ("web search!", "host.web_search"),
+    ("home.pause", "host.home_pause"), ("card.answer", "host.card_answer"), ("key.store", "host.key_store"), ("skill.run", "host.skill_run"),
+    ("3d print", "host.x_3d_print"), ("\u5beb\u5165\u6a94\u6848", "host.x"), ("a" * 80, "host." + "a" * 32), ("a.b.c.d.e", "host.a_b_c_d_e"),
+])
+def test_a_hosts_action_name_becomes_a_dotted_name_that_is_never_one_of_the_homes(given, stored):
+    from muse.records import format as fmt
+
+    assert tools.record_action_name(given) == stored
+    assert fmt._ACTION.match(stored) and stored.split(".")[0] not in tools.HOME_ACTIONS
+
+
+def test_record_action_says_plainly_when_nothing_was_recorded(rig, monkeypatch):
+    for reply in ((503, {"error": {"code": "unavailable", "message": "x"}}), (501, {"error": {"code": "not_built", "message": "x"}}),
+                  (201, {"record": "odd"}), (201, {})):
+        monkeypatch.setattr(rig.ctx.home.client, "call", lambda m, p, b=None, reply=reply: reply)
+        got = rig.call("record_action", {"action": "a", "summary": "s", "outcome": "done"})
+        assert got["recorded"] is False and "do not tell the person" in got["what_to_do"] and got["scope_note"] == SCOPE_NOTE
     sent = []
-    monkeypatch.setattr(rig.ctx.home.client, "call", lambda m, p, b=None: (sent.append((m, p, b)) or (201, {"id": "r-1"})))
-    got = rig.call("record_action", {"action": "a", "summary": "s", "outcome": "done"})
-    assert got == {"recorded": True, "id": "r-1", "scope_note": SCOPE_NOTE}
-    assert sent == [("POST", "/v1/receipts", {"action": "a", "summary": "s", "outcome": "done"})]
+    monkeypatch.setattr(rig.ctx.home.client, "call", lambda m, p, b=None: (sent.append((m, p, b)) or (201, {"record": {"seq": 4, "actor": "helper"}, "hash": "ab" * 32})))
+    got = rig.call("record_action", {"action": "a", "summary": "s", "outcome": "failed"})
+    assert got["recorded"] is True and got["seq"] == 4 and got["hash"] == "ab" * 32
+    assert sent == [("POST", "/v1/receipts", {"action": "host.a", "summary": "s", "outcome": "failed"})]  # never an actor, a device or a time
 
 
 # ---------------------------------------------------------------- the queue
@@ -429,6 +465,8 @@ def test_a_batch_job(rig):
 
 def test_job_status_of_a_finished_job_gives_the_file_not_the_answer(rig):
     done = next(j for j in rig.home.queue().list() if j.status == "done")
+    rig.call("job_status", {"id": done.id}, error="not_found")  # somebody else's job: a host sees only its own
+    rig.home.book.set_job_owner(done.id, HOST)
     job = rig.call("job_status", {"id": done.id})["job"]
     assert job["status"] == "done" and job["service"] == "gemini" and job["cost_usd"] == 0.0
     assert set(job) == {"id", "status", "kind", "task", "by", "allow_paid", "attempts", "times_held_back", "next_try_at",
