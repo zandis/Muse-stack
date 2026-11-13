@@ -39,7 +39,14 @@ test.describe('screenshots', () => {
           await page.getByTestId('pause').focus();
           await expect(page.getByTestId('unreachable')).toBeVisible({ timeout: 20_000 });
         }
+        // The page scrolls inside its frame, so make the window as tall as the content to show all of it.
+        const extra = await page.evaluate(() => {
+          const el = document.querySelector('.scroll');
+          return el ? el.scrollHeight - el.clientHeight : 0;
+        });
+        if (extra > 0) await page.setViewportSize({ width: v.viewport.width, height: v.viewport.height + extra });
         await page.screenshot({ path: join(dir as string, `today-${v.name}-${state}.png`), fullPage: true });
+        await page.setViewportSize(v.viewport);
         if (state === 'normal') {
           await page.goto('/tray');
           await expect(page.getByTestId('tray-gauge')).toBeVisible();

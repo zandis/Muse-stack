@@ -657,8 +657,8 @@ svg.i {
   margin-left: -10px;
 }
 .tip {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   padding: 8px 8px 8px 14px;
@@ -671,8 +671,14 @@ svg.i {
 .tip > svg {
   color: var(--accent);
 }
-.tip .btn.small {
-  padding: 4px 12px;
+.tip .sp {
+  flex: 1 1 11em;
+}
+.tipacts {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
 }
 .gnext {
   text-wrap: balance;

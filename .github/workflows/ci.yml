@@ -45,6 +45,35 @@ jobs:
         working-directory: core
         run: cargo test --locked
 
+  app:
+    # The app (app/): types, lint, unit tests and a production build of the front end,
+    # then the Rust bridge to the home (no WebKit needed). The end-to-end tests
+    # (`pnpm e2e`) and the desktop build are run locally for now; see app/README.md.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: pnpm, the version package.json names
+        run: corepack enable && corepack prepare pnpm@10.28.0 --activate
+      - name: Install exactly what the lock file says (no install scripts are allowed to run)
+        run: pnpm install --frozen-lockfile
+      - name: Types
+        run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint
+      - name: Unit tests
+        run: pnpm test
+      - name: Build
+        run: pnpm build
+      - name: Bridge to the home (Rust, no WebKit)
+        working-directory: app/src-tauri
+        run: cargo test --locked -p muse-home-link
+
   proxy-integration:
     # Starts the real LiteLLM proxy with the hook loaded against a fake
     # upstream. No provider is called and no real key is used.

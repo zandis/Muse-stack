@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What the app's own two windows may ask Rust to do: talk to the home, open an allowed link, show the main window. No file, shell, HTTP or opener permission is given to the web view; remote pages get nothing (no 'remote' entry).",
+  "windows": ["main", "tray"],
+  "permissions": ["core:default", "allow-home-request", "allow-open-external", "allow-show-main-window"]
+}

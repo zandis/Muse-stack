@@ -221,12 +221,14 @@ export function Today() {
               <div className="tip" data-testid="tip">
                 <Icon name="bolt" />
                 <span className="sp">{typeof tip.minutes_estimate === 'number' ? t('tip', redact(tip.name), fmtNumber(tip.minutes_estimate, lang)) : t('tip_plain', redact(tip.name))}</span>
-                <Link to="services" className="btn sec small">
-                  {t('connect')}
-                </Link>
-                <button type="button" className="icon-btn" aria-label={t('tip_x')} onClick={dismiss}>
-                  <Icon name="x" />
-                </button>
+                <span className="tipacts">
+                  <Link to="services" className="btn sec small">
+                    {t('connect')}
+                  </Link>
+                  <button type="button" className="icon-btn" aria-label={t('tip_x')} onClick={dismiss}>
+                    <Icon name="x" />
+                  </button>
+                </span>
               </div>
             ) : null}
           </div>
