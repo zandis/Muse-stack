@@ -8,7 +8,7 @@ muse:
   version: "0.1.0"
   entry: skill.py:run
   tier_default: everyday
-  privacy_default: private
+  privacy_default: standard
   budget:
     requests: 12
     tokens: 60000
@@ -28,7 +28,7 @@ Ask a question; get an answer taken only from the files in the folders you name,
 How it works:
 
 1. It reads the text files in the folders you name (text, Markdown, CSV, JSON, HTML; PDF only when a PDF reader is installed) and keeps a search index of their text in Muse's own folder on this computer. Unchanged files are not read again.
-2. It finds the few passages most related to your question on this computer. Only those passages and your question are sent to a model, through Muse's router, under the privacy class of the run (default: private).
+2. It finds the few passages most related to your question on this computer. Only those passages and your question are sent to a model, through Muse's router, under the privacy class of the run. The default is standard, the owner's chosen default: free services may learn from what is sent. Run with `--privacy private` to send only to services that do not, or `--privacy local` to keep everything on this computer.
 3. The model answers from those passages only and cites them like [2].
 4. Before you see it, Muse checks that every statement cites a passage that exists and shares words with it. An answer that fails is tried once more on a stronger model; if that fails too, you are told, and the answer is marked as not checked.
 

@@ -56,7 +56,7 @@ muse:
   version: "0.1.0"
   entry: skill.py:run
   tier_default: everyday
-  privacy_default: private
+  privacy_default: standard
   budget:
     requests: 12
     tokens: 60000

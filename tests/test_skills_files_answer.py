@@ -334,7 +334,7 @@ def test_an_english_question_end_to_end(env, proxy, docs):
     result = ask(env, "How much is the monthly rent?", docs, privacy=None, top_k=2)
     assert result.status == "done" and result.check == {"status": "passed", "reasons": []}
     request = chats(proxy)[0]
-    assert request["task"] == "everyday" and request["privacy"] == "private"  # the skill's own defaults
+    assert request["task"] == "everyday" and request["privacy"] == "standard"  # the skill's own defaults
     assert request["max_tokens"] == 900 and len(proxy.requests) == 1  # ONE model call
     sent = request["messages"][1]["content"]
     assert "[1] " in sent and "18,500 dollars" in sent and "How much is the monthly rent?" in sent

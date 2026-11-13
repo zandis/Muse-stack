@@ -45,12 +45,12 @@ def test_files_answer_through_the_real_router(make_proxy, upstream, docs, tmp_pa
     upstream.set_reply("b-model", ANSWER)
     base = ("skills", "run", "files-answer", "--folder", str(docs), "--input", "question=How much is the monthly rent?")
 
-    # The skill's own class is `private`. No provider here may take that: the router refuses, and nothing is downgraded.
-    code, out, err = run_cli(capsys, *base)
+    # Asked to keep it private, no provider here may take it: the router refuses, and nothing is downgraded.
+    code, out, err = run_cli(capsys, *base, "--privacy", "private")
     assert code == 1 and out == "" and "Refused for privacy" in err and "did not lower the privacy class" in err
     assert models(upstream) == []  # nothing left the router, not even an embedding
 
-    code, out, err = run_cli(capsys, *base, "--privacy", "standard", "--json")
+    code, out, err = run_cli(capsys, *base, "--json")  # the skill's own default class is `standard`
     result = json.loads(out)
     assert code == 0 and result["status"] == "done" and result["check"] == {"status": "passed", "reasons": []}
     assert result["output"]["text"] == "The monthly rent is 18,500 dollars [1].\n\nSources:\n[1] lease.md › paragraph 2"
