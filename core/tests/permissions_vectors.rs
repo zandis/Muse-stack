@@ -169,11 +169,8 @@ fn usage_of(v: &Value) -> Usage {
 }
 
 fn spent_of(v: &Value) -> SpentSet {
-    let mut s = SpentSet::default();
-    for row in rows(Some(v)) {
-        s.insert(&text(&row[0]), int(&row[1]), 0).unwrap();
-    }
-    s
+    let entries: Vec<(String, i64)> = rows(Some(v)).iter().map(|row| (text(&row[0]), int(&row[1]))).collect();
+    SpentSet::from_entries(&entries, 10_000)
 }
 
 fn revoked_of(v: &Value, root: &str) -> RevocationList {

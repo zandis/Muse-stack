@@ -7,7 +7,9 @@ no files, no clock (`now` is always an argument), no async, no `unsafe`.
 Each function returns what the Python function of the same name returns for
 the same input. That is checked, not promised: `core/conformance/*.json` holds
 5,148 inputs with the answers Python gave, and `cargo test` replays all of them
-(floats must match bit for bit).
+(floats must match bit for bit). Permissions add 584 more of a different kind
+(see "Permissions" below); signing a permission is also the one place the crate
+uses randomness, for the fresh key of each signed block.
 
 ## Run it
 
@@ -46,12 +48,38 @@ cannot hold is `{"$float": "nan" | "inf" | "-inf"}`.
 | `ration.burn_rate`, `pace_position`, `pace_release_at`, `pace_holds` (and `Limit`, `Pace`, `Settings`) | `ration::` same names | 30, 494, 684, 348 |
 | `ration.options_trailer`, `parse_options` | `ration::` same names | 33, 59 |
 | `cache.cacheable`, `cache_key` | `cache::` same names | 236, 104 |
+| `muse.permissions` (`propose_from_fields`, `issue`, `narrow`, `check`, `describe`, `RevocationList`, `SpentSet`) | `permissions::` same names | 584 (see below) |
 
 Supporting modules: `pyjson` (JSON read and written by Python's rules, needed
 for the cache key and for finding JSON inside error messages) and `pytext`
 (`str.strip`, `int()`, `float()`, `str.isdigit`, `repr(float)`).
 
-Dependencies: `serde`, `serde_json` (feature `float_roundtrip`), `sha2`.
+### Permissions
+
+`permissions` is the one module that is not a port of plain arithmetic: a permission is a
+signed [Biscuit](https://www.biscuitsec.org/) token (`docs/spec/interfaces/permission-token.md`).
+Rust is the reference here and Python (`muse/permissions`, over `biscuit-python`) is the twin.
+Every block of a token is signed with a fresh random key, so the two sides can never produce
+the same bytes. `conformance/permissions.json` therefore carries tokens made once with
+test-only keys (`conformance/fixtures/`), and both sides must read them the same way:
+the same decision and reason for each request, the same sentence in English and Traditional
+Chinese, the same revocation identifiers. `tests/permissions_vectors.rs` replays the file;
+`tests/permissions.rs` holds the property tests (a narrowed token never allows what its
+parent refuses; a block that tries to widen changes nothing).
+
+```sh
+cargo test --test permissions --test permissions_vectors
+# only when the schema changes (new random tokens, then re-export from Python):
+cargo test --test permissions_vectors -- --ignored generate_fixture_tokens
+python scripts/export_conformance.py --make-python-fixtures && python scripts/export_conformance.py
+```
+
+Recomputing `permissions.json` needs `pip install "biscuit-python==0.4.0"`; without it the
+exporter leaves that file as it is and says so.
+
+Dependencies: `serde`, `serde_json` (feature `float_roundtrip`), `sha2`, and for permissions
+`biscuit-auth` pinned to `=6.0.0` (default features off, `datalog-macro` on), which brings
+the Ed25519 and P-256 crates it signs with. This crate adds no cryptography of its own.
 `chrono` and `chrono-tz` are dev-dependencies only, used by
 `tests/pacific_tzdata.rs` to check the Pacific midnight rule against the tz
 database; the library itself uses the same arithmetic rule as the Python (see

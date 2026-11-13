@@ -86,23 +86,29 @@ class PermissionStore:
         if os.name == "posix":
             os.chmod(self.dir, 0o700)
 
-    @staticmethod
-    def name_of(mandate: Mandate) -> str:
-        """`<first 12 of the mandate id's hash>-<first 12 of the last block's revocation id>`."""
-        return f"{mandate.id[3:15]}-{revocation_ids(mandate)[-1][:12]}"
-
     def save(self, mandate: Mandate) -> str:
+        """Store a token and return its name: the first 12 hex digits of the mandate id for
+        an issued permission, plus `-` and 8 of the last block's revocation id for a narrowed
+        copy (so a family sorts together and the permission itself has the short name)."""
         self._ensure()
-        name = self.name_of(mandate)
-        _write_private(self.dir / f"{name}.token", mandate.to_base64() + "\n")
+        token = mandate.to_base64()
+        last = revocation_ids(mandate)[-1]
+        name = mandate.id[3:15] + (f"-{last[:8]}" if mandate.levels else "")
+        path = self.dir / f"{name}.token"
+        if path.is_file() and path.read_text(encoding="utf-8").strip() != token:
+            name = f"{mandate.id[3:15]}-{last[:16]}"  # the same draft signed twice, or a clash of 8 digits
+        _write_private(self.dir / f"{name}.token", token + "\n")
         return name
 
     def names(self) -> list[str]:
         return sorted(p.stem for p in self.dir.glob("*.token")) if self.dir.is_dir() else []
 
     def resolve(self, prefix: str) -> str:
-        """The one stored name that starts with `prefix`."""
-        found = [n for n in self.names() if n.startswith(prefix)]
+        """The stored name equal to `prefix`, or else the one name that starts with it."""
+        names = self.names()
+        if prefix in names:
+            return prefix
+        found = [n for n in names if n.startswith(prefix)]
         if len(found) != 1:
             raise PermissionError("not_found" if not found else "ambiguous", f"{len(found)} stored permissions start with {prefix!r}")
         return found[0]

@@ -210,6 +210,11 @@ impl SpentSet {
         self.entries.is_empty()
     }
 
+    /// Rebuild a set from stored (key, until) pairs.
+    pub fn from_entries(entries: &[(String, i64)], capacity: usize) -> SpentSet {
+        SpentSet { capacity, entries: entries.iter().cloned().collect() }
+    }
+
     /// (key, until) pairs sorted by key, for the caller to store.
     pub fn entries(&self) -> Vec<(String, i64)> {
         self.entries.iter().map(|(k, v)| (k.clone(), *v)).collect()

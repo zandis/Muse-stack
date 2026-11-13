@@ -14,7 +14,9 @@ Nothing here has been reviewed by an outside party. The plan books that review a
 | `biscuit-auth` 6.0.0 is the latest stable Rust release, published 2025-07-16. 7.0.0-alpha.1 was published 2026-11-11 and is not used. (The ecosystem review recorded 6.0.0 as released on 2026-11-11; that date belongs to the 7.0 alpha.) | crates.io API for `biscuit-auth` |
 | `biscuit-python` 0.4.0 (2025-09-26) is the latest Python binding. Its `Cargo.lock` pins `biscuit-auth` 6.0.0, so both sides run the same Datalog engine and the same printer. | PyPI JSON for `biscuit-python`; the sdist's `Cargo.toml` and `Cargo.lock` |
 | Wheels for 0.4.0 exist for CPython 3.12 and 3.13 on Linux x86_64 and aarch64 (manylinux 2.17 and musllinux 1.2), macOS x86_64 and arm64, and Windows amd64. There is no Windows arm64 wheel; an sdist exists (needs a Rust toolchain). | PyPI file list |
-| Datalog block versions 3 to 6 (language 3.0 to 3.3). `check all` needs 3.1. Dates are UTC seconds, written as RFC 3339. Integer arithmetic is overflow-checked; an overflow fails the check. `+` joins strings; `.starts_with()` tests a prefix. | https://doc.biscuitsec.org/reference/specifications |
+| Datalog block versions 3 to 6 (language 3.0 to 3.3). Dates are UTC seconds, written as RFC 3339. Integer arithmetic is overflow-checked; an overflow fails the check. `+` joins strings; `.starts_with()` tests a prefix. | https://doc.biscuitsec.org/reference/specifications |
+| `check all` **fails when nothing matches** its body. It cannot express "every amount, if there is one, is within the limit", because most requests carry no amount. | run locally on both sides |
+| The authorizer's default run limit is 1 ms. | `AuthorizerLimits` in the crate source |
 | Facts in a later block are visible only to that block. Rules, checks and policies of the authority block and of the authorizer see authority and authorizer facts only. A later block therefore cannot add authority. | same page, "scopes" |
 | Each block has one revocation identifier: its signature. | same page |
 | Every block is signed with a fresh random key pair, so two tokens with the same content have different bytes. Vectors cannot compare token bytes. | same page; `Biscuit::append` in the crate source |
@@ -27,7 +29,11 @@ Consequences taken:
   deliberate change that reruns the vectors.
 - No text that reaches a token may contain `"`, `\` or a control character (section 3.1),
   because the block text is what both implementations read back.
-- Sealing is not part of schema 1 (not available in Python). A sealed token still verifies.
+- Sealing is not part of schema 1 (not available in Python). A sealed token still verifies
+  and cannot be narrowed (`sealed_token`).
+- Limits use `check if no_amount(...) or ...` instead of `check all` (sections 4 and 5.2).
+- `biscuit-auth` is built with `default-features = false, features = ["datalog-macro"]`
+  (the crate does not compile without that feature); regex, PEM and the other defaults are off.
 - Nothing in Python does cryptography by hand: signing and verifying, of tokens and of
   revocation entries, is done by the Biscuit library on both sides.
 
@@ -72,12 +78,12 @@ limit("spend", "TWD", 2, "day", 2000);   zero or more
 
 | Field | Rule |
 |---|---|
-| `mandate` | `m1_` + SHA-256 (hex) of the UTF-8 text of the authority block **without its `mandate` line**. That text is the canonical form; no second serialisation exists. The verifier recomputes it (`bad_mandate_id` cannot occur silently: a mismatch is `invalid_mandate`). `issued_at` is part of the hash, so granting the same thing twice gives two ids. |
+| `mandate` | `m1_` + SHA-256 (hex) of the UTF-8 text of the authority block **without its `mandate` line**. That text is the canonical form; no second serialisation exists. The verifier recomputes it; a mismatch is `invalid_mandate`. `issued_at` is part of the hash, so granting the same thing at two times gives two ids. The id names what was approved; a token is named by its revocation identifiers. |
 | `issuer` | Must equal the root key the verifier was given (`wrong_issuer`). |
 | `holder` | `<kind>:<id>`, kind one of `device`, `helper`, `app`, `clinician`; id is an identifier. The enforcing module authenticates whoever presents the token and supplies that id; the token is otherwise a bearer token. |
 | `action` | 1 to 32 dotted lower-case names (`files.read`). Class by registry: **read** `files.read`, `mail.read`, `calendar.read`, `health.read`, `records.read`, `llm.call`; **spend** `pay.spend`, `llm.paid`; every other name, known or not, is **write**. |
 | `routine` | Actions the person marked "do not ask each time". |
-| `resource` | `(kind, value)`, 1 to 64. Kinds: `folder`, `host`, `calendar`, `record_kind`, `provider`, `home`. The value `*` means any resource of that kind and must be written out; there is no implicit "any" and no "any kind". |
+| `resource` | `(kind, value)`, 1 to 64. Kinds: `folder`, `host`, `calendar`, `record_kind`, `provider`, `home`. The value `*` means any resource of that kind and must be written out; there is no implicit "any" and no "any kind". Actions and resources are not paired: every listed action applies to every listed resource. A permission that needs "read here, write there" is two permissions (or one, narrowed twice). |
 | `limit` | `(kind, unit, decimals, period, amount)`. Kinds: `spend` (unit is a currency code such as `TWD` or `USDC`), `requests`, `messages` (unit `""`, decimals 0). Period `day` or `month`. One limit per (kind, unit, period); one decimals value per unit. |
 | `period_zone` | An IANA zone name. A day is a calendar day there, a month a calendar month there. The token only names the zone; the ledger that counts usage applies it (section 6). |
 | `purpose` | Free text (at most 500 characters) and an optional standard code (identifier, or `""`). |
@@ -97,9 +103,11 @@ Text rules, applied to every string before it enters a token and to every reques
 
 ### 3.2 Size
 
-Measured with the fixtures: a typical authority block is 450 to 700 bytes; each narrowing
-adds 150 to 350 bytes (two keys and a signature are about 130 of that). A token narrowed
-three times stays under 2 kB, about 2.7 kB as base64.
+Measured on the fixtures: an issued token is 760 to 1,300 bytes (the plain example in
+section 9 is 900; one with six actions, six resources and four limits is 1,300). Each
+narrowing adds 140 to 520 bytes; a single approval adds about 350. The largest fixture,
+narrowed three times, is 2,358 bytes, 3,144 characters as base64. Tokens travel in
+request bodies and files, not in URLs or cookies.
 
 ## 4. Narrowing blocks
 
@@ -109,8 +117,8 @@ only**, each at most once (limits and caps: once per key), in this order:
 ```
 check if req_action("files.read") or req_action("mail.draft");
 check if req_resource("folder", "/docs/work") or req_resource("folder", $v), $v.starts_with("/docs/work/") or req_resource("host", "a.example") or req_resource("calendar", $v);
-check all amount("spend", "TWD", $a), used("spend", "TWD", "day", $n), $n + $a <= 500;
-check all amount("spend", "TWD", $a), $a <= 12000;
+check if no_amount("spend", "TWD") or amount("spend", "TWD", $a), used("spend", "TWD", "day", $n), $n + $a <= 500;
+check if no_amount("spend", "TWD") or amount("spend", "TWD", $a), $a <= 12000;
 check if time_late($t), $t >= 2026-11-14T00:00:00Z;
 check if time($t), $t <= 2026-11-20T00:00:00Z;
 check if req_privacy($p), $p <= 1;
@@ -124,13 +132,13 @@ check if req_card("card-3");
 |---|---|
 | Fewer actions | The request's action must be one of those listed. |
 | Narrower resources | A folder is written as two alternatives: the folder itself, and anything under it **with the `/` appended**, so `/docs/work` covers `/docs/work/a.md` and not `/docs/workshop`. `req_resource("calendar", $v)` keeps "any calendar". |
-| Lower limit | Compared with the same usage figures as the parent's limit (section 6). |
+| Lower limit | Compared with the same usage figures as the parent's limit (section 6). The verifier states `no_amount(kind, unit)` for each limited counter the request does not touch; a request carries at most one amount per (kind, unit), so "there is one that fits" is the same as "all fit". |
 | Cap per request | A single amount may not exceed this. Used for "approve this payment of NT$120". |
 | Later start, earlier end | |
 | Stricter privacy | |
 | Stricter confirmation | The verifier states which rules it applied (`confirm_applied`); a verifier that does not know the rule cannot satisfy the check. |
 | One job | Not single-use: a job has many steps. |
-| One tool call, one card | Single-use (section 7). The same block must carry an end time. |
+| One tool call, one card | Single-use (section 7). The same block must carry an end time, and that end, as it stands at that block, must be within 24 hours of the check. A later block cannot repair an end that was too far: shortening afterwards leaves the token refused. |
 
 Rules both implementations enforce when reading a token:
 
@@ -146,8 +154,15 @@ Rules both implementations enforce when reading a token:
 
 Why widening is impossible: the authority facts are signed by the root key; a later block
 cannot add facts the authorizer or earlier blocks can see (Biscuit scoping), and a check can
-only fail a request, never pass one. The property tests append blocks holding facts, rules
-and `check if true` and confirm that the answer does not change to allow.
+only fail a request, never pass one. The tests append blocks holding facts, rules and
+`check if true`; our verifier refuses such a token (`unknown_block`), and the library on its
+own, given only the policy of section 5.2, still refuses every request the block was meant
+to unlock.
+
+The one deliberate exception to "a narrowed copy never answers more favourably than its
+parent": binding to a card turns `needs_confirmation` into `allow`. That block is the
+person's approval, made on a device that showed them the card. It never turns a refusal
+into anything.
 
 ## 5. Checking a request
 
@@ -165,7 +180,7 @@ same in both languages and are fixed by the vectors.
 |---|---|---|
 | 1 | The token decodes | `malformed_token` |
 | 2 | None of its revocation identifiers is on the list (read without verifying, so a revoked token is refused before anything else) | `revoked` |
-| 3 | The signature chain verifies under the root key | `bad_signature` |
+| 3 | The root key given to the verifier is well formed, and the signature chain verifies under it | `invalid_key`, `bad_signature` |
 | 4 | Schema, authority block and every later block are as sections 3 and 4 say | `unsupported_schema`, `invalid_mandate`, `wrong_issuer`, `unknown_block` |
 | 5 | The request is well formed | `bad_request` |
 | 6 | `request.holder` is the holder | `wrong_holder` |
@@ -181,8 +196,11 @@ same in both languages and are fixed by the vectors.
 
 Steps 5 to 14 are evaluated in code on the values read from the token; step 15 runs the
 token's own Datalog against the authorizer in section 5.2. A request is allowed only when
-both agree. Step 15 can never turn a refusal into an allow. `engine_disagreement` means a
-bug; the property tests assert it never appears.
+both agree. Step 15 can never turn a refusal into an allow. For tokens made by `issue` and
+`narrow`, `engine_disagreement` would mean a bug, and the property tests assert it never
+appears. It can appear for a block written by other software with a string that contains a
+double quote and prints like a valid check (a fixture does exactly this): the reading passes,
+the real check does not, and the request is refused.
 
 Clock skew: 60 seconds by default, at most 300. It widens both ends of every validity
 window, including a five-minute approval.
@@ -197,6 +215,7 @@ confirmation. Otherwise every confirmation rule in the chain (authority and bloc
 |---|---|
 | `each_write` | The action is not read-class and not routine. |
 | `over_amount(unit, N)` | The action is spend-class and any spend amount is in another unit or above N (routine or not); or the action is write-class and not routine (the standing rule: every write is confirmed). |
+| (any rule) | A read-class action never asks, whatever amounts it carries; its amounts are still held to the limits. |
 | `never` | Never. |
 
 If any rule asks, the answer is `needs_confirmation`, with `each_write` taking precedence over
@@ -208,8 +227,9 @@ presents the narrowed token with the card id (architecture §3.6).
 
 Facts supplied by the verifier: `time(now - skew)`, `time_late(now + skew)`, `req_holder`,
 `req_action`, `req_resource`, `req_privacy`, `req_job`, `req_tool`, `req_card` when present,
-`amount(kind, unit, value)`, `used(kind, unit, period, value)`, and `confirm_applied(...)` for
-each rule it applied. Policy, fixed text:
+`amount(kind, unit, value)`, `no_amount(kind, unit)` for each limited counter without an
+amount, `used(kind, unit, period, value)`, and `confirm_applied(...)` for each rule it
+applied. Policy, fixed text:
 
 ```
 check if schema("muse.permission", 1);
@@ -219,8 +239,13 @@ check if valid_until($d), time($t), $t <= $d;
 check if action($a), req_action($a);
 check if req_resource($k, $v), resource($k, $v) or req_resource($k, $v), resource($k, "*") or req_resource("folder", $v), resource("folder", $p), $v.starts_with($p + "/");
 check if privacy_max($m), req_privacy($p), $p <= $m;
-check all amount($k, $u, $a), limit($k, $u, $d, $p, $max), used($k, $u, $p, $n), $n + $a <= $max;
 allow if mandate($id);
+```
+
+plus, once for each `limit(kind, unit, _, period, _)` in the authority block:
+
+```
+check if no_amount({kind}, {unit}) or limit({kind}, {unit}, $d, {period}, $max), amount({kind}, {unit}, $a), used({kind}, {unit}, {period}, $n), $n + $a <= $max;
 ```
 
 Authorizer limits are set explicitly (10,000 facts, 1,000 iterations, 2 seconds); the library
@@ -257,8 +282,8 @@ it was used; the verifier remembers.
 - An entry is dropped once its time has passed (the token is expired by then anyway).
 - The set is bounded (10,000 entries by default). When it is full of live entries the
   request is refused (`spent_set_full`): failing closed is the only safe answer.
-- This is why a single-use token must end within 24 hours: the bound on memory is the bound
-  on the token's life. Cards expire in 24 hours by default and payments in 5 minutes
+- This is why a single-use token must end within 24 hours (`single_use_too_long`): the bound
+  on memory is the bound on the token's life. Cards expire in 24 hours by default and payments in 5 minutes
   (`docs/spec/02-ux.md` §5).
 - The set is local to one enforcing module. Two modules that both accept the same card id
   would each allow it once. In v1 one home enforces; say so again when a second enforcer exists.
@@ -337,6 +362,27 @@ Times are shown in UTC; the app may add local time beside it but may not replace
 
 - `schema("muse.permission", 1)` is checked first. A change to any line format, to the
   registry of action classes, to the step order or to a reason string is schema 2.
-- The Datalog used needs block version 4 at most (language 3.1, for `check all`).
+- The Datalog used is language 3.0 (block version 3): facts, `check if` with `or`,
+  comparisons, `+` on integers and strings, `.starts_with()`. Nothing from 3.1 to 3.3 is used.
 - Changing the pinned Biscuit release requires regenerating nothing but rerunning the
   vectors on both sides; if the printer's output changes, that is a schema change.
+
+## 13. Where it is implemented and how it is held to this document
+
+| | Rust | Python |
+|---|---|---|
+| Code | `core/src/permissions.rs`, `core/src/permissions/` | `muse/permissions/` |
+| Library | `biscuit-auth = "=6.0.0"` | `biscuit-python==0.4.0` (extra `permissions`) |
+| Own tests | `core/tests/permissions.rs` (behaviour, properties) | `tests/test_permissions.py` (the same, plus files and the command line) |
+| Shared vectors | `core/tests/permissions_vectors.rs` replays `core/conformance/permissions.json` | `scripts/export_conformance.py` computes it; `tests/test_permissions.py` checks it is current |
+
+The vector file carries tokens made once with test-only keys
+(`core/conformance/fixtures/permission_tokens.json` by Rust, `permission_tokens_py.json` by
+Python): issued, narrowed in every way, revoked at the root and at a block, malformed,
+signed by the wrong key, and written by other software to widen or to confuse. Both sides
+must give the same decision and reason for every request, the same sentence in both
+languages, the same revocation identifiers, and the same errors. Where a vector narrows,
+issues or signs a revocation, each side does it itself and reads its own bytes back.
+
+Not enforced anywhere yet: the router, the helper and skills do not ask for these tokens.
+That is the compiler's work (C7) and the sandbox's (A12).
