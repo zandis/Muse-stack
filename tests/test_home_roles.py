@@ -49,7 +49,7 @@ EXPECTED: dict[tuple[str, str], set[str]] = {
     ("GET", "/v1/skills/runs/{id}"): {O, H},
     ("GET", "/v1/mandates/artifacts"): {O},
     # The app's screens (muse/home/app_api.py). Asking, the kept conversations, and every change are the person's only.
-    ("POST", "/v1/ask"): {O}, ("GET", "/v1/ask/{id}"): {O}, ("POST", "/v1/ask/{id}/choose"): {O},
+    ("POST", "/v1/ask"): {O}, ("GET", "/v1/ask/{id}"): {O}, ("POST", "/v1/ask/{id}/choose"): {O}, ("POST", "/v1/ask/{id}/continue"): {O},
     ("GET", "/v1/conversations"): {O}, ("GET", "/v1/conversations/{id}"): {O}, ("DELETE", "/v1/conversations/{id}"): {O},
     ("GET", "/v1/chores"): {O, V}, ("POST", "/v1/chores"): {O}, ("POST", "/v1/chores/understand"): {O},
     ("PATCH", "/v1/chores/{id}"): {O}, ("DELETE", "/v1/chores/{id}"): {O}, ("POST", "/v1/chores/{id}/run"): {O},

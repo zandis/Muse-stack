@@ -56,6 +56,14 @@ PRIVATE_DEMO_SERVICE: dict[str, Any] = {
 }
 
 
+CUT_PREFIXES = ("write a long", "寫一篇長")
+_LONG_EN = ("(fake home) A long answer, in Markdown.\n\n## Plan\n\n1. **Monday**: read the lease.\n2. *Tuesday*: call the landlord.\n"
+            "3. Wednesday: pay `NT$18,000`.\n\n| Day | Task |\n| --- | --- |\n| Mon | Read |\n| Tue | Call |\n\n"
+            "```\nrent = 18000\n```\n\nThat is the whole plan, from start to end.")
+_LONG_ZH = ("（假的家）一篇比較長的答案。\n\n## 計畫\n\n1. **星期一**：讀租約。\n2. *星期二*：打電話給房東。\n"
+            "3. 星期三：付 `NT$18,000`。\n\n| 日 | 事 |\n| --- | --- |\n| 一 | 讀 |\n| 二 | 打 |\n\n```\nrent = 18000\n```\n\n這就是完整的計畫。")
+
+
 def _zh(text: str) -> bool:
     return any("一" <= ch <= "鿿" for ch in text)
 
@@ -138,7 +146,8 @@ class FakeApp(AppBackend):
 
     # ---- the router, scripted
 
-    def router_send(self, messages: list[dict[str, str]], *, privacy: str | None, task: str | None, allow_paid: bool) -> app_ask.RouterReply:
+    def router_send(self, messages: list[dict[str, str]], *, privacy: str | None, task: str | None, allow_paid: bool,
+                    max_tokens: int = app_ask.DEFAULT_MAX_TOKENS) -> app_ask.RouterReply:
         state = self.home.state
         question = messages[-1]["content"]
         zh = _zh(question)
@@ -153,6 +162,15 @@ class FakeApp(AppBackend):
             return app_ask.RouterReply(200, {"x-muse-provider": first, "x-muse-deployment": f"{first}-demo", "x-muse-cost-usd": "0",
                                              "x-muse-privacy": privacy or "standard", "x-muse-task": task or "everyday"},
                                        _completion(text, 30, 58))
+        if question.strip().lower().startswith(CUT_PREFIXES) and state in ("normal", "cards", "paused"):
+            # A long answer that stops at the length limit, then comes whole when asked again with more room.
+            cut = max_tokens <= app_ask.DEFAULT_MAX_TOKENS
+            text = _LONG_ZH if zh else _LONG_EN
+            body = json.dumps({"choices": [{"message": {"role": "assistant", "content": text[: len(text) // 2] if cut else text},
+                                            "finish_reason": "length" if cut else "stop"}],
+                               "usage": {"prompt_tokens": 40, "completion_tokens": max_tokens if cut else 900}}, ensure_ascii=False).encode()
+            return app_ask.RouterReply(200, {"x-muse-provider": "groq", "x-muse-deployment": "groq-gpt-oss-20b", "x-muse-cost-usd": "0",
+                                             "x-muse-privacy": privacy or "standard", "x-muse-task": task or "everyday"}, body)
         if privacy == "local":
             if "ollama" not in connected:
                 return app_ask.RouterReply(403, {"x-muse-privacy": "local"}, _refusal("[muse] no deployment may receive a local request"))

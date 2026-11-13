@@ -68,8 +68,8 @@ def script(home, *replies: app_ask.RouterReply) -> list[dict]:
     sent: list[dict] = []
     queue = list(replies)
 
-    def send(messages, *, privacy, task, allow_paid):
-        sent.append({"messages": messages, "privacy": privacy, "task": task, "allow_paid": allow_paid})
+    def send(messages, *, privacy, task, allow_paid, max_tokens=app_ask.DEFAULT_MAX_TOKENS):
+        sent.append({"messages": messages, "privacy": privacy, "task": task, "allow_paid": allow_paid, "max_tokens": max_tokens})
         return queue.pop(0)
 
     app_api.backend(home).router_send = send
@@ -151,7 +151,7 @@ def test_an_answer_carries_the_grey_line_as_data_and_the_details(home):
     claude = answer["handoff"]["apps"][1]
     assert claude["url_app"].startswith("claude://claude.ai/new?q=what%20is") and claude["url_web"] == "https://claude.ai/new"
     assert "url_app" not in answer["handoff"]["apps"][0]
-    assert sent == [{"messages": [{"role": "user", "content": CANARY}], "privacy": "standard", "task": "everyday", "allow_paid": False}]
+    assert sent == [{"messages": [{"role": "user", "content": CANARY}], "privacy": "standard", "task": "everyday", "allow_paid": False, "max_tokens": 2048}]
 
 
 @pytest.mark.parametrize("headers, key", [
@@ -909,3 +909,46 @@ def test_the_fake_chores_services_and_settings_writes(fakes):
     assert fake_call(home, "POST", "/v1/home/restart-proxy")[1]["restarted"] is True
     assert fake_call(home, "POST", "/v1/verify")[1]["result"] == "ok"
     assert (home.root / "fake.env").read_text().count("API_KEY") == 0  # a fake home stores no key
+
+
+# ---------------------------------------------------------------- continue a cut-short answer
+
+
+def _cut(text: str, finish: str, task: str = "everyday") -> app_ask.RouterReply:
+    body = json.dumps({"choices": [{"message": {"content": text}, "finish_reason": finish}]})
+    return app_ask.RouterReply(200, {"x-muse-provider": "groq", "x-muse-cost-usd": "0", "x-muse-task": task}, body.encode())
+
+
+def test_a_cut_short_answer_can_be_continued_once_with_more_room_on_the_next_tier(home):
+    sent = script(home, _cut("half of it", "length"), _cut("the whole of it", "stop", "heavy"))
+    got = ok(home, "POST", "/v1/ask", {"text": "write a long plan"})["answer"]
+    assert got["status"] == "answered" and got["cut_short"] is True and got["can_continue"] is True
+    again = ok(home, "POST", f"/v1/ask/{got['id']}/continue")["answer"]
+    assert again["status"] == "answered" and again["text"] == "the whole of it" and again["cut_short"] is False
+    assert sent[1]["max_tokens"] == app_ask.CONTINUE_MAX_TOKENS and sent[1]["task"] == "heavy" and sent[1]["allow_paid"] is False
+    status, body = call(home, "POST", f"/v1/ask/{got['id']}/continue")
+    assert status == 409
+
+
+def test_an_empty_reasoning_answer_says_so_and_can_be_continued(home):
+    script(home, app_ask.RouterReply(200, {"x-muse-provider": "groq", "x-muse-answer": "empty-reasoning"},
+                                     json.dumps({"choices": [{"message": {"content": ""}}]}).encode()),
+           _cut("now it is here", "stop"))
+    got = ok(home, "POST", "/v1/ask", {"text": "hard question"})["answer"]
+    assert got["status"] == "failed" and got["reason"] == "empty" and got["cut_short"] and got["can_continue"]
+    assert ok(home, "POST", f"/v1/ask/{got['id']}/continue")["answer"]["text"] == "now it is here"
+
+
+def test_a_second_cut_is_not_offered_again(home):
+    script(home, _cut("half", "length"), _cut("still half", "length"))
+    got = ok(home, "POST", "/v1/ask", {"text": "x"})["answer"]
+    again = ok(home, "POST", f"/v1/ask/{got['id']}/continue")["answer"]
+    assert again["cut_short"] is True and again["can_continue"] is False
+
+
+def test_the_fake_cut_short_script(fakes):
+    home = fakes("normal")
+    got = fake_call(home, "POST", "/v1/ask", {"text": "Write a long plan for the rent"})[1]["answer"]
+    assert got["cut_short"] and got["can_continue"]
+    whole = fake_call(home, "POST", f"/v1/ask/{got['id']}/continue")[1]["answer"]
+    assert whole["cut_short"] is False and "| Day | Task |" in whole["text"]

@@ -28,7 +28,7 @@ def test_every_route_is_in_the_file_and_every_listed_route_is_served(spec):
     listed = documented(spec)
     assert served - listed == set(), "served but missing from home-api.v1.yaml"
     assert listed - served == set(), "in home-api.v1.yaml but not served"
-    assert len(api.route_table()) == len(served) == 53  # no route is declared twice
+    assert len(api.route_table()) == len(served) == 54  # no route is declared twice
 
 
 def test_a_route_added_to_the_table_would_fail_this_test(spec, monkeypatch):
@@ -50,7 +50,7 @@ def test_the_table_is_exactly_the_architecture_list_plus_today(spec):
         ("GET", "/v1/skills"), ("POST", "/v1/skills/{name}/run"), ("GET", "/v1/skills/runs/{id}"),
         ("GET", "/v1/mandates/artifacts"),
         # The app's screens (muse/home/app_api.py).
-        ("POST", "/v1/ask"), ("GET", "/v1/ask/{id}"), ("POST", "/v1/ask/{id}/choose"),
+        ("POST", "/v1/ask"), ("GET", "/v1/ask/{id}"), ("POST", "/v1/ask/{id}/choose"), ("POST", "/v1/ask/{id}/continue"),
         ("GET", "/v1/conversations"), ("GET", "/v1/conversations/{id}"), ("DELETE", "/v1/conversations/{id}"),
         ("GET", "/v1/chores"), ("POST", "/v1/chores"), ("POST", "/v1/chores/understand"), ("PATCH", "/v1/chores/{id}"),
         ("DELETE", "/v1/chores/{id}"), ("POST", "/v1/chores/{id}/run"), ("GET", "/v1/chores/{id}/history"),

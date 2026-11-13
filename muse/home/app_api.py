@@ -136,7 +136,8 @@ class AppBackend:
 
     # ---- the router
 
-    def router_send(self, messages: list[dict[str, str]], *, privacy: str | None, task: str | None, allow_paid: bool) -> app_ask.RouterReply:
+    def router_send(self, messages: list[dict[str, str]], *, privacy: str | None, task: str | None, allow_paid: bool,
+                    max_tokens: int = app_ask.DEFAULT_MAX_TOKENS) -> app_ask.RouterReply:
         from muse import keys, queue
 
         name = app_ask.ASK_PAID_APP if allow_paid else app_ask.ASK_APP
@@ -149,7 +150,7 @@ class AppBackend:
         except Exception as exc:
             log.warning("ask: the home's own app could not be prepared (%s)", type(exc).__name__)
             return app_ask.RouterReply(0)
-        reply = app_ask.send(queue.proxy_url(env), token, messages, privacy=privacy, task=task, allow_paid=allow_paid)
+        reply = app_ask.send(queue.proxy_url(env), token, messages, privacy=privacy, task=task, allow_paid=allow_paid, max_tokens=max_tokens)
         if reply.status == 401 and "x-muse-privacy" not in reply.headers:
             # The router does not know the token (the app list changed under us): issue a new one, once.
             try:
@@ -157,7 +158,8 @@ class AppBackend:
                 token = app_ask.ensure_app(name, env)
             except Exception:
                 return reply
-            reply = app_ask.send(queue.proxy_url(env), token, messages, privacy=privacy, task=task, allow_paid=allow_paid)
+            reply = app_ask.send(queue.proxy_url(env), token, messages, privacy=privacy, task=task, allow_paid=allow_paid,
+                                 max_tokens=max_tokens)
         return reply
 
     # ---- chores
@@ -466,13 +468,27 @@ def handoff_apps(home: Any, question: str) -> list[dict[str, Any]]:
     return out
 
 
+def next_task(task: Any) -> str | None:
+    """The tier above `task` (light -> everyday -> heavy -> frontier), or None at the top. Unknown counts as everyday."""
+    order = list(ASK_TASKS)
+    at = order.index(task) if task in order else order.index("everyday")
+    return order[at + 1] if at + 1 < len(order) else None
+
+
+def can_continue(task: Any) -> bool:
+    """A cut-short answer can be asked again with more room: always one step, even at the top tier (more room only)."""
+    return True
+
+
 def _answer_from(home: Any, got: Mapping[str, Any], question: str, privacy: str | None) -> dict[str, Any]:
     """The answer object of the API from a classified router reply."""
     b = backend(home)
     env = b.env()
     if got["kind"] == "answer":
         if not got["text"].strip():
-            return {"status": "failed", "reason": "empty", "details": {"empty_reasoning": True, "deployment": got["deployment"]}}
+            # The service spent its room on reasoning and wrote nothing: "Continue" asks again with more room.
+            return {"status": "failed", "reason": "empty", "cut_short": True, "can_continue": can_continue(got.get("task")),
+                    "details": {"empty_reasoning": True, "deployment": got["deployment"], "task": got.get("task")}}
         names = _service_names(home)
         provider = got["provider"]
         name, local = names.get(provider or "", (provider or "", False))
@@ -499,6 +515,8 @@ def _answer_from(home: Any, got: Mapping[str, Any], question: str, privacy: str 
                         "tokens_out": got["tokens_out"], "min_output": got["min_output"],
                         "empty_reasoning": got["empty_reasoning"], "privacy": privacy},
             "handoff": {"apps": handoff_apps(home, question)},
+            "cut_short": bool(got.get("cut_short")),
+            "can_continue": bool(got.get("cut_short")) and can_continue(got.get("task")),
         }
     if got["kind"] == "options":
         choices: dict[str, Any] = {}  # in the fixed order of the screens: wait, hand off, pay; only the ones the router named
@@ -785,6 +803,30 @@ def h_ask_choose(home: Any, req: Any) -> tuple[int, dict[str, Any]]:
         if new["status"] == "answered":
             recorded = _ask_record(home, req, new)
     b.conversations.set_answer(turn["id"], new)
+    return 200, {"conversation_id": turn["conversation_id"], "answer": _public_turn({**turn, "answer": new}), "recorded": recorded}
+
+
+def h_ask_continue(home: Any, req: Any) -> tuple[int, dict[str, Any]]:
+    """Ask a cut-short question again with more room (CONTINUE_MAX_TOKENS) on the next tier up. Never paid."""
+    api._no_body(req)
+    turn = _turn_for(home, req)
+    answer = turn["answer"]
+    if not answer.get("cut_short") or not answer.get("can_continue"):
+        raise api.ApiError("conflict", "That answer was not cut short, so there is nothing to continue.")
+    if home.is_paused():
+        raise api.ApiError("conflict", "Everything is paused. Resume, then continue.")
+    b = backend(home)
+    request = turn["request"]
+    asked = (answer.get("details") or {}).get("task") or request.get("task")
+    task = next_task(asked) or asked or "everyday"
+    history = [m for m in b.conversations.history(turn["conversation_id"])]
+    reply = b.router_send([*history, {"role": "user", "content": turn["question"]}], privacy=request.get("privacy"), task=task,
+                          allow_paid=False, max_tokens=app_ask.CONTINUE_MAX_TOKENS)
+    new = _answer_from(home, app_ask.classify(reply, home.clock()), turn["question"], request.get("privacy"))
+    if new.get("cut_short"):
+        new["can_continue"] = False  # once: a second cut is said plainly, not offered again
+    b.conversations.set_answer(turn["id"], new)
+    recorded = _ask_record(home, req, new) if new["status"] == "answered" else False
     return 200, {"conversation_id": turn["conversation_id"], "answer": _public_turn({**turn, "answer": new}), "recorded": recorded}
 
 
@@ -1353,6 +1395,7 @@ ROUTE_SPECS: tuple[tuple[str, str, str, Any, dict[str, Any]], ...] = (
     ("POST", "/ask", "ask.write", h_ask, {}),
     ("GET", "/ask/{id}", "ask.write", h_ask_get, {}),
     ("POST", "/ask/{id}/choose", "ask.write", h_ask_choose, {}),
+    ("POST", "/ask/{id}/continue", "ask.write", h_ask_continue, {}),
     ("GET", "/conversations", "ask.write", h_conversations, {}),
     ("GET", "/conversations/{id}", "ask.write", h_conversation_get, {}),
     ("DELETE", "/conversations/{id}", "ask.write", h_conversation_delete, {}),

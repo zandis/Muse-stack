@@ -43,6 +43,7 @@ HISTORY_CHARS = 24_000
 PREVIEW_CHARS = 80
 REQUEST_TIMEOUT_S = 120.0
 DEFAULT_MAX_TOKENS = 2048
+CONTINUE_MAX_TOKENS = 8192  # "Continue" after an answer was cut short: more room, on the next tier up
 
 ASK_APP = "home-ask"
 ASK_PAID_APP = "home-ask-paid"
@@ -241,7 +242,7 @@ def ensure_app(name: str, environ: Mapping[str, str]) -> str:
 
 
 def send(url: str, token: str, messages: list[dict[str, str]], *, privacy: str | None, task: str | None, allow_paid: bool,
-         post: Callable[..., Any] | None = None, timeout: float = REQUEST_TIMEOUT_S) -> RouterReply:
+         post: Callable[..., Any] | None = None, timeout: float = REQUEST_TIMEOUT_S, max_tokens: int = DEFAULT_MAX_TOKENS) -> RouterReply:
     """One chat request. Never raises: a network failure is `RouterReply(0)`."""
     from muse import queue
 
@@ -252,7 +253,7 @@ def send(url: str, token: str, messages: list[dict[str, str]], *, privacy: str |
         headers["x-muse-task"] = task
     if allow_paid:
         headers["x-muse-allow-paid"] = "true"
-    body = json.dumps({"model": "auto", "messages": messages, "max_tokens": DEFAULT_MAX_TOKENS}).encode("utf-8")
+    body = json.dumps({"model": "auto", "messages": messages, "max_tokens": int(max_tokens)}).encode("utf-8")
     reply = (post or queue._post)(f"{url}/v1/chat/completions", headers, body, timeout)  # noqa: SLF001 - the queue's own HTTP call
     return RouterReply(int(reply.status), {str(k).lower(): str(v) for k, v in dict(reply.headers).items()}, bytes(reply.body or b""))
 
@@ -303,6 +304,10 @@ def classify(reply: RouterReply, now: float) -> dict[str, Any]:
         except (ValueError, KeyError, IndexError, TypeError):
             return {"kind": "failed", "reason": "failed"}
         text = text if isinstance(text, str) else ""
+        try:
+            finish = str(payload["choices"][0].get("finish_reason") or "").strip().lower()
+        except (AttributeError, KeyError, IndexError, TypeError):
+            finish = ""
         usage = payload.get("usage") if isinstance(payload, dict) and isinstance(payload.get("usage"), dict) else {}
 
         def num(key: str) -> int | None:
@@ -319,7 +324,8 @@ def classify(reply: RouterReply, now: float) -> dict[str, Any]:
                 "cache": h.get("x-muse-cache", "").strip().lower() == "hit", "task": h.get("x-muse-task") or None,
                 "tokens_in": num("prompt_tokens"), "tokens_out": num("completion_tokens"),
                 "min_output": bool(h.get("x-muse-min-output")), "empty_reasoning": empty,
-                "handoff_suggested": h.get("x-muse-handoff", "").strip().lower() == "suggest"}
+                "handoff_suggested": h.get("x-muse-handoff", "").strip().lower() == "suggest",
+                "cut_short": finish == "length"}
     if reply.status == 0:
         return {"kind": "failed", "reason": "router_unreachable"}
     message = _message(reply)

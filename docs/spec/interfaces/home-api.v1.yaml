@@ -863,6 +863,30 @@ paths:
         "503": {$ref: "#/components/responses/Unavailable"}
         default: {$ref: "#/components/responses/Error"}
 
+  /v1/ask/{id}/continue:
+    post:
+      operationId: continueAsk
+      x-scope: ask.write
+      x-roles: [owner]
+      summary: "Ask a cut-short question again with more room."
+      description: |
+        Only for an answer with `cut_short: true` and `can_continue: true` (it stopped at its length limit, or the
+        service spent its room on reasoning and wrote nothing). The question is sent again with a larger output
+        cap on the next tier up, never paid. The new answer replaces the old one; if it is cut short again it
+        says so with `can_continue: false`.
+      parameters:
+        - {$ref: "#/components/parameters/turnId"}
+      responses:
+        "200":
+          description: "The answer, asked again."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AskReply"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
   /v1/conversations:
     get:
       operationId: listConversations
@@ -2057,6 +2081,8 @@ components:
         task: {type: [string, "null"]}
         attachments: {type: array, items: {type: string}}
         status: {type: string, enum: [answered, choices, pending, queued, handed_off, over_limit, failed]}
+        cut_short: {type: boolean, description: "The answer stopped at its length limit, or came back empty because the room went on reasoning."}
+        can_continue: {type: boolean, description: "POST /v1/ask/{id}/continue may ask again with more room."}
         text: {type: string, description: The answer. Plain text; render it as text.}
         route:
           type: object
