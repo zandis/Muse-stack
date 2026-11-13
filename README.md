@@ -235,6 +235,49 @@ the user signs), and a signed, hash-chained receipt for every action. Install
 with `pip install -e ".[trust]"`. The health assistant that first used these is
 parked on the `health-assistant-pack` branch as an optional add-on.
 
+### Permissions
+
+`muse/permissions` (Python, for the home) and `core/src/permissions.rs` (Rust, for the
+apps) are the format that replaces the mandates in `muse/trust`: a permission is one
+[Biscuit](https://www.biscuitsec.org/) token signed by the person's root key. It names
+who may do what, on which folders, hosts, calendars or record kinds, up to which limits,
+until when, when to ask first, and under which privacy class. Anyone holding a token can
+make a narrower copy offline (for one skill, one tool call, or one approval that lasts
+five minutes); a copy can never do more than its parent. The format is
+`docs/spec/interfaces/permission-token.md`.
+
+```sh
+pip install -e ".[permissions]"        # biscuit-python==0.4.0, pinned
+muse permissions issue --holder helper:vm --action files.read --action files.write \
+  --resource folder:/Documents/Work --purpose "Weekly digest" --new-key
+muse permissions list                   # each permission as a sentence (--lang zh-TW)
+muse permissions check <name> --action files.write --resource folder:/Documents/Work/a.md
+muse permissions narrow <name> --action files.write --minutes 5 --card card-1
+muse permissions revoke <name>          # stops it and every copy narrowed from it
+```
+
+`issue` prints the permission as a sentence with its limits and signs it only after a
+yes. The root key is `~/.muse/root.key` and tokens are under `~/.muse/permissions/`
+(both 0600) until the vault takes them over.
+
+What is true today, and what is not:
+
+- **Checked by tests:** the same tokens give the same answers, reasons and sentences in
+  Rust and Python (584 shared vectors in `core/conformance/permissions.json`); a narrowed
+  token never allows what its parent refuses; a block that tries to widen is refused;
+  revoking the root stops the family and revoking a block stops that copy and those below
+  it; a single-use approval works once.
+- **Not enforced yet:** nothing else in Muse asks for these tokens. The router, the
+  queue, `muse apps` keys and the request hook work exactly as before, and no skill is
+  held to a token. Wiring a permission to an app entry and to skill calls is the
+  compiler's job (work package C7); until then `muse permissions check` only answers a
+  question.
+- **Limits and single-use approvals need the caller's help.** A token cannot count. The
+  module that enforces it supplies "used so far this period" from its ledger and keeps
+  the set of approvals already used; a module that reports zero defeats the limit.
+- **Not reviewed** by anyone outside the project. The passkey prompt, sync of the
+  revocation list between devices and the on-chain spending limit do not exist yet.
+
 ## Do not send patient data through this
 
 Free and trial tiers are not a place for clinical records.
@@ -469,6 +512,8 @@ It reads `LITELLM_MASTER_KEY` from the environment or from `.env`. It does not c
 | `scripts/validate_config.py` | The CI checks |
 | `muse/home/` | The home control API: server, device tokens, cards, the fake home |
 | `docs/spec/interfaces/` | `home-api.v1.yaml` (OpenAPI) and `card.schema.json` |
+| `muse/permissions/`, `core/src/permissions.rs` | Signed permission tokens (Python and Rust twins); not yet enforced by anything else |
+| `docs/spec/interfaces/permission-token.md` | The permission token format both twins implement |
 | `scripts/verify_litellm.py` | Checks the installed LiteLLM and the pinned image (read-only, no keys) |
 | `requirements/proxy.lock`, `requirements/dev.lock` | Hash-locked installs: LiteLLM with its dependencies, and the test tools |
 | `docker-compose.yml` | Proxy only |

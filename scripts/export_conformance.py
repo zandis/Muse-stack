@@ -8,6 +8,9 @@ list of inputs and writes what they returned to core/conformance/<area>.json;
 `cargo test` in core/ replays every vector, and tests/test_conformance_export.py
 fails when the committed files no longer match what Python returns.
 
+The permissions area is the exception to "what Python computes": tokens cannot be
+reproduced byte for byte, so it replays fixed tokens (see the section "permissions").
+
 Usage:
     python scripts/export_conformance.py            # rewrite core/conformance/
     python scripts/export_conformance.py --check    # exit 1 if a file is out of date
@@ -983,18 +986,724 @@ def cache_vectors() -> Area:
     return area
 
 
+# ---------------------------------------------------------------- permissions
+#
+# This area is different in kind. The other areas export what Python computes from plain
+# inputs. A permission token cannot be reproduced: every Biscuit block is signed with a
+# fresh random key, so two runs never give the same bytes. Instead, the tokens were made
+# once with test-only keys (core/conformance/fixtures/permission_tokens.json by the Rust
+# core, permission_tokens_py.json by this script with --make-python-fixtures) and both
+# implementations must read the same tokens the same way. Where a vector narrows or
+# signs, each side does it itself and the description of the result is compared.
+#
+# biscuit-python is an optional extra. Without it this area cannot be recomputed; the
+# committed file is passed through unchanged (tests/test_permissions.py recomputes it
+# when the library is installed, and `cargo test` always replays it).
+
+FIXTURES = ROOT / "core" / "conformance" / "fixtures"
+PERMISSIONS_FILE = "permissions.json"
+PT0 = 1_794_528_000  # 2026-11-13T00:00:00Z, the fixtures' clock
+PDAY = 86_400
+
+
+def permissions_available() -> bool:
+    from muse.permissions import available
+
+    return available()
+
+
+def load_permission_fixtures() -> dict[str, Any]:
+    rust = json.loads((FIXTURES / "permission_tokens.json").read_text(encoding="utf-8"))
+    path = FIXTURES / "permission_tokens_py.json"
+    py = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {"tokens": {}, "revocations": {}}
+    rust["tokens"] = {**rust["tokens"], **py["tokens"]}
+    rust["revocations"] = {**rust["revocations"], **py["revocations"]}
+    return rust
+
+
+def permission_base_draft(issuer: str) -> dict[str, Any]:
+    return {
+        "issuer": issuer, "holder": "helper:vm", "actions": ["files.read", "files.write", "pay.spend"], "routine": [],
+        "resources": [["folder", "/docs/work"], ["host", "api.example.com"]],
+        "limits": [["requests", "", 0, "day", 200], ["spend", "TWD", 2, "day", 2000]],
+        "purpose_text": "Weekly digest 每週摘要", "purpose_code": "", "issued_at": PT0, "not_before": PT0,
+        "not_after": PT0 + 17 * PDAY, "confirm": ["each_write"], "privacy": "private", "period_zone": "Asia/Taipei",
+    }
+
+
+def make_python_fixtures() -> dict[str, Any]:
+    """Tokens and entries made by the Python twin, for the Rust core to read. Run once."""
+    from muse import permissions as P
+    from muse.permissions import codec
+
+    fx = json.loads((FIXTURES / "permission_tokens.json").read_text(encoding="utf-8"))
+    root = P.parse_private_key(fx["root_private"])
+    pub = fx["root_public"]
+    tokens: dict[str, str] = {}
+    base = P.issue(codec.draft_from_data(permission_base_draft(pub)), root)
+    tokens["py_base"] = base.to_base64()
+    narrowed = P.narrow(base, P.Narrowing(actions=("files.read",), resources=(P.Resource("folder", "/docs/work/sub"),)))
+    tokens["py_base_narrowed"] = narrowed.to_base64()
+    tokens["py_base_job"] = P.narrow(narrowed, P.Narrowing(job="job-7", privacy="local")).to_base64()
+    rust_base = P.Mandate.parse(fx["tokens"]["base"], pub)
+    approval = P.Narrowing(actions=("pay.spend",), resources=(P.Resource("host", "api.example.com"),),
+                           caps=(P.Cap("spend", "TWD", 150),), not_after=PT0 + 300, card="card-py")
+    tokens["py_card_on_rust_base"] = P.narrow(rust_base, approval).to_base64()
+    chain = P.Mandate.parse(fx["tokens"]["rich_chain2"], pub)
+    tokens["py_on_rust_chain2"] = P.narrow(chain, P.Narrowing(
+        actions=("files.read",), limits=(P.NarrowLimit("spend", "TWD", "day", 900),), not_before=PT0 + 60,
+        not_after=PT0 + 600, confirm=P.EACH_WRITE, tool="call-py")).to_base64()
+    rich = P.Draft(
+        issuer=pub, holder="device:phone-1", actions=("calendar.read", "llm.call", "llm.paid", "mail.send"), routine=("mail.send",),
+        resources=(P.Resource("calendar", "家庭"), P.Resource("home", "home-1"), P.Resource("provider", "*")),
+        limits=(P.Limit("spend", "USD", 2, "month", 500), P.Limit("messages", "", 0, "month", 20)),
+        purpose_text="寄出每月提醒 (monthly reminders)", purpose_code="reminder.v1", issued_at=PT0 + 1, not_before=PT0,
+        not_after=PT0 + 40 * PDAY, confirm=P.Confirm("over_amount", "USD", 2, 100), privacy="standard", period_zone="America/Los_Angeles")
+    tokens["py_rich"] = P.issue(rich, root).to_base64()
+    entries = {
+        "py_base_root": P.RevocationEntry.sign(P.revocation_ids(base)[0], PT0 + 10, root).token,
+        "py_rust_base_root_earliest": P.RevocationEntry.sign(P.revocation_ids(rust_base)[0], PT0 + 10, root).token,
+        "py_narrowed_block": P.RevocationEntry.sign(P.revocation_ids(narrowed)[1], PT0 + 20, root).token,
+    }
+    return {
+        "note": "Made once by scripts/export_conformance.py --make-python-fixtures with the test-only keys of "
+                "permission_tokens.json. Token bytes differ on every run, so do not regenerate unless the schema changes.",
+        "made_by": f"python biscuit-python {P.BISCUIT_PYTHON_VERSION}",
+        "tokens": tokens,
+        "revocations": entries,
+    }
+
+
+def permissions_vectors() -> Area:
+    from muse import permissions as P
+    from muse.permissions import codec
+
+    fx = load_permission_fixtures()
+    tokens, entries = fx["tokens"], fx["revocations"]
+    pub, other_pub = fx["root_public"], fx["other_public"]
+    area = Area("permissions")
+
+    def add(fn: str, label: str, shown: dict[str, Any], call: Callable[[], Any]) -> None:
+        name = f"{fn}: {label}"
+        if name in area._names:
+            raise SystemExit(f"duplicate vector name in permissions: {name}")
+        area._names.add(name)
+        try:
+            expected = {"ok": enc(call())}
+        except P.PermissionError as exc:
+            if exc.code == "library_missing":
+                raise
+            expected = {"err": exc.code}
+        area.vectors.append({"name": name, "fn": fn, "input": enc(shown), "expected": expected})
+
+    def described(m: Any, lang: str) -> dict[str, Any]:
+        d = P.describe(m, lang)
+        return {"sentence": d.sentence, "lines": list(d.lines)}
+
+    def mandate_data(m: Any, with_ids: bool = True) -> dict[str, Any]:
+        out = {
+            "id": m.id, "blocks": len(m.levels) + 1, "revocation_ids": P.revocation_ids(m),
+            "draft": codec.draft_to_data(m.draft), "levels": [codec.narrowing_to_data(n) for n in m.levels],
+            "effective": {
+                "actions": list(m.actions()), "resources": [[r.kind, r.value] for r in m.resources()],
+                "limits": [[l.kind, l.unit, l.decimals, l.period, l.amount] for l in m.limits()],
+                "caps": [[c.kind, c.unit, c.amount] for c in m.caps()],
+                "not_before": m.not_before(), "not_after": m.not_after(), "privacy": m.privacy(),
+                "jobs": list(m.jobs()), "tools": list(m.tools()), "cards": list(m.cards()),
+            },
+            "en": described(m, "en"), "zh-TW": described(m, "zh-TW"),
+        }
+        if not with_ids:
+            del out["revocation_ids"]
+        return out
+
+    # ---- propose: the rules for a draft
+    def propose(label: str, **changes: Any) -> None:
+        data = {**permission_base_draft(pub), **changes}
+
+        def call() -> Any:
+            d = P.propose_from_fields(codec.draft_from_data(data))
+            return {"id": P.mandate_id(d), "draft": codec.draft_to_data(d)}
+
+        add("permissions.propose", label, {"draft": data}, call)
+
+    propose("base")
+    propose("lists are sorted", actions=["pay.spend", "files.write", "files.read"],
+            resources=[["host", "api.example.com"], ["folder", "/docs/work"]],
+            limits=[["spend", "TWD", 2, "day", 2000], ["requests", "", 0, "day", 200]])
+    propose("unicode purpose and paths", purpose_text="整理「每週」摘要 — résumé 😀 ‘ok’", resources=[["folder", "/文件/工作"], ["folder", "/Users/me/My Documents"], ["calendar", "家庭"]])
+    propose("every resource kind", resources=[["folder", "/a"], ["host", "a.example:8443"], ["calendar", "work@group.calendar.example"], ["record_kind", "medication"], ["provider", "openrouter"], ["home", "home-1"]])
+    propose("any is written out per kind", resources=[["folder", "*"], ["host", "*"], ["calendar", "*"], ["record_kind", "*"], ["provider", "*"], ["home", "*"]])
+    propose("over_amount", confirm=["over_amount", "TWD", 2, 500])
+    propose("never for reads", actions=["files.read", "llm.call"], limits=[], confirm=["never"])
+    propose("never with routine writes", actions=["files.read", "mail.draft"], routine=["mail.draft"], limits=[], confirm=["never"])
+    propose("usdc six decimals", actions=["pay.spend"], limits=[["spend", "USDC", 6, "day", 2000000], ["spend", "USDC", 6, "month", 30000000]], confirm=["over_amount", "USDC", 6, 500000])
+    propose("unknown action name is allowed", actions=["x.custom_thing.v2"])
+    propose("purpose code", purpose_code="TREAT")
+    propose("empty purpose", purpose_text="")
+    propose("largest time", not_after=253402300799)
+    propose("largest amount", limits=[["spend", "TWD", 2, "day", 9223372036854775807]])
+    propose("every holder kind: device", holder="device:phone-1")
+    propose("every holder kind: app", holder="app:reader")
+    propose("every holder kind: clinician", holder="clinician:dr.lin@hospital.example")
+    for label, changes in [
+        ("issuer too short", {"issuer": "ed25519/00"}), ("issuer upper-case hex", {"issuer": pub.upper().replace("ED25519", "ed25519")}),
+        ("issuer other algorithm", {"issuer": "secp256r1/" + "0" * 64}),
+        ("holder unknown kind", {"holder": "robot:x"}), ("holder no id", {"holder": "helper:"}), ("holder with space", {"holder": "helper:my vm"}),
+        ("holder with quote", {"holder": 'helper:a"b'}),
+        ("no actions", {"actions": []}), ("action not dotted", {"actions": ["read"]}), ("action upper case", {"actions": ["Files.Read"]}),
+        ("action duplicate", {"actions": ["files.read", "files.read"]}), ("action empty part", {"actions": ["files..read"]}),
+        ("action leading digit", {"actions": ["files.1read"]}), ("33 actions", {"actions": [f"a.b{i}" for i in range(33)]}),
+        ("routine not an action", {"routine": ["mail.send"]}), ("routine duplicate", {"routine": ["files.read", "files.read"]}),
+        ("no resources", {"resources": []}), ("resource unknown kind", {"resources": [["any", "*"]]}),
+        ("folder root", {"resources": [["folder", "/"]]}), ("folder trailing slash", {"resources": [["folder", "/a/"]]}),
+        ("folder relative", {"resources": [["folder", "docs"]]}), ("folder dot-dot", {"resources": [["folder", "/a/../b"]]}),
+        ("folder dot", {"resources": [["folder", "/a/./b"]]}), ("folder double slash", {"resources": [["folder", "/a//b"]]}),
+        ("folder with quote", {"resources": [["folder", '/a"b']]}), ("folder with backslash", {"resources": [["folder", "/a\\b"]]}),
+        ("folder with newline", {"resources": [["folder", "/a\nb"]]}), ("folder with c1 control", {"resources": [["folder", "/a\u0085b"]]}),
+        ("folder too long", {"resources": [["folder", "/" + "é" * 512]]}),
+        ("host upper case", {"resources": [["host", "Example.com"]]}), ("host with path", {"resources": [["host", "example.com/x"]]}),
+        ("host bad port", {"resources": [["host", "example.com:http"]]}), ("host leading dot", {"resources": [["host", ".example.com"]]}),
+        ("host empty", {"resources": [["host", ""]]}), ("calendar empty", {"resources": [["calendar", ""]]}),
+        ("resource duplicate", {"resources": [["folder", "/a"], ["folder", "/a"]]}),
+        ("limit negative", {"limits": [["spend", "TWD", 2, "day", -1]]}), ("limit unknown period", {"limits": [["spend", "TWD", 2, "week", 1]]}),
+        ("limit unknown kind", {"limits": [["tokens", "", 0, "day", 1]]}), ("spend without currency", {"limits": [["spend", "", 2, "day", 1]]}),
+        ("currency lower case", {"limits": [["spend", "twd", 2, "day", 1]]}), ("requests with unit", {"limits": [["requests", "TWD", 0, "day", 1]]}),
+        ("requests with decimals", {"limits": [["requests", "", 2, "day", 1]]}), ("decimals 19", {"limits": [["spend", "TWD", 19, "day", 1]]}),
+        ("two decimals for one unit", {"limits": [["spend", "TWD", 2, "day", 1], ["spend", "TWD", 0, "month", 1]]}),
+        ("same limit twice with different amounts", {"limits": [["spend", "TWD", 2, "day", 1], ["spend", "TWD", 2, "day", 2]]}),
+        ("purpose with double quote", {"purpose_text": 'say "hi"'}), ("purpose with backslash", {"purpose_text": "a\\b"}),
+        ("purpose with newline", {"purpose_text": "line\nbreak"}), ("purpose with tab", {"purpose_text": "a\tb"}),
+        ("purpose 501 characters", {"purpose_text": "字" * 501}), ("purpose code with space", {"purpose_code": "a b"}),
+        ("not_before equals not_after", {"not_after": PT0}), ("not_after before not_before", {"not_after": PT0 - 1}),
+        ("time past year 9999", {"not_after": 253402300800}), ("negative time", {"not_before": -1}), ("negative issued_at", {"issued_at": -5}),
+        ("over_amount without that limit", {"confirm": ["over_amount", "USD", 2, 1]}),
+        ("over_amount with other decimals", {"confirm": ["over_amount", "TWD", 0, 1]}),
+        ("over_amount negative", {"confirm": ["over_amount", "TWD", 2, -1]}),
+        ("never with a write", {"confirm": ["never"]}), ("never with spend marked routine is allowed", {"routine": ["files.write", "pay.spend"], "confirm": ["never"]}),
+        ("unknown confirm rule", {"confirm": ["sometimes"]}), ("unknown privacy", {"privacy": "secret"}),
+        ("zone with space", {"period_zone": "Asia/Taipei x"}), ("zone empty", {"period_zone": ""}),
+    ]:
+        propose(label, **changes)
+    propose("500 characters of purpose", purpose_text="字" * 500)
+
+    # ---- issue: each side signs, then reads its own token back
+    def issue(label: str, key: str, **changes: Any) -> None:
+        data = {**permission_base_draft(pub), **changes}
+
+        def call() -> Any:
+            root = P.parse_private_key(key)
+            m = P.issue(codec.draft_from_data(data), root)
+            return mandate_data(P.Mandate.parse(m.to_base64(), P.public_key_text(root)), with_ids=False)
+
+        add("permissions.issue", label, {"root_private": key, "draft": data}, call)
+
+    issue("base", fx["root_private"])
+    issue("unsorted input is signed in canonical order", fx["root_private"], actions=["pay.spend", "files.read", "files.write"])
+    issue("unicode", fx["root_private"], purpose_text="整理「每週」摘要 😀", resources=[["folder", "/文件/工作"], ["calendar", "*"]], actions=["calendar.write", "files.read"])
+    issue("other key signs its own draft", fx["other_private"], issuer=other_pub)
+    issue("a draft for another root is refused", fx["other_private"])
+    issue("an invalid draft is refused", fx["root_private"], holder="nobody")
+    issue("a malformed key is refused", "ed25519-private/zz")
+    issue("upper-case key hex", fx["root_private"].upper().replace("ED25519-PRIVATE", "ed25519-private"))
+
+    # ---- read: every fixture token, as both sides must read it
+    for name in sorted(tokens):
+        add("permissions.read", name, {"token": tokens[name], "root": pub}, lambda name=name: mandate_data(P.Mandate.parse(tokens[name], pub)))
+    add("permissions.read", "base under another root", {"token": tokens["base"], "root": other_pub}, lambda: mandate_data(P.Mandate.parse(tokens["base"], other_pub)))
+    add("permissions.read", "other_root under its own key", {"token": tokens["other_root"], "root": other_pub}, lambda: mandate_data(P.Mandate.parse(tokens["other_root"], other_pub)))
+    add("permissions.read", "malformed root key", {"token": tokens["base"], "root": "ed25519/xyz"}, lambda: mandate_data(P.Mandate.parse(tokens["base"], "ed25519/xyz")))
+
+    # ---- check
+    usage0 = [["requests", "", "day", 0], ["spend", "TWD", "day", 0]]
+
+    def req(action: str = "files.read", resource: list[str] | None = None, *, holder: str = "helper:vm", privacy: str = "private",
+            amounts: list[list[Any]] | None = None, job: str | None = None, tool: str | None = None, card: str | None = None) -> dict[str, Any]:
+        return {"holder": holder, "action": action, "resource": resource or ["folder", "/docs/work/a.md"], "amounts": amounts or [],
+                "privacy": privacy, "job": job, "tool": tool, "card": card}
+
+    def twd(n: int) -> list[list[Any]]:
+        return [["spend", "TWD", n]]
+
+    def pay(n: int | None, **kw: Any) -> dict[str, Any]:
+        return req("pay.spend", ["host", "api.example.com"], amounts=[] if n is None else twd(n), **kw)
+
+    def spend_usage(day: int, month: int | None = None, requests: int = 0) -> list[list[Any]]:
+        out = [["requests", "", "day", requests], ["spend", "TWD", "day", day]]
+        return out + ([["spend", "TWD", "month", month]] if month is not None else [])
+
+    def check(label: str, token: str, request: dict[str, Any], *, usage: list[list[Any]] | None = None, revoked: tuple[str, ...] = (),
+              spent: list[list[Any]] | None = None, now: int = PT0 + 5, skew: int = 60, root: str = pub) -> None:
+        shown = {"token": tokens[token], "root": root, "request": request, "usage": usage0 if usage is None else usage,
+                 "revoked": [entries[e] for e in revoked], "spent": spent or [], "now": now, "skew": skew}
+
+        def call() -> Any:
+            revoked_list = P.RevocationList()
+            for entry in shown["revoked"]:
+                revoked_list.add_entry(entry, root)
+            d = P.check_encoded(shown["token"], root, codec.request_from_data(request), {(k, u, p): n for k, u, p, n in shown["usage"]},
+                                revoked_list, P.SpentSet.from_entries(shown["spent"]), now, skew)
+            return [d.kind, d.detail]
+
+        add("permissions.check", f"{token}: {label}", shown, call)
+
+    end = PT0 + 17 * PDAY
+    check("read inside the folder", "base", req())
+    check("read the folder itself", "base", req(resource=["folder", "/docs/work"]))
+    check("read deep inside", "base", req(resource=["folder", "/docs/work/a/b/c.md"]))
+    check("a write asks", "base", req("files.write"))
+    check("a payment asks", "base", pay(120))
+    check("wrong holder", "base", req(holder="helper:other"))
+    check("holder of another kind", "base", req(holder="app:vm"))
+    for label, request in [
+        ("malformed holder", req(holder="vm")), ("resource is any", req(resource=["folder", "*"])),
+        ("path with dot-dot", req(resource=["folder", "/docs/work/../../etc"])), ("path with trailing slash", req(resource=["folder", "/docs/work/"])),
+        ("relative path", req(resource=["folder", "docs/work"])), ("path with quote", req(resource=["folder", '/docs/work/a"b'])),
+        ("unknown resource kind", req(resource=["bucket", "x"])), ("unknown privacy", req(privacy="secret")),
+        ("negative amount", pay(-1)), ("amount twice", req("pay.spend", ["host", "api.example.com"], amounts=twd(1) + twd(2))),
+        ("amount of unknown kind", req(amounts=[["tokens", "", 1]])), ("malformed action", req("Read")),
+        ("job with a space", req(job="job 7")), ("card with a quote", req(card='c"')), ("host in upper case", req(resource=["host", "API.example.com"])),
+    ]:
+        check(f"bad request: {label}", "base", request)
+    check("bad request: negative now", "base", req(), now=-1)
+    for label, now, skew in [
+        ("61 s before the start", PT0 - 61, 60), ("60 s before the start", PT0 - 60, 60), ("at the start", PT0, 60),
+        ("60 s after the end", end + 60, 60), ("61 s after the end", end + 61, 60),
+        ("no tolerance: 1 s early", PT0 - 1, 0), ("no tolerance: at the start", PT0, 0), ("no tolerance: at the end", end, 0),
+        ("no tolerance: 1 s late", end + 1, 0), ("tolerance is capped at 300: 300 s early", PT0 - 300, 9999),
+        ("tolerance is capped at 300: 301 s early", PT0 - 301, 9999), ("negative tolerance is none", PT0 - 1, -5),
+        ("tolerance is capped at 300: 301 s late", end + 301, 100000),
+    ]:
+        check(f"time: {label}", "base", req(), now=now, skew=skew)
+    check("action not granted", "base", req("mail.send"))
+    for path in ["/docs/workshop", "/docs/work2", "/docs/wor", "/docs", "/Docs/Work/a", "/docs/work.bak/a", "/other", "/docs/work x"]:
+        check(f"segment-aware prefix: {path}", "base", req(resource=["folder", path]))
+    check("host exact", "base", req(resource=["host", "api.example.com"]))
+    check("host with a port is another host", "base", req(resource=["host", "api.example.com:443"]))
+    check("host suffix does not match", "base", req(resource=["host", "evil-api.example.com"]))
+    check("host subdomain does not match", "base", req(resource=["host", "x.api.example.com"]))
+    check("resource kind not granted", "base", req(resource=["calendar", "work"]))
+    for privacy in ["local", "private", "standard", "public"]:
+        check(f"privacy {privacy}", "base", req(privacy=privacy))
+    check("payment without an amount", "base", pay(None))
+    check("amount in a unit with no limit", "base", req("pay.spend", ["host", "api.example.com"], amounts=[["spend", "USD", 1]]))
+    check("amount of a kind with no limit", "base", req(amounts=[["messages", "", 1]]))
+    check("no usage figure", "base", pay(1), usage=[])
+    check("usage figure for another period only", "base", pay(1), usage=[["spend", "TWD", "month", 0]])
+    check("negative usage figure", "base", pay(1), usage=[["spend", "TWD", "day", -1]])
+    check("exactly at the limit", "base", pay(120), usage=spend_usage(1880))
+    check("one over the limit", "base", pay(120), usage=spend_usage(1881))
+    check("limit already used up", "base", pay(1), usage=spend_usage(2000))
+    check("zero amount when used up", "base", pay(0), usage=spend_usage(2000))
+    check("usage that overflows", "base", pay(1), usage=spend_usage(9223372036854775807))
+    check("amount above the whole limit", "base", pay(2001))
+    check("read that counts one request, at the limit", "base", req(amounts=[["requests", "", 1]]), usage=spend_usage(0, requests=199))
+    check("read that counts one request, over the limit", "base", req(amounts=[["requests", "", 1]]), usage=spend_usage(0, requests=200))
+    check("read with a spend amount", "base", req(amounts=twd(5)))
+    check("revoked at the root", "base", req(), revoked=("base_root",))
+    check("revoked at the root, entry from the other implementation", "base", req(), revoked=("py_rust_base_root_earliest",))
+    check("an unrelated revocation", "base", req(), revoked=("unrelated", "py_base_root"))
+    check("a child's revocation does not reach the parent", "base", req(), revoked=("base_actions_block", "base_job_block"))
+    check("revoked: a write would have asked", "base", req("files.write"), revoked=("base_root", "unrelated"))
+    check("wrong root key", "base", req(), root=other_pub)
+    check("signed by another key", "other_root", req())
+    for name in ["not_base64", "empty", "truncated", "flipped_byte", "wrong_issuer", "bad_id", "extra_fact", "authority_check", "unsorted_authority",
+                 "schema_2", "foreign_schema", "never_for_writes", "evil_facts", "evil_rules", "evil_check_true", "evil_unsorted", "evil_duplicate",
+                 "evil_unknown_check", "evil_never", "evil_card_no_end", "evil_unlimited_unit", "evil_quote_job", "third_party"]:
+        check("refused whatever is asked", name, req())
+    check("a sealed token still verifies", "sealed", req())
+    # widening attempts: the request each block was trying to unlock
+    for name in ["evil_facts", "evil_rules", "evil_check_true"]:
+        check("the write the block tried to add", name, req("files.write"))
+        check("the folder the block tried to add", name, req(resource=["folder", "/etc/passwd"]))
+    check("reads as two actions, really one odd one: read", "evil_quote_actions", req())
+    check("reads as two actions, really one odd one: write", "evil_quote_actions", req("files.write"))
+    check("reads as two actions, really one odd one: pay", "evil_quote_actions", pay(1))
+    check("an action the parent has", "foreign_wider_action", req())
+    check("an action only the block lists", "foreign_wider_action", req("mail.send"))
+    check("an action the block dropped", "foreign_wider_action", req("files.write"))
+    check("levels that share no action: read", "foreign_disjoint", req())
+    check("levels that share no action: pay", "foreign_disjoint", pay(1))
+    check("bound to two jobs: the first", "foreign_two_jobs", req(job="job-7"))
+    check("bound to two jobs: the second", "foreign_two_jobs", req(job="job-8"))
+
+    check("the action kept", "base_actions", req())
+    check("the action dropped", "base_actions", req("files.write"))
+    check("payment dropped", "base_actions", pay(1))
+    check("revoked at its own block", "base_actions", req(), revoked=("base_actions_block",))
+    check("revoked at the root", "base_actions", req(), revoked=("base_root_earlier",))
+    check("a grandchild's revocation does not reach it", "base_actions", req(), revoked=("base_job_block",))
+    for path, label in [("/docs/work/sub", "the folder itself"), ("/docs/work/sub/x.md", "inside"), ("/docs/work/x.md", "the parent's folder"),
+                        ("/docs/work/subx", "a sibling with the same prefix"), ("/docs/work/sub2/x", "another sibling")]:
+        check(label, "base_folder", req(resource=["folder", path]))
+    check("the host the narrowing left out", "base_folder", req(resource=["host", "api.example.com"]))
+    check("at the lower limit", "base_limit", pay(120), usage=spend_usage(380))
+    check("over the lower limit, inside the parent's", "base_limit", pay(120), usage=spend_usage(381))
+    check("a read is not measured against it", "base_limit", req(), usage=spend_usage(1999))
+    check("a read needs no usage figure", "base_limit", req(), usage=[])
+    check("new period: no figure for it", "base_limit_month", pay(1))
+    check("new period: inside", "base_limit_month", pay(100), usage=spend_usage(0, 4900))
+    check("new period: over", "base_limit_month", pay(101), usage=spend_usage(0, 4900))
+    check("at the cap", "base_cap", pay(100))
+    check("over the cap", "base_cap", pay(101))
+    check("a read has no amount to cap", "base_cap", req())
+    for label, now in [("61 s before its start", PT0 + PDAY - 61), ("60 s before its start", PT0 + PDAY - 60), ("60 s after its end", PT0 + 2 * PDAY + 60),
+                       ("61 s after its end", PT0 + 2 * PDAY + 61), ("inside the parent's window only", PT0 + 5)]:
+        check(label, "base_window", req(), now=now)
+    check("private is no longer allowed", "base_local", req())
+    check("local", "base_local", req(privacy="local"))
+    check("no job", "base_job", req())
+    check("the job", "base_job", req(job="job-7"))
+    check("another job", "base_job", req(job="job-8"))
+    check("the job, but a write", "base_job", req("files.write", job="job-7"))
+    check("revoked at the grandparent's block", "base_job", req(job="job-7"), revoked=("base_actions_block",))
+    check("revoked at its own block", "base_job", req(job="job-7"), revoked=("base_job_block",))
+    check("job and tool", "base_job_tool", req(job="job-7", tool="call-19"))
+    check("job without the tool", "base_job_tool", req(job="job-7"))
+    check("another tool call", "base_job_tool", req(job="job-7", tool="call-20"))
+    check("tool without the job", "base_job_tool", req(tool="call-19"))
+    base_id = P.Mandate.parse(tokens["base"], pub).id
+    check("replayed", "base_job_tool", req(job="job-7", tool="call-19"), spent=[[f"{base_id}/tool/call-19", PT0 + 660]])
+    check("a spent entry that has lapsed", "base_job_tool", req(job="job-7", tool="call-19"), spent=[[f"{base_id}/tool/call-19", PT0 + 4]])
+    check("another call's spent entry", "base_job_tool", req(job="job-7", tool="call-19"), spent=[[f"{base_id}/tool/call-18", PT0 + 660], [f"{base_id}/card/call-19", PT0 + 660]])
+    check("after its ten minutes", "base_job_tool", req(job="job-7", tool="call-19"), now=PT0 + 661)
+    check("single use must end within a day", "base_tool_long", req(tool="call-20"))
+    check("single use: one second too long", "base_tool_long", req(tool="call-20"), now=PT0 + PDAY - 61)
+    check("single use: just short enough", "base_tool_long", req(tool="call-20"), now=PT0 + PDAY - 60)
+    check("shortening afterwards does not help", "base_tool_long_then_short", req(tool="call-20"))
+    check("approved payment", "base_card", pay(120, card="card-3"))
+    check("without the card", "base_card", pay(120))
+    check("another card", "base_card", pay(120, card="card-4"))
+    check("the other approval's card", "base_card_other", pay(120, card="card-3"))
+    check("approved, but over the daily limit", "base_card", pay(2001, card="card-3"))
+    check("approved, at the daily limit", "base_card", pay(2000, card="card-3"))
+    check("approved, but not this action", "base_card", req(card="card-3"))
+    check("approved, replayed", "base_card", pay(120, card="card-3"), spent=[[f"{base_id}/card/card-3", PT0 + 360]])
+    check("approved, last second with tolerance", "base_card", pay(120, card="card-3"), now=PT0 + 360)
+    check("approved, expired", "base_card", pay(120, card="card-3"), now=PT0 + 361)
+    check("approved, then the family is revoked", "base_card", pay(120, card="card-3"), revoked=("base_root",))
+    check("a card id on a token that is not bound to one is not an approval", "base", pay(120, card="card-3"))
+
+    rich_usage = [["messages", "", "month", 0], ["requests", "", "day", 0], ["spend", "TWD", "day", 0], ["spend", "TWD", "month", 0]]
+
+    def rpay(n: int, host: str = "pay.example.com:8443", **kw: Any) -> dict[str, Any]:
+        return req("pay.spend", ["host", host], amounts=twd(n), **kw)
+
+    check("payment at the threshold", "rich", rpay(550), usage=rich_usage)
+    check("payment over the threshold", "rich", rpay(551), usage=rich_usage)
+    check("payment needs both periods' figures", "rich", rpay(1), usage=usage0)
+    check("payment over the month", "rich", rpay(100), usage=[["spend", "TWD", "day", 0], ["spend", "TWD", "month", 29901]])
+    check("payment in another unit", "rich", req("pay.spend", ["host", "api.example.com"], amounts=[["spend", "USD", 1]]), usage=rich_usage)
+    check("a write asks", "rich", req("files.write", ["folder", "/文件/工作/報告.md"]))
+    check("a routine write does not ask", "rich", req("mail.draft", ["folder", "/文件/工作/草稿"]))
+    check("a routine write that counts a message", "rich", req("mail.draft", ["folder", "/文件/工作"], amounts=[["messages", "", 1]]), usage=[["messages", "", "month", 19]])
+    check("the 21st message", "rich", req("mail.draft", ["folder", "/文件/工作"], amounts=[["messages", "", 1]]), usage=[["messages", "", "month", 20]])
+    check("any calendar", "rich", req("calendar.write", ["calendar", "家庭 2026"]))
+    check("an unknown action is a write", "rich", req("x.custom", ["host", "api.example.com"]))
+    check("unicode folder", "rich", req(resource=["folder", "/文件/工作/報告/十一月.md"]))
+    check("unicode sibling with the same prefix", "rich", req(resource=["folder", "/文件/工作坊/a"]))
+    check("folder with spaces", "rich", req(resource=["folder", "/Users/me/My Documents/a b.txt"]))
+    check("folder with spaces: same prefix", "rich", req(resource=["folder", "/Users/me/My Documents2/a"]))
+    check("a record kind", "rich", req(resource=["record_kind", "medication"]))
+    check("another record kind", "rich", req(resource=["record_kind", "lab"]))
+    check("privacy standard", "rich", req(resource=["folder", "/文件/工作/a"], privacy="standard"))
+    check("privacy public", "rich", req(resource=["folder", "/文件/工作/a"], privacy="public"))
+    check("stricter rule: a small payment asks", "rich_each", rpay(1), usage=rich_usage)
+    check("stricter rule: routine stays routine", "rich_each", req("mail.draft", ["folder", "/文件/工作/a"]))
+    check("lower threshold: at it", "rich_over_lower", rpay(100), usage=rich_usage)
+    check("lower threshold: over it", "rich_over_lower", rpay(101), usage=rich_usage)
+    check("inside the narrowed unicode folder", "rich_unicode", req(resource=["folder", "/文件/工作/報告/a"]))
+    check("the parent's unicode folder", "rich_unicode", req(resource=["folder", "/文件/工作/a"]))
+    check("any calendar is kept", "rich_unicode", req("calendar.write", ["calendar", "x"]))
+    check("a host it kept", "rich_unicode", req(resource=["host", "pay.example.com:8443"]))
+    check("a host it dropped", "rich_unicode", req(resource=["host", "api.example.com"]))
+    check("level 1: standard is gone", "rich_chain1", req(resource=["folder", "/文件/工作/a"], privacy="standard"))
+    check("level 1: mail.draft is gone", "rich_chain1", req("mail.draft", ["folder", "/文件/工作/a"]))
+    check("level 2: lower day limit", "rich_chain2", rpay(500, "api.example.com"), usage=[["spend", "TWD", "day", 501], ["spend", "TWD", "month", 0]])
+    check("level 2: lower month limit", "rich_chain2", rpay(500, "api.example.com"), usage=[["spend", "TWD", "day", 0], ["spend", "TWD", "month", 8501]])
+    check("level 2: inside both", "rich_chain2", rpay(500, "api.example.com"), usage=[["spend", "TWD", "day", 500], ["spend", "TWD", "month", 8500]])
+    chain_usage = [["spend", "TWD", "day", 0], ["spend", "TWD", "month", 0]]
+    check("level 3: the approved payment", "rich_chain3", rpay(300, "api.example.com", job="job-7", card="card-9"), usage=chain_usage)
+    check("level 3: over its cap", "rich_chain3", rpay(301, "api.example.com", job="job-7", card="card-9"), usage=chain_usage)
+    check("level 3: without the job", "rich_chain3", rpay(300, "api.example.com", card="card-9"), usage=chain_usage)
+    check("level 3: without the card", "rich_chain3", rpay(300, "api.example.com", job="job-7"), usage=chain_usage)
+    check("level 3: a host level 2 dropped", "rich_chain3", rpay(300, job="job-7", card="card-9"), usage=chain_usage)
+    check("level 3: an action it dropped", "rich_chain3", req("files.read", ["folder", "/文件/工作/報告/a"], job="job-7", card="card-9"))
+    check("level 3: after 15 minutes", "rich_chain3", rpay(300, "api.example.com", job="job-7", card="card-9"), usage=chain_usage, now=PT0 + 961)
+
+    quiet = dict(holder="app:reader", privacy="public")
+    check("never: a routine write", "quiet", req("mail.draft", ["folder", "/anything/at all"], **quiet))
+    check("never: a read anywhere", "quiet", req(resource=["folder", "/etc/hosts"], **quiet))
+    check("never: any provider", "quiet", req("llm.call", ["provider", "openrouter"], **quiet))
+    check("never: a kind it lacks", "quiet", req("llm.call", ["host", "api.example.com"], **quiet))
+    check("never: the helper is not the holder", "quiet", req(resource=["folder", "/a"]))
+    check("narrowed to one folder and one provider: inside", "quiet_sub", req(resource=["folder", "/a b/c"], **quiet))
+    check("narrowed to one folder and one provider: outside", "quiet_sub", req(resource=["folder", "/a bc"], **quiet))
+    check("narrowed to one folder and one provider: provider", "quiet_sub", req("llm.call", ["provider", "local-llm"], **quiet))
+    check("narrowed to one folder and one provider: other provider", "quiet_sub", req("llm.call", ["provider", "openrouter"], **quiet))
+    clin = dict(holder="clinician:dr-lin", privacy="local")
+    check("reads a granted kind", "clinician", req("health.read", ["record_kind", "medication"], **clin))
+    check("a kind not granted", "clinician", req("health.read", ["record_kind", "genome"], **clin))
+    check("may not leave the home", "clinician", req("health.read", ["record_kind", "allergy"], holder="clinician:dr-lin", privacy="private"))
+    check("after three days", "clinician", req("health.read", ["record_kind", "allergy"], **clin), now=PT0 + 3 * PDAY + 61)
+    usdc_usage = [["spend", "USDC", "day", 0], ["spend", "USDC", "month", 0]]
+
+    def upay(n: int, action: str = "pay.spend", host: str = "b.example") -> dict[str, Any]:
+        return req(action, ["host", host], amounts=[["spend", "USDC", n]])
+
+    check("half a USDC", "usdc", upay(500000), usage=usdc_usage)
+    check("just over half a USDC", "usdc", upay(500001), usage=usdc_usage)
+    check("over the day", "usdc", upay(1), usage=[["spend", "USDC", "day", 2000000], ["spend", "USDC", "month", 0]])
+    check("over the month", "usdc", upay(1), usage=[["spend", "USDC", "day", 0], ["spend", "USDC", "month", 30000000]])
+    check("paid model call without an amount", "usdc", req("llm.paid", ["provider", "openrouter"]), usage=usdc_usage)
+    check("paid model call", "usdc", req("llm.paid", ["provider", "openrouter"], amounts=[["spend", "USDC", 1200]]), usage=usdc_usage)
+    check("TWD where only USDC is limited", "usdc", req("pay.spend", ["host", "a.example"], amounts=twd(1)), usage=usdc_usage)
+    check("a fourth host", "usdc", upay(1, host="d.example"), usage=usdc_usage)
+    check("at the cap, over the threshold", "usdc_cap", upay(1250000), usage=usdc_usage)
+    check("over the cap", "usdc_cap", upay(1250001), usage=usdc_usage)
+    check("a host the cap's block dropped", "usdc_cap", upay(1, host="a.example"), usage=usdc_usage)
+
+    check("issued by Python: read", "py_base", req())
+    check("issued by Python: revoked by a Python entry", "py_base", req(), revoked=("py_base_root",))
+    check("issued by Python: Rust's entry is for another token", "py_base", req(), revoked=("base_root",))
+    check("narrowed by Python: inside", "py_base_narrowed", req(resource=["folder", "/docs/work/sub/a"]))
+    check("narrowed by Python: outside", "py_base_narrowed", req())
+    check("narrowed by Python: revoked at its block", "py_base_narrowed", req(resource=["folder", "/docs/work/sub/a"]), revoked=("py_narrowed_block",))
+    check("narrowed twice by Python: job and local", "py_base_job", req(resource=["folder", "/docs/work/sub/a"], privacy="local", job="job-7"))
+    check("narrowed twice by Python: private refused", "py_base_job", req(resource=["folder", "/docs/work/sub/a"], job="job-7"))
+    check("narrowed twice by Python: parent block revoked", "py_base_job", req(resource=["folder", "/docs/work/sub/a"], privacy="local", job="job-7"), revoked=("py_narrowed_block",))
+    check("Rust token, Python approval", "py_card_on_rust_base", pay(150, card="card-py"))
+    check("Rust token, Python approval: over its cap", "py_card_on_rust_base", pay(151, card="card-py"))
+    check("Rust token, Python approval: family revoked by Rust entry", "py_card_on_rust_base", pay(150, card="card-py"), revoked=("base_root",))
+    check("Rust chain, Python block: before its start", "py_on_rust_chain2", req(resource=["folder", "/文件/工作/報告/a"], tool="call-py"), now=PT0 - 1)
+    check("Rust chain, Python block: inside", "py_on_rust_chain2", req(resource=["folder", "/文件/工作/報告/a"], tool="call-py"), now=PT0 + 100)
+    check("Rust chain, Python block: without the tool", "py_on_rust_chain2", req(resource=["folder", "/文件/工作/報告/a"]), now=PT0 + 100)
+    pyrich = dict(holder="device:phone-1", privacy="standard")
+    check("Python rich: routine send with a message", "py_rich", req("mail.send", ["home", "home-1"], amounts=[["messages", "", 1]], **pyrich), usage=[["messages", "", "month", 3]])
+    check("Python rich: paid call at the threshold", "py_rich", req("llm.paid", ["provider", "x"], amounts=[["spend", "USD", 100]], **pyrich), usage=[["spend", "USD", "month", 0]])
+    check("Python rich: paid call over the threshold", "py_rich", req("llm.paid", ["provider", "x"], amounts=[["spend", "USD", 101]], **pyrich), usage=[["spend", "USD", "month", 0]])
+    check("Python rich: unicode calendar", "py_rich", req("calendar.read", ["calendar", "家庭"], **pyrich))
+    check("Python rich: another calendar", "py_rich", req("calendar.read", ["calendar", "家庭2"], **pyrich))
+
+    # ---- sequence: one spent set across requests
+    def sequence(label: str, capacity: int, steps: list[tuple[str, dict[str, Any], int]], skew: int = 60, usage: list[list[Any]] | None = None) -> None:
+        shown = {"root": pub, "capacity": capacity, "skew": skew,
+                 "steps": [{"token": tokens[t], "request": r, "usage": usage or usage0, "now": now} for t, r, now in steps]}
+
+        def call() -> Any:
+            spent = P.SpentSet(capacity)
+            out = []
+            for step in shown["steps"]:
+                m = P.Mandate.parse(step["token"], pub)
+                d = P.check_and_record(m, codec.request_from_data(step["request"]), {(k, u, p): n for k, u, p, n in step["usage"]},
+                                       P.RevocationList(), spent, step["now"], skew)
+                out.append([d.kind, d.detail])
+            return {"decisions": out, "spent": [[k, v] for k, v in spent.entries()]}
+
+        add("permissions.sequence", label, shown, call)
+
+    approved = pay(120, card="card-3")
+    sequence("an approval works once", 100, [("base_card", approved, PT0 + 1), ("base_card", approved, PT0 + 2), ("base_card", approved, PT0 + 360)])
+    sequence("a refused request spends nothing", 100, [("base_card", pay(120), PT0 + 1), ("base_card", pay(12001, card="card-3"), PT0 + 2), ("base_card", approved, PT0 + 3), ("base_card", approved, PT0 + 4)])
+    sequence("a request that asks spends nothing", 100, [("base", pay(120), PT0), ("base", req(), PT0)])
+    tool = req(job="job-7", tool="call-19")
+    sequence("a tool call works once", 100, [("base_job_tool", tool, PT0), ("base_job_tool", tool, PT0), ("base_job", req(job="job-7"), PT0), ("base_job", req(job="job-7"), PT0)])
+    sequence("two approvals, room for one", 1, [("base_card", approved, PT0 + 1), ("base_card_other", pay(120, card="card-4"), PT0 + 2), ("base_card_other", pay(120, card="card-4"), PT0 + 3)])
+    sequence("room returns when the first has lapsed", 1, [("base_card", approved, PT0 + 1), ("base_job_tool", tool, PT0 + 361)])
+    sequence("approval from Python on a Rust token, then replay", 10, [("py_card_on_rust_base", pay(150, card="card-py"), PT0), ("py_card_on_rust_base", pay(150, card="card-py"), PT0 + 1)])
+    sequence("job and card bound together spend one id", 10, [("rich_chain3", rpay(300, "api.example.com", job="job-7", card="card-9"), PT0 + 5)] * 2, usage=chain_usage)
+
+    # ---- narrow: each side appends, then reads its own bytes back
+    def narrow(label: str, token: str, *steps: dict[str, Any]) -> None:
+        def call() -> Any:
+            m = P.Mandate.parse(tokens[token], pub)
+            for step in steps:
+                m = P.narrow(m, codec.narrowing_from_data(step))
+            return mandate_data(P.Mandate.parse(m.to_base64(), pub), with_ids=False)
+
+        add("permissions.narrow", f"{token}: {label}", {"token": tokens[token], "root": pub, "narrowings": list(steps)}, call)
+
+    narrow("fewer actions", "base", {"actions": ["files.read"]})
+    narrow("actions given unsorted", "base", {"actions": ["pay.spend", "files.read"]})
+    narrow("a folder inside", "base", {"resources": [["folder", "/docs/work/sub"]]})
+    narrow("the same folder and the host", "base", {"resources": [["host", "api.example.com"], ["folder", "/docs/work"]]})
+    narrow("lower limit", "base", {"limits": [["spend", "TWD", "day", 500]]})
+    narrow("equal limit", "base", {"limits": [["spend", "TWD", "day", 2000]]})
+    narrow("limit for a new period", "base", {"limits": [["spend", "TWD", "month", 5000]]})
+    narrow("requests limit", "base", {"limits": [["requests", "", "day", 10]]})
+    narrow("cap", "base", {"caps": [["spend", "TWD", 12000]]})
+    narrow("window", "base", {"not_before": PT0 + 60, "not_after": PT0 + 600})
+    narrow("a window of one instant", "base", {"not_before": PT0 + 60, "not_after": PT0 + 60})
+    narrow("privacy", "base", {"privacy": "local"})
+    narrow("same privacy", "base", {"privacy": "private"})
+    narrow("each_write again", "base", {"confirm": ["each_write"]})
+    narrow("over_amount under each_write", "base", {"confirm": ["over_amount", "TWD", 2, 100]})
+    narrow("job", "base", {"job": "job-7"})
+    narrow("tool with an end", "base", {"tool": "call-1", "not_after": PT0 + 60})
+    narrow("approval", "base", {"actions": ["pay.spend"], "resources": [["host", "api.example.com"]], "caps": [["spend", "TWD", 12000]], "not_after": PT0 + 300, "card": "card-3"})
+    narrow("everything at once", "rich", {"actions": ["files.read", "pay.spend"], "resources": [["folder", "/文件/工作/報告"], ["calendar", "*"], ["host", "api.example.com"]],
+                                          "limits": [["spend", "TWD", "day", 1000], ["messages", "", "month", 5]], "caps": [["spend", "TWD", 300], ["requests", "", 1]],
+                                          "not_before": PT0 + 1, "not_after": PT0 + 500, "privacy": "local", "confirm": ["over_amount", "TWD", 2, 50],
+                                          "job": "job-1", "tool": "call-1", "card": "card-1"})
+    narrow("three steps", "rich", {"actions": ["files.read", "files.write", "pay.spend"]}, {"resources": [["folder", "/文件/工作/報告"]], "privacy": "private"},
+           {"actions": ["files.read"], "job": "job-2"})
+    narrow("lower, then lower again", "base", {"limits": [["spend", "TWD", "day", 500]], "caps": [["spend", "TWD", 300]]}, {"limits": [["spend", "TWD", "day", 400]], "caps": [["spend", "TWD", 200]]})
+    narrow("any calendar to one calendar", "rich", {"resources": [["calendar", "家庭"]]})
+    narrow("on a narrowed token", "base_actions", {"resources": [["folder", "/docs/work/sub/deeper"]]})
+    narrow("same job again", "base_job", {"job": "job-7"})
+    narrow("on a token narrowed by the other implementation", "py_base_narrowed", {"job": "job-9"})
+    narrow("on a chain from both implementations", "py_on_rust_chain2", {"privacy": "local"})
+    for label, token, step in [
+        ("nothing", "base", {}), ("an action it lacks", "base", {"actions": ["mail.send"]}), ("one good and one missing action", "base", {"actions": ["files.read", "mail.send"]}),
+        ("an action a level dropped", "base_actions", {"actions": ["files.write"]}), ("the parent folder", "base", {"resources": [["folder", "/docs"]]}),
+        ("a sibling with the same prefix", "base", {"resources": [["folder", "/docs/workshop"]]}), ("any folder", "base", {"resources": [["folder", "*"]]}),
+        ("a kind it lacks", "base", {"resources": [["calendar", "x"]]}), ("a folder a level dropped", "base_folder", {"resources": [["folder", "/docs/work/other"]]}),
+        ("a higher limit", "base", {"limits": [["spend", "TWD", "day", 2001]]}), ("a limit above a level's", "base_limit", {"limits": [["spend", "TWD", "day", 501]]}),
+        ("a limit in a unit it lacks", "base", {"limits": [["spend", "USD", "day", 1]]}), ("a limit of a kind it lacks", "base", {"limits": [["messages", "", "month", 1]]}),
+        ("a cap above a level's", "base_cap", {"caps": [["spend", "TWD", 101]]}), ("a cap in a unit it lacks", "base", {"caps": [["spend", "USD", 1]]}),
+        ("an earlier start", "base", {"not_before": PT0 - 1}), ("a later end", "base", {"not_after": end + 1}),
+        ("an end before the start", "base", {"not_before": PT0 + 10, "not_after": PT0 + 9}), ("an end before a level's start", "base_window", {"not_after": PT0 + 10}),
+        ("a less protective class", "base", {"privacy": "standard"}), ("a class above a level's", "base_local", {"privacy": "private"}),
+        ("never", "base", {"confirm": ["never"]}), ("over_amount in a unit it lacks", "base", {"confirm": ["over_amount", "USD", 2, 1]}),
+        ("another job", "base_job", {"job": "job-8"}), ("another tool", "base_job_tool", {"tool": "call-20", "not_after": PT0 + 60}),
+        ("another card", "base_card", {"card": "card-4", "not_after": PT0 + 60}),
+        ("a card without an end", "base", {"card": "card-1"}), ("a tool without an end", "base", {"tool": "call-1"}),
+        ("a job with a quote", "base", {"job": 'j"x'}), ("a job with a space", "base", {"job": "job 7"}),
+        ("a folder with a quote", "base", {"resources": [["folder", '/docs/work/a"b']]}), ("a folder with a newline", "base", {"resources": [["folder", "/docs/work/a\nb"]]}),
+        ("duplicate actions", "base", {"actions": ["files.read", "files.read"]}), ("a malformed action", "base", {"actions": ["Read"]}),
+        ("an unknown privacy class", "base", {"privacy": "secret"}), ("an unknown period", "base", {"limits": [["spend", "TWD", "week", 1]]}),
+        ("a negative limit", "base", {"limits": [["spend", "TWD", "day", -1]]}), ("a time past year 9999", "base", {"not_after": 253402300800}),
+        ("a sealed token", "sealed", {"job": "job-1"}), ("a token that does not verify", "other_root", {"job": "job-1"}),
+        ("a token with an unknown block", "evil_check_true", {"job": "job-1"}),
+    ]:
+        narrow(f"refuses {label}", token, step)
+
+    # ---- revocation lists
+    def revocations(label: str, lists: list[list[str]], ask: list[str] | None = None, root: str = pub) -> None:
+        shown = {"root": root, "lists": [[entries[e] for e in names] for names in lists], "ask": ask or []}
+
+        def call() -> Any:
+            merged = P.RevocationList()
+            for group in shown["lists"]:
+                one = P.RevocationList()
+                for entry in group:
+                    one.add_entry(entry, root)
+                merged.merge(one)
+            merged.verify(root)
+            assert P.RevocationList.from_json(merged.to_json(), root) == merged
+            return {"entries": [[e.id, e.at, e.signer] for e in merged.entries()], "json": merged.to_json(),
+                    "contains": [merged.contains(i) for i in shown["ask"]]}
+
+        add("permissions.revocations", label, shown, call)
+
+    some_id, absent_id = "ab" * 64, "cd" * 64
+    revocations("empty", [], [some_id])
+    revocations("one entry", [["unrelated"]], [some_id, absent_id])
+    revocations("union", [["base_root", "unrelated"], ["base_actions_block"], ["base_job_block", "unrelated"]], [some_id, absent_id])
+    revocations("same id twice: the earlier time is kept", [["base_root"], ["base_root_earlier"]])
+    revocations("same id twice, other order", [["base_root_earlier"], ["base_root"]])
+    revocations("same id three times, from both implementations", [["base_root"], ["py_rust_base_root_earliest", "base_root_earlier"]])
+    revocations("merging a list with itself", [["base_root", "unrelated"], ["base_root", "unrelated"]])
+    revocations("entries made by Python", [["py_base_root", "py_narrowed_block"], ["unrelated"]])
+    for bad in ["forged_by_other", "a_permission_is_not_an_entry", "two_blocks", "extra_line", "names_other_signer"]:
+        revocations(f"refuses {bad}", [["unrelated"], [bad]])
+    revocations("entries under another root are refused", [["unrelated"]], root=other_pub)
+    revocations("the other key's entry under the other root", [["forged_by_other"]], root=other_pub)
+
+    def revoke(label: str, key: str, ident: str, at: int) -> None:
+        def call() -> Any:
+            root = P.parse_private_key(key)
+            revoked_list = P.RevocationList()
+            revoked_list.add(ident, at, root)
+            e = P.RevocationEntry.verify(revoked_list.entries()[0].token, P.public_key_text(root))
+            return [e.id, e.at, e.signer]
+
+        add("permissions.revoke", label, {"root_private": key, "id": ident, "at": at}, call)
+
+    revoke("sign and verify", fx["root_private"], some_id, PT0)
+    revoke("other key", fx["other_private"], absent_id, 0)
+    revoke("last second", fx["root_private"], some_id, 253402300799)
+    revoke("short id", fx["root_private"], "abcd", PT0)
+    revoke("upper-case id", fx["root_private"], "AB" * 64, PT0)
+    revoke("negative time", fx["root_private"], some_id, -1)
+
+    # ---- spent set
+    def spent(label: str, capacity: int, ops: list[list[Any]]) -> None:
+        def call() -> Any:
+            s = P.SpentSet(capacity)
+            out: list[Any] = []
+            for op in ops:
+                if op[0] == "insert":
+                    try:
+                        s.insert(op[1], op[2], op[3])
+                        out.append("ok")
+                    except P.PermissionError as exc:
+                        out.append(exc.code)
+                elif op[0] == "contains":
+                    out.append(s.contains(op[1], op[2]))
+                elif op[0] == "room":
+                    out.append(s.has_room(op[1], op[2]))
+                else:
+                    s.purge(op[1])
+                    out.append(len(s))
+            return {"results": out, "entries": [[k, v] for k, v in s.entries()]}
+
+        add("permissions.spent", label, {"capacity": capacity, "ops": ops}, call)
+
+    spent("insert and ask", 10, [["insert", "a", 100, 0], ["contains", "a", 0], ["contains", "a", 100], ["contains", "a", 101], ["contains", "b", 0]])
+    spent("purge drops what has lapsed", 10, [["insert", "a", 100, 0], ["insert", "b", 200, 0], ["purge", 100], ["purge", 101], ["purge", 201]])
+    spent("full refuses", 2, [["insert", "a", 100, 0], ["insert", "b", 100, 0], ["insert", "c", 100, 0], ["room", 0, 0], ["room", 1, 0], ["contains", "c", 0]])
+    spent("inserting again keeps the later time", 2, [["insert", "a", 100, 0], ["insert", "a", 50, 0], ["insert", "a", 300, 0], ["insert", "a", 200, 0]])
+    spent("a full set takes a key it already has", 1, [["insert", "a", 100, 0], ["insert", "a", 150, 0], ["insert", "b", 150, 0]])
+    spent("lapsed entries make room", 1, [["insert", "a", 100, 0], ["room", 1, 100], ["room", 1, 101], ["insert", "b", 500, 101], ["contains", "a", 101]])
+    spent("unicode-free keys sort by code point", 10, [["insert", "m1_b/tool/x", 9, 0], ["insert", "m1_a/tool/x", 9, 0], ["insert", "m1_a/card/x", 9, 0]])
+    spent("capacity zero", 0, [["room", 0, 0], ["room", 1, 0], ["insert", "a", 1, 0]])
+
+    # ---- formatting
+    for kind, unit, decimals, amount in [
+        ("spend", "TWD", 2, 2000), ("spend", "TWD", 2, 2050), ("spend", "TWD", 2, 5), ("spend", "TWD", 2, 0), ("spend", "TWD", 0, 20),
+        ("spend", "USD", 2, 123456), ("spend", "EUR", 2, 99), ("spend", "JPY", 0, 300), ("spend", "USDC", 6, 2000000), ("spend", "USDC", 6, 1500000),
+        ("spend", "USDC", 6, 1234567), ("spend", "USDC", 6, 1), ("spend", "ETH", 18, 1000000000000000000), ("spend", "ETH", 18, 1),
+        ("spend", "TWD", 2, 9223372036854775807), ("spend", "BTC", 8, 10), ("requests", "", 0, 200), ("messages", "", 0, 20), ("requests", "", 0, 1),
+    ]:
+        for lang in ("en", "zh-TW"):
+            add("permissions.format", f"amount {kind} {unit} {decimals} {amount} {lang}", {"what": "amount", "kind": kind, "unit": unit, "decimals": decimals, "amount": amount, "lang": lang},
+                lambda k=kind, u=unit, d=decimals, a=amount, g=lang: P.format_amount(k, u, d, a, g))
+    for t in [0, 1, 59, 86399, 86400, 951782400, 951868800, 1709164800, PT0, PT0 + 300, 4102444800, 253402300799]:
+        add("permissions.format", f"time {t}", {"what": "time", "t": t}, lambda t=t: [P.format_time(t), P.rfc3339(t)])
+    for action in ["files.read", "files.write", "mail.read", "mail.draft", "mail.send", "calendar.read", "calendar.write", "health.read", "records.read",
+                   "llm.call", "llm.paid", "pay.spend", "home.admin", "x.custom", "files.readx"]:
+        add("permissions.format", f"class {action}", {"what": "class", "action": action}, lambda a=action: P.action_class(a))
+    return area
+
+
+def permissions_file(out_dir: Path) -> str | None:
+    """The permissions area: recomputed when biscuit-python is installed, otherwise the
+    file already in `out_dir` or the committed one, unchanged (None if there is neither)."""
+    if permissions_available():
+        return permissions_vectors().render()
+    for directory in (out_dir, DEFAULT_OUT):
+        path = directory / PERMISSIONS_FILE
+        if path.is_file():
+            return path.read_text(encoding="utf-8")
+    return None
+
+
 # ---------------------------------------------------------------- main
 
 
-def build() -> dict[str, str]:
+def build(out_dir: Path = DEFAULT_OUT) -> dict[str, str]:
     """File name -> content for every area."""
     files = {f"{area.name}.json": area.render() for area in (quota_vectors(), ration_vectors(), cache_vectors())}
     files["records.json"] = records_vectors.render()  # see muse/records/vectors.py; the keys in it are test-only
+    permissions = permissions_file(out_dir)
+    if permissions is not None:
+        files[PERMISSIONS_FILE] = permissions
     return files
 
 
 def write(out_dir: Path) -> dict[str, str]:
-    files = build()
+    files = build(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     for name, content in files.items():
         (out_dir / name).write_text(content, encoding="utf-8", newline="\n")
@@ -1003,7 +1712,7 @@ def write(out_dir: Path) -> dict[str, str]:
 
 def stale(out_dir: Path) -> list[str]:
     """Names of files in `out_dir` that differ from what Python returns now (or are missing or extra)."""
-    files = build()
+    files = build(out_dir)
     present = {p.name for p in out_dir.glob("*.json")} if out_dir.is_dir() else set()
     bad = [name for name, content in files.items()
            if name not in present or (out_dir / name).read_text(encoding="utf-8") != content]
@@ -1014,7 +1723,16 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="directory to write (default: core/conformance)")
     parser.add_argument("--check", action="store_true", help="write nothing; exit 1 if a file is out of date")
+    parser.add_argument("--make-python-fixtures", action="store_true",
+                        help="write core/conformance/fixtures/permission_tokens_py.json (new random tokens; only when the schema changes)")
     args = parser.parse_args(argv)
+    if args.make_python_fixtures:
+        path = FIXTURES / "permission_tokens_py.json"
+        path.write_text(json.dumps(make_python_fixtures(), indent=2, ensure_ascii=True) + "\n", encoding="utf-8", newline="\n")
+        print(f"wrote {path}; now run this script again without the flag")
+        return 0
+    if not permissions_available():
+        print("note: biscuit-python is not installed; permissions.json is passed through, not recomputed", file=sys.stderr)
     if args.check:
         bad = stale(args.out)
         if bad:

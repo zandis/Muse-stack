@@ -274,6 +274,7 @@ fn every_vector_matches_python() {
         .expect("core/conformance")
         .map(|entry| entry.unwrap().file_name().into_string().unwrap())
         .filter(|name| name.ends_with(".json") && !OTHER_TESTS.contains(&name.as_str()))
+        .filter(|name| name != "permissions.json") // replayed by tests/permissions_vectors.rs
         .collect();
     files.sort();
     let mut known: Vec<&str> = EXPECTED.iter().map(|(file, _)| *file).collect();

@@ -1829,6 +1829,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_rules_parser(sub)
     register_skills_commands(sub)
     register_records_commands(sub)
+    add_permissions_parser(sub)
     return p
 
 
@@ -1968,6 +1969,285 @@ def register_records_commands(sub: Any) -> None:
 
 
 # ===== END records =====
+# ===== BEGIN permissions: `muse permissions list|show|issue|narrow|check|revoke` (own block; logic lives in muse/permissions/) =====
+# Signed permission tokens (docs/spec/interfaces/permission-token.md). This block only
+# exercises them by hand: nothing else in Muse enforces these tokens yet.
+
+
+class _PermUsage(Exception):
+    """An argument of `muse permissions` that cannot be read."""
+
+
+def _perm_time(text: str) -> int:
+    """`2026-11-30` or `2026-11-30T12:00:00Z` (no zone means UTC) as seconds since 1970."""
+    try:
+        when = datetime.fromisoformat(text.strip())
+    except ValueError:
+        raise _PermUsage(f"{text!r} is not a date (use 2026-11-30 or 2026-11-30T12:00:00Z)") from None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return int(when.timestamp())
+
+
+def _perm_fields(text: str, shapes: dict[int, Any], what: str, example: str) -> Any:
+    """Split `a:b:c` and build a value with the function registered for that many parts."""
+    parts = text.split(":")
+    make = shapes.get(len(parts))
+    try:
+        if make is None:
+            raise ValueError
+        return make(*parts)
+    except ValueError:
+        raise _PermUsage(f"{what} {text!r} is not understood (for example {example})") from None
+
+
+def _perm_resource(text: str) -> Any:
+    from muse import permissions as P
+
+    kind, sep, value = text.partition(":")
+    if not sep:
+        raise _PermUsage(f"resource {text!r} is not understood (for example folder:/Documents/Work or host:api.example.com)")
+    return P.Resource(kind, value)
+
+
+def _perm_confirm(text: str) -> Any:
+    from muse import permissions as P
+
+    return _perm_fields(text, {1: lambda rule: P.Confirm(rule), 4: lambda rule, unit, dec, n: P.Confirm(rule, unit, int(dec), int(n))},
+                        "confirmation rule", "each_write, never, or over_amount:TWD:2:500")
+
+
+def _perm_narrowing(args: argparse.Namespace, now: int) -> Any:
+    from muse import permissions as P
+
+    limit = {3: lambda kind, period, n: P.NarrowLimit(kind, "", period, int(n)), 4: lambda kind, unit, period, n: P.NarrowLimit(kind, unit, period, int(n))}
+    cap = {2: lambda kind, n: P.Cap(kind, "", int(n)), 3: lambda kind, unit, n: P.Cap(kind, unit, int(n))}
+    not_after = _perm_time(args.until) if args.until else (now + 60 * args.minutes if args.minutes else None)
+    return P.Narrowing(
+        actions=tuple(args.action or ()),
+        resources=tuple(_perm_resource(r) for r in args.resource or ()),
+        limits=tuple(_perm_fields(l, limit, "limit", "spend:TWD:day:500 or requests:day:10") for l in args.limit or ()),
+        caps=tuple(_perm_fields(c, cap, "cap", "spend:TWD:12000") for c in args.cap or ()),
+        not_before=_perm_time(args.start) if args.start else None,
+        not_after=not_after,
+        privacy=args.privacy,
+        confirm=_perm_confirm(args.confirm) if args.confirm else None,
+        job=args.job, tool=args.tool, card=args.card,
+    )
+
+
+def _perm_print(mandate: Any, lang: str, indent: str = "") -> None:
+    from muse import permissions as P
+
+    text = P.describe(mandate, lang)
+    print(indent + text.sentence)
+    for line in text.lines:
+        print(f"{indent}  {line}")
+
+
+def _perm_state(mandate: Any, revoked: Any, now: int) -> str:
+    from muse import permissions as P
+
+    if any(revoked.contains(i) for i in P.revocation_ids(mandate)):
+        return "stopped"
+    if now > mandate.not_after():
+        return "expired"
+    return "not yet valid" if now < mandate.not_before() else "active"
+
+
+def _perm_yes(args: argparse.Namespace, question: str) -> bool:
+    if args.yes:
+        return True
+    if not sys.stdin.isatty():
+        _err("Error: this needs your confirmation; run it in a terminal, or pass --yes")
+        return False
+    return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
+
+
+def cmd_permissions(args: argparse.Namespace) -> int:
+    from muse import permissions as P
+    from muse.permissions import store as pstore
+
+    try:
+        return _cmd_permissions(args, P, pstore)
+    except P.PermissionError as exc:
+        _err(f"Error: {exc.detail or exc.code} ({exc.code})")
+        return 1
+    except _PermUsage as exc:
+        _err(f"Error: {exc}")
+        return 2
+
+
+def _cmd_permissions(args: argparse.Namespace, P: Any, pstore: Any) -> int:
+    keys_ = pstore.FileKeySource(environ=_env())
+    store = pstore.PermissionStore(environ=_env())
+    now = _perm_time(args.at) if getattr(args, "at", None) else int(time.time())
+    lang = getattr(args, "lang", "en")
+    cmd = args.permissions_cmd
+
+    if cmd == "issue":
+        if not keys_.exists():
+            if not args.new_key:
+                _err(f"Error: no root key at {keys_.path}. Pass --new-key to create one (keep that file safe: it signs every permission).")
+                return 1
+            print(f"Created a root key at {keys_.path} (public key {keys_.create()})")
+        root = keys_.load()
+        limit = {3: lambda kind, period, n: P.Limit(kind, "", 0, period, int(n)),
+                 5: lambda kind, unit, dec, period, n: P.Limit(kind, unit, int(dec), period, int(n))}
+        start = _perm_time(args.start) if args.start else now
+        draft = P.propose_from_fields(P.Draft(
+            issuer=P.public_key_text(root), holder=args.holder, actions=tuple(args.action), routine=tuple(args.routine or ()),
+            resources=tuple(_perm_resource(r) for r in args.resource),
+            limits=tuple(_perm_fields(l, limit, "limit", "spend:TWD:2:day:2000 or requests:day:200") for l in args.limit or ()),
+            purpose_text=args.purpose, purpose_code=args.purpose_code, issued_at=now, not_before=start,
+            not_after=_perm_time(args.until) if args.until else start + 86400 * args.days,
+            confirm=_perm_confirm(args.confirm), privacy=args.privacy, period_zone=args.zone))
+        mandate = P.issue(draft, root)  # signed in memory only; nothing is kept unless the person agrees
+        _perm_print(mandate, lang)
+        if not _perm_yes(args, "Issue this permission?"):
+            print("Not issued.")
+            return 1
+        print(f"Issued {store.save(mandate)} (id {mandate.id})")
+        return 0
+
+    if cmd == "list":
+        root = keys_.public() if keys_.exists() else None
+        revoked = store.revocations(root) if root else P.RevocationList()
+        rows = []
+        for name in store.names():
+            try:
+                mandate = store.load(name, root or "")
+            except P.PermissionError as exc:
+                rows.append({"name": name, "state": f"unreadable ({exc.code})"})
+                continue
+            rows.append({"name": name, "id": mandate.id, "state": _perm_state(mandate, revoked, now), "holder": mandate.draft.holder,
+                         "narrowed": len(mandate.levels), "until": P.format_time(mandate.not_after()), "sentence": P.describe(mandate, lang).sentence})
+        if args.json:
+            print(json.dumps(rows, ensure_ascii=False, indent=2))
+        elif not rows:
+            print("No permissions yet. Try: muse permissions issue --holder helper:vm --action files.read --resource folder:/Documents/Work --new-key")
+        for row in [] if args.json else rows:
+            print(f"{row['name']}  [{row['state']}]" + (f"  narrowed {row['narrowed']}x" if row.get("narrowed") else ""))
+            if "sentence" in row:
+                print(f"  {row['sentence']}")
+        return 0
+
+    root = keys_.public()
+    name = store.resolve(args.name)
+    mandate = store.load(name, root)
+    revoked = store.revocations(root)
+
+    if cmd == "show":
+        print(f"{name}  [{_perm_state(mandate, revoked, now)}]  id {mandate.id}")
+        _perm_print(mandate, lang, "  ")
+        print(f"  blocks: {len(mandate.levels) + 1}, {mandate.size()} bytes; revocation ids: " + ", ".join(i[:16] for i in P.revocation_ids(mandate)))
+        if args.token:
+            print(mandate.to_base64())
+        return 0
+
+    if cmd == "narrow":
+        child = P.narrow(mandate, _perm_narrowing(args, now))
+        _perm_print(child, lang)
+        print(f"Saved {store.save(child)} (narrowed from {name}; no key was needed)")
+        return 0
+
+    if cmd == "check":
+        amount = {2: lambda kind, n: P.Amount(kind, "", int(n)), 3: lambda kind, unit, n: P.Amount(kind, unit, int(n))}
+        used = {3: lambda kind, period, n: ((kind, "", period), int(n)), 4: lambda kind, unit, period, n: ((kind, unit, period), int(n))}
+        request = P.Request(
+            holder=args.holder or mandate.draft.holder, action=args.action, resource=_perm_resource(args.resource),
+            privacy=args.privacy or mandate.privacy(),
+            amounts=tuple(_perm_fields(a, amount, "amount", "spend:TWD:120") for a in args.amount or ()),
+            job=args.job, tool=args.tool, card=args.card)
+        usage = dict(_perm_fields(u, used, "usage figure", "spend:TWD:day:0") for u in args.used or ())
+        spent = store.spent()
+        decision = (P.check_and_record if args.record else P.check)(mandate, request, usage, revoked, spent, now)
+        if args.record and decision.allowed:
+            store.save_spent(spent)
+        print({"allow": "allow", "deny": f"deny: {decision.detail}", "needs_confirmation": f"needs confirmation: {decision.detail}"}[decision.kind])
+        return 0 if decision.allowed else 3
+
+    if cmd == "revoke":
+        ids = P.revocation_ids(mandate)
+        ident = ids[-1] if args.only_this_copy else ids[0]
+        scope = "this narrowed copy and anything narrowed from it" if args.only_this_copy and len(ids) > 1 else "this permission and every copy narrowed from it"
+        _perm_print(mandate, lang)
+        if not _perm_yes(args, f"Stop {scope}?"):
+            print("Not stopped.")
+            return 1
+        revoked.add(ident, now, keys_.load())
+        store.save_revocations(revoked)
+        print(f"Stopped. The revocation list now has {len(revoked)} entr{'y' if len(revoked) == 1 else 'ies'} ({store.dir / 'revocations.json'}).")
+        return 0
+    return 2
+
+
+def add_permissions_parser(sub: Any) -> None:
+    p = sub.add_parser("permissions", help="signed permissions: issue, narrow, check, stop (not yet enforced by the router or skills)")
+    psub = p.add_subparsers(dest="permissions_cmd", required=True)
+    lang = dict(choices=["en", "zh-TW"], default="en", help="zh-TW: Traditional Chinese")
+
+    def add(name: str, helptext: str) -> Any:
+        s = psub.add_parser(name, help=helptext)
+        s.add_argument("--lang", **lang)
+        s.add_argument("--at", metavar="TIME", help="pretend it is this time (for trying things out)")
+        s.set_defaults(func=cmd_permissions)
+        return s
+
+    ls = add("list", "every stored permission, as a sentence")
+    ls.add_argument("--json", action="store_true")
+    sh = add("show", "one permission with its limits")
+    sh.add_argument("name", help="a stored name, or the start of one")
+    sh.add_argument("--token", action="store_true", help="also print the token itself")
+    i = add("issue", "write a permission, read it back as a sentence, and sign it once you agree")
+    i.add_argument("--holder", required=True, help="who may use it, e.g. helper:vm, app:reader, device:phone-1, clinician:dr-lin")
+    i.add_argument("--action", action="append", required=True, help="e.g. files.read, files.write, mail.draft, llm.call, pay.spend (repeat)")
+    i.add_argument("--resource", action="append", required=True, help="kind:value, e.g. folder:/Documents/Work, host:api.example.com, calendar:* (repeat)")
+    i.add_argument("--limit", action="append", help="spend:TWD:2:day:2000 (unit, decimals, period, minor units) or requests:day:200 (repeat)")
+    i.add_argument("--routine", action="append", help="an action that need not be confirmed each time (repeat)")
+    i.add_argument("--purpose", default="", help="why, in your own words")
+    i.add_argument("--purpose-code", default="", help="a standard purpose code, if one applies")
+    i.add_argument("--from", dest="start", metavar="TIME", help="start (default: now)")
+    i.add_argument("--until", metavar="TIME", help="end (default: --days after the start)")
+    i.add_argument("--days", type=int, default=30, help="how long it lasts when --until is not given (default 30)")
+    i.add_argument("--confirm", default="each_write", help="each_write (default), never, or over_amount:TWD:2:500")
+    i.add_argument("--privacy", default="private", choices=["local", "private", "standard", "public"], help="least protective class it may send data under (default private)")
+    i.add_argument("--zone", default="UTC", help="time zone days and months are counted in (default UTC)")
+    i.add_argument("--new-key", action="store_true", help="create the root key if there is none yet")
+    i.add_argument("--yes", action="store_true", help="do not ask for confirmation")
+    n = add("narrow", "make a narrower copy of a permission (needs no key)")
+    n.add_argument("name")
+    n.add_argument("--action", action="append")
+    n.add_argument("--resource", action="append")
+    n.add_argument("--limit", action="append", help="a lower limit: spend:TWD:day:500 or requests:day:10")
+    n.add_argument("--cap", action="append", help="the most one request may carry: spend:TWD:12000")
+    n.add_argument("--from", dest="start", metavar="TIME")
+    n.add_argument("--until", metavar="TIME")
+    n.add_argument("--minutes", type=int, help="end this many minutes from now")
+    n.add_argument("--privacy", choices=["local", "private", "standard", "public"])
+    n.add_argument("--confirm", help="each_write or over_amount:TWD:2:100")
+    n.add_argument("--job", help="only for this job id")
+    n.add_argument("--tool", help="only for this one tool call (needs --until or --minutes)")
+    n.add_argument("--card", help="only for this one approval card (needs --until or --minutes)")
+    c = add("check", "would this request be allowed? exit 0 allow, 3 otherwise")
+    c.add_argument("name")
+    c.add_argument("--action", required=True)
+    c.add_argument("--resource", required=True, help="kind:value")
+    c.add_argument("--holder", help="who is asking (default: the permission's holder)")
+    c.add_argument("--privacy", choices=["local", "private", "standard", "public"], help="class the request is handled under (default: the permission's)")
+    c.add_argument("--amount", action="append", help="spend:TWD:120 or requests:1 (repeat)")
+    c.add_argument("--used", action="append", help="used so far this period: spend:TWD:day:0 or requests:day:3 (repeat)")
+    c.add_argument("--job")
+    c.add_argument("--tool")
+    c.add_argument("--card")
+    c.add_argument("--record", action="store_true", help="if allowed, remember single-use ids so the same approval cannot be used twice")
+    r = add("revoke", "stop a permission and every copy narrowed from it")
+    r.add_argument("name")
+    r.add_argument("--only-this-copy", action="store_true", help="stop only this narrowed copy (and anything narrowed from it)")
+    r.add_argument("--yes", action="store_true", help="do not ask for confirmation")
+
+
+# ===== END permissions =====
 
 
 def main(argv: list[str] | None = None) -> int:
