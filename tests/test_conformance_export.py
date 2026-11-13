@@ -16,7 +16,10 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 COMMITTED = ROOT / "core" / "conformance"
-AREAS = ("cache.json", "quota.json", "ration.json")
+# permissions.json replays fixed tokens (they cannot be reproduced byte for byte) and needs the
+# optional biscuit-python to recompute; without it the exporter passes the committed file through,
+# so these tests still hold. tests/test_permissions.py checks the recomputation when it is installed.
+AREAS = ("cache.json", "permissions.json", "quota.json", "ration.json")
 
 
 def load_exporter():
