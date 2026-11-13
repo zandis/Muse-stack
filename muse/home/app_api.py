@@ -418,10 +418,19 @@ def h_keys(home: Any, req: Any) -> tuple[int, dict[str, Any]]:
 
 
 def _service_names(home: Any) -> dict[str, tuple[str, bool]]:
+    """Service id -> (name, is it on this computer). The catalogue first; the status snapshot for anything it lacks."""
+    out: dict[str, tuple[str, bool]] = {}
     try:
-        return {p.id: (p.name, bool(p.local)) for p in home.load_catalogue().providers}
+        for entry in home.snapshot().get("providers") or []:
+            if entry.get("id") and entry.get("name"):
+                out[str(entry["id"])] = (str(entry["name"]), entry.get("kind") == "local")
     except Exception:
-        return {}
+        pass
+    try:
+        out.update({p.id: (p.name, bool(p.local)) for p in home.load_catalogue().providers})
+    except Exception:
+        pass
+    return out
 
 
 def _refill_at(home: Any, provider: str | None) -> str | None:
@@ -532,7 +541,7 @@ def _skill_answer(home: Any, run: Mapping[str, Any], question: str, privacy: str
         line = {"key": "local" if local else "free", "params": {"service": name}}
     else:
         line = {"key": "free_many", "params": {"count": len(providers)}}
-    sources = [{"n": c.get("n"), "label": str(c.get("label") or "")[:300]} for c in output.get("citations") or [] if isinstance(c, dict)]
+    sources = skill_sources(output)
     check = result.get("check") if isinstance(result.get("check"), dict) else {}
     return {
         "status": "answered", "text": text[: app_ask.MAX_ANSWER_CHARS], "run_id": run["id"],
@@ -545,6 +554,37 @@ def _skill_answer(home: Any, run: Mapping[str, Any], question: str, privacy: str
         "sources": sources[:50],
         "handoff": {"apps": handoff_apps(home, question)},
     }
+
+
+MAX_QUOTE_CHARS = 400
+
+
+def skill_sources(output: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The files skill's citations as `file › paragraph` with the quoted words (ux section 4.2).
+
+    `file` is the path as the skill showed it (relative to the allowed folder), `paragraphs` the numbers the
+    statements rest on, `quote` the words of the first of those paragraphs, cut to MAX_QUOTE_CHARS."""
+    passages = {p.get("n"): p for p in output.get("passages") or [] if isinstance(p, dict)}
+    out: list[dict[str, Any]] = []
+    for c in output.get("citations") or []:
+        if not isinstance(c, dict):
+            continue
+        passage = passages.get(c.get("n")) or {}
+        numbers = [n for n in c.get("paragraphs") or [] if isinstance(n, int) and not isinstance(n, bool)]
+        quote = ""
+        parts = str(passage.get("text") or "").split("\n\n")
+        for part, n in zip(parts, passage.get("paragraphs") or []):
+            if numbers and n == numbers[0]:
+                quote = part
+                break
+        if not quote and parts:
+            quote = parts[0]
+        quote = " ".join(quote.split())
+        if len(quote) > MAX_QUOTE_CHARS:
+            quote = quote[: MAX_QUOTE_CHARS - 1] + "…"
+        out.append({"n": c.get("n"), "file": str(passage.get("shown") or c.get("path") or "")[:300], "paragraphs": numbers[:20],
+                    "quote": quote, "label": str(c.get("label") or "")[:300]})
+    return out
 
 
 def _public_turn(turn: Mapping[str, Any]) -> dict[str, Any]:
@@ -603,7 +643,11 @@ def _ask_record(home: Any, req: Any, answer: Mapping[str, Any]) -> bool:
     cost = route.get("cost") or {}
     fields: dict[str, Any] = {"egress": egress, **api._who(req.device)}
     if cost.get("usd") and Decimal(cost["usd"]) > 0:
-        fields["cost"] = {"amount": cost["usd"], "currency": "USD"}
+        # The record format counts in minor units (US cents); a sub-cent cost is rounded up so it never reads as nothing.
+        from decimal import ROUND_CEILING
+
+        cents = int((Decimal(cost["usd"]) * 100).to_integral_value(rounding=ROUND_CEILING))
+        fields["cost"] = {"currency": "USD", "minor": cents}
     return home.record("home.ask", words, **fields) is not None
 
 

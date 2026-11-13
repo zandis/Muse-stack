@@ -197,7 +197,7 @@ class FakeApp(AppBackend):
         chore = store.get(run.chore_id)
         lang = chore.spec.lang
         name = f"Muse {time.strftime('%Y-%m-%d', time.gmtime(self.home.clock()))}.md"
-        where = chore.spec.dest or str(Path(str(self.home.root)) / "demo" / "documents")
+        where = chore.spec.dest or str(Path(str(self.home.demo_root)) / "documents")
         label = "每週摘要" if lang == "zh-TW" else "Weekly digest"
         card_id = self.home.cards.create(
             kind="save_file", title=chores.w("card_title", lang), thing=name, where=where,

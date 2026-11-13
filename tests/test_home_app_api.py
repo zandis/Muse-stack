@@ -360,7 +360,7 @@ def test_pay_under_the_limit_goes_at_once_with_allow_paid(home):
     assert got["answer"]["status"] == "answered" and got["answer"]["route"]["line"]["key"] == "paid"
     assert sent[1]["allow_paid"] is True and sent[0]["allow_paid"] is False
     record = ok(home, "GET", "/v1/receipts")["records"][0]
-    assert record["action"] == "home.ask" and record["cost"] == {"amount": "0.04", "currency": "USD"} and record["egress"] == "service:deepseek"
+    assert record["action"] == "home.ask" and record["cost"] == {"currency": "USD", "minor": 4} and record["egress"] == "service:deepseek"
 
 
 def test_pay_over_the_limit_needs_a_second_explicit_call(home):
@@ -847,6 +847,26 @@ def test_the_fake_ask_script(fakes):
     none = fake_call(used, "POST", "/v1/ask", {"text": "x", "privacy": "private"})[1]["answer"]
     assert none["status"] == "failed" and none["reason"] == "private_no_service"
     assert fake_call(fakes("empty"), "POST", "/v1/ask", {"text": "x"})[1]["answer"]["reason"] == "router_unreachable"
+
+
+def test_the_fake_files_answer_has_sources_with_file_paragraph_and_quote(fakes):
+    home = fakes("normal")
+    got = fake_call(home, "POST", "/v1/ask", {"text": "When is the rent due?", "attachments": ["documents"]})[1]["answer"]
+    assert got["status"] == "answered" and got["details"]["skill"] == "files-answer" and got["attachments"] == ["documents"]
+    assert got["route"]["line"] == {"key": "free", "params": {"service": "Groq"}}
+    (source,) = got["sources"]
+    assert source["file"] == "documents/Lease 2026.md" and source["paragraphs"] == [2]
+    assert source["quote"].startswith("The rent is NT$18,000 a month")
+    zh = fake_call(home, "POST", "/v1/ask", {"text": "租金什麼時候付？", "attachments": ["documents"]})[1]["answer"]
+    assert zh["sources"][0]["paragraphs"] == [4] and zh["sources"][0]["quote"].startswith("租金每月")
+
+
+def test_skill_sources_cuts_long_quotes_and_survives_odd_output():
+    assert app_api.skill_sources({}) == []
+    long = {"citations": [{"n": 1, "path": "a.md", "paragraphs": [1], "label": "a.md › paragraph 1"}, "junk"],
+            "passages": [{"n": 1, "shown": "a.md", "paragraphs": [1], "text": "word " * 300}]}
+    (s,) = app_api.skill_sources(long)
+    assert len(s["quote"]) == app_api.MAX_QUOTE_CHARS and s["quote"].endswith("…") and s["file"] == "a.md"
 
 
 def test_the_fake_one_tap_flow_completes_after_two_polls_and_first_run_can_then_ask(fakes):

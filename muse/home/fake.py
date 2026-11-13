@@ -102,10 +102,44 @@ def _fake_skill_run(skill: Any, inputs: Any = None, **_kwargs: Any) -> Any:
     from muse.skills.runner import Result
 
     name = getattr(skill, "name", str(skill))
+    if name == "files-answer":
+        return _fake_files_answer(name, str((inputs or {}).get("question") or ""))
     return Result("done", output={"text": f"(fake home: this is where the answer of the skill '{name}' would be)"},
                   notes=["This is a fake home. No model was asked and nothing was read or written."],
                   check={"status": "passed", "reasons": []},
                   used={"requests": 0, "tokens": 0, "cost_usd": 0.0, "seconds": 0.0, "providers": {}}, skill=name, privacy="standard")
+
+
+DEMO_FILE = "Lease 2026.md"
+DEMO_PARAGRAPHS = (
+    "# Lease for the flat on Heping East Road",
+    "The rent is NT$18,000 a month, paid by the 5th of each month into the landlord's account.",
+    "Either side may end the lease with two months' notice in writing.",
+    "租金每月新台幣 18,000 元，於每月 5 日前匯入房東帳戶。",
+)
+
+
+def _fake_files_answer(name: str, question: str) -> Any:
+    """The files skill on a fake home: one canned answer that cites the demo lease, the way the real skill does."""
+    from muse.skills.runner import Result
+
+    zh = any("一" <= ch <= "鿿" for ch in question)
+    shown = f"documents/{DEMO_FILE}"
+    para = 4 if zh else 2
+    answer = ("（假的家）租金每月 18,000 元，5 日前要付 [1]。" if zh else
+              "(fake home) The rent is NT$18,000 a month, due by the 5th [1].")
+    label = f"{shown} › 第 {para} 段" if zh else f"{shown} › paragraph {para}"
+    output = {
+        "question": question, "answer": answer, "text": answer, "not_found": False,
+        "claims": [{"text": answer, "cites": [1], "sources": [label]}],
+        "citations": [{"n": 1, "path": shown, "paragraphs": [para], "label": label}],
+        "passages": [{"n": 1, "path": shown, "shown": shown, "paragraph": 1, "paragraph_end": 4, "paragraphs": [1, 2, 3, 4],
+                      "text": "\n\n".join(DEMO_PARAGRAPHS), "label": label}],
+    }
+    return Result("done", output=output, notes=["This is a fake home. No model was asked; the answer is canned."],
+                  check={"status": "passed", "reasons": []},
+                  used={"requests": 1, "tokens": 640, "cost_usd": 0.0, "seconds": 1.4, "providers": {"groq": 1}}, skill=name,
+                  privacy="standard")
 
 
 class FakeHome(api.Home):
@@ -115,6 +149,8 @@ class FakeHome(api.Home):
         self.state = state
         self._own_root = root is None
         self.root = Path(tempfile.mkdtemp(prefix="muse-fake-home-")) if root is None else Path(root)
+        # The demo folders the person "allowed" sit outside the home's own folder: a folder inside it may never be given out.
+        self.demo_root = Path(tempfile.mkdtemp(prefix="muse-fake-demo-"))
         environ = {"MUSE_HOME": str(self.root), "MUSE_ENV_FILE": str(self.root / "fake.env"), "MUSE_TZ": "UTC"}
         super().__init__(environ, clock=clock)
         self._fake_keys: set[str] = set()
@@ -128,6 +164,7 @@ class FakeHome(api.Home):
 
     def close(self) -> None:
         self.app.flows.close()
+        shutil.rmtree(self.demo_root, ignore_errors=True)
         if self._own_root:
             shutil.rmtree(self.root, ignore_errors=True)
 
@@ -211,10 +248,11 @@ class FakeHome(api.Home):
         from muse.home import folders
         from muse.skills import schedule
 
-        feeds, documents = self.root / "demo" / "feeds", self.root / "demo" / "documents"
+        feeds, documents = self.demo_root / "feeds", self.demo_root / "documents"
         for folder in (feeds, documents):
             folder.mkdir(parents=True, exist_ok=True)
         (feeds / "example.xml").write_text("<rss><channel><title>Demo feed</title></channel></rss>\n", encoding="utf-8")
+        (documents / DEMO_FILE).write_text("\n\n".join(DEMO_PARAGRAPHS) + "\n", encoding="utf-8")
         try:
             folders.add("feeds", feeds, environ=self.environ)
             folders.add("documents", documents, output=True, environ=self.environ)

@@ -2082,12 +2082,15 @@ components:
           description: "Behind Details: the deployment, the task tier, tokens, and the flags `min_output` and `empty_reasoning`."
         sources:
           type: array
-          description: "When the files skill answered: the passages it cites."
+          description: "When the files skill answered: the passages it cites, as file › paragraph with the quoted words."
           items:
             type: object
             properties:
               n: {type: integer}
-              label: {type: string}
+              file: {type: string, description: "The file as the skill showed it: relative to the allowed folder."}
+              paragraphs: {type: array, items: {type: integer}, description: "The paragraph numbers the statements rest on."}
+              quote: {type: string, description: "The words of the first of those paragraphs, at most 400 characters."}
+              label: {type: string, description: "The skill's own `file › paragraph n` line, in the question's language."}
         handoff:
           type: object
           properties:
