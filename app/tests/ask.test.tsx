@@ -2,6 +2,7 @@
 // Markdown renderer against hostile answers.
 import { cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { localised } from '../src/components/Card';
 import { createAppClient } from '../src/home/app-client';
 import { HomeError, type TransportReply } from '../src/home/client';
 import type { LocalAmount } from '../src/home/types';
@@ -155,5 +156,14 @@ describe('Markdown', () => {
   it('survives very large and deeply nested input', () => {
     expect(parseInline('*'.repeat(5000) + 'x').length).toBeGreaterThan(0);
     expect(parseMarkdown('a\n'.repeat(100_000)).length).toBe(1);
+  });
+});
+
+describe('cards the home made itself', () => {
+  it('are shown in the person’s language from title_key; unknown keys and host cards keep their words', () => {
+    expect(localised({ title_key: 'save_file_chore', params: { label: 'Weekly digest' } }, T('zh-TW'))).toEqual({ title: '儲存檔案', under: '例行工作「Weekly digest」' });
+    expect(localised({ title_key: 'save_file_skill', params: { skill: 'files-answer' } }, T('en'))).toEqual({ title: 'Save a file', under: 'The skill files-answer' });
+    expect(localised({ title_key: 'from_the_future', params: {} }, T('en'))).toBeNull();
+    expect(localised({ title_key: null }, T('en'))).toBeNull();
   });
 });
