@@ -4,6 +4,18 @@ Written 2026-11-13. Parts 1 to 3 say what is built and in what order. This part 
 
 "Completion" here means **v1 as specified in parts 1 and 2**: a signed desktop app and phone apps that a non-technical person in Taiwan can install; the helper doing chores on free allowances; permissions and records; the always-on helper; payments and credits on a test network. It does not include mainnet, a token, real health data, or a public skill marketplace.
 
+## Revision, 2026-11-13: prove before widening
+
+After the first real runs and the review in `docs/reviews/status-review-2026-11-13.md`, the owner asked for everything that improves the project to be done. The working plan is therefore the review's recommendations, until the owner says otherwise:
+
+1. **No new modules.** The four packages in flight finish (research-skill fixes, permission enforcement in "advise" mode, the app's first screens, device pairing as an unwired prototype). Nothing else starts until gate 1 is settled.
+2. **Gate 1 is judged on "right by expected facts"**, not on a skill's own check. Measured on 133 real runs: answer over my files 65 of 67 (passes); research report 27 of 66 (fails) while its own check passed 54. See `docs/reviews/gate1-full-2026-11-13.md`.
+3. **The first release is smaller**: router with rationing and a hard daily limit; answer over my files; chores from files; set up my services; a desktop app with Today, Ask, Services, Chores; the host adapter; records. Research reports, phones, pairing, the always-on helper, wallet, credits, third-party skills and health wait.
+4. **Real runs are routine**: a capped nightly run on the VM (`docs/vm-test-plan.md`), and CI on every push to the work branch.
+5. **Unreviewed security code holds nothing real.** Vault, permission tokens, pairing and sandbox stay prototypes (permissions in "advise" mode) until an outside review.
+
+The package table and calendar below are kept as the full plan; this revision says which part of it is being built now.
+
 ## 0. Decisions now fixed
 
 The owner confirmed on 2026-11-13 ("as your advice"):
@@ -227,7 +239,7 @@ A gate is a decision with evidence. Work past a gate does not start until it is 
 
 | Gate | When | Evidence | If it fails |
 |---|---|---|---|
-| **G1: the product can work** | End of week 4 | A9 report: at least 80% of runs pass their own check on free allowances with nothing spent. Tester study 1: 15 of 20 reach a first answer within 3 minutes on the mock-up and the real one-tap connection; 10 of 20 add a second service unaided | Chores fail: narrow the skills, lead with hand-off and the limit. Connection fails: rework first run before B5; revisit a starter allowance |
+| **G1: the product can work** | End of week 4 | A9 report: at least 80% of runs are right by expected facts (not merely passing their own check) on free allowances with nothing spent. Tester study 1: 15 of 20 reach a first answer within 3 minutes on the mock-up and the real one-tap connection; 10 of 20 add a second service unaided | Chores fail: narrow the skills, lead with hand-off and the limit. Connection fails: rework first run before B5; revisit a starter allowance |
 | **G2: desktop alpha** | End of week 6 | Clean-machine install to first answer under 1 minute; signed installers; A1 to A9 and B1 to B6, B8, B9 done | Slip phones, not the desktop |
 | **G3: permissions are real** | End of week 8 | Stopping a permission stops the app entry, the tool call and (on the test network) the spending limit; records verify; sandbox escape tests pass; an outside security review of C2, C4, A12 is booked | No connector that writes ships until it passes |
 | **G4: always on, and on the phone** | End of week 12 | VM added by a non-technical tester in under 10 minutes; pairing under a minute; approve from the lock screen on iOS and Android; lost-device flow works | Ship desktop and VM; phones follow |
