@@ -14,6 +14,9 @@ serde = { version = "1", features = ["derive"] }
 # float_roundtrip: JSON numbers must parse to the exact f64 Python wrote.
 serde_json = { version = "1", features = ["float_roundtrip"] }
 sha2 = "0.10"
+# Permissions (core/src/permissions.rs): the token format. Pinned exactly; the Python twin
+# (biscuit-python 0.4.0) wraps this same release, so both sides run the same Datalog engine.
+biscuit-auth = { version = "=6.0.0", default-features = false, features = ["datalog-macro"] }
 
 [dev-dependencies]
 # Only to cross-check the hand-ported Pacific DST rule against tzdata (tests/pacific_tzdata.rs).

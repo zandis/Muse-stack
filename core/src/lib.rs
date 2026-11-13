@@ -15,6 +15,7 @@
 pub mod cache;
 mod civil;
 pub mod error;
+pub mod permissions;
 pub mod pyjson;
 pub mod pytext;
 pub mod quota;
