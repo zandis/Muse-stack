@@ -73,7 +73,7 @@ Each module has one job, a small interface, and a named owner in the code. "Exis
 - **Job.** One OpenAI-compatible endpoint on `127.0.0.1` for every app on the home. Chooses where each request goes, rations allowances between apps, and adds the provider key.
 - **Code.** `muse/hook.py`, `ration.py`, `quota.py`, `rules.py`, `cache.py`, `policy.py`, `apps.py`, `auth.py`, `ledger.py`, on LiteLLM `1.108.5` pinned by digest and hash.
 - **In.** A request with an app token and optional headers: `x-muse-task`, `x-muse-privacy`, `x-muse-allow-paid`, `x-muse-allow-oneoff`, `x-muse-handoff`.
-- **Out.** The answer plus `x-muse-provider`, `x-muse-privacy`, `x-muse-app`, `x-muse-cost-usd`, `x-muse-ration`, `x-muse-task`, `x-muse-cache`; or a refusal with `Retry-After` and an `options=` trailer (wait, hand off, pay).
+- **Out.** The answer plus `x-muse-provider`, `x-muse-privacy`, `x-muse-app`, `x-muse-cost-usd`, `x-muse-ration`, `x-muse-task`, `x-muse-cache`, `x-muse-min-output` (the output floor raised the cap), `x-muse-answer: empty-reasoning` (a 200 with no visible text); or a refusal with `Retry-After` and an `options=` trailer (wait, hand off, pay).
 - **State.** Usage ledger (SQLite, never content), blocks, app list.
 - **New in v1.**
   - A local control API (section 4.1) so the app and the helper read status and change settings without shelling out to the `muse` command.
@@ -385,7 +385,7 @@ Rust functions exposed to the shell through Tauri commands: the Vault, Mandates,
 | Health records (add-on) | Vault | Yes | Only between the person's own devices |
 | Wallet keys | Device secure hardware or the wallet provider | Yes | Never |
 
-Nothing is stored on a Muse server in v1, because there is none. The only shared infrastructure is the iroh relays (ciphertext) and whatever the person connects themselves.
+Nothing is stored on a Muse server in v1. The only shared infrastructure is the iroh relays (ciphertext), a stateless push relay that forwards an empty wake signal to phones and never sees content, and whatever the person connects themselves.
 
 ---
 
@@ -414,4 +414,4 @@ Not defended in v1, and stated as such: an attacker with full control of an unlo
 - Real health data.
 - Phones running chores unattended.
 - A Rust router.
-- A Muse-run server of any kind.
+- Any Muse-run server that stores or sees a person's data. (The stateless push relay for phones is the one service Muse runs.)

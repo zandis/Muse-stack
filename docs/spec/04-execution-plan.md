@@ -15,7 +15,15 @@ The owner confirmed on 2026-11-13 ("as your advice"):
 | Permissions | Biscuit tokens |
 | Chain | Coinbase's stack on Base Sepolia, with the exits named in part 1 §2.12 |
 
-Still open (needed by the gate named): first phone platform if not both (G2); default daily limit, NT$30 assumed (G2); whether to publish the catalogue (G1); whether first testers get the always-on helper (G3).
+Also confirmed by the owner on 2026-11-13:
+
+| Decision | Outcome |
+|---|---|
+| Phone platforms | Both iOS and Android |
+| Default daily spending limit | NT$30 |
+| Catalogue | Published openly as dated JSON |
+| First testers | Get the always-on helper flow as well as the desktop app |
+| Phone push | A minimal relay that forwards an empty wake signal and never sees content. It is the only service Muse runs |
 
 **The owner's VM.** The owner reports 4 cores and 48 GB. Oracle's Always Free allowance is 2 cores and 12 GB, so this instance is above it. Either it is on a paid account and is being charged for the difference (a rough estimate from Oracle's public list prices is US$50 to 60 a month; check the console's cost page, this figure is not verified), or it is on a free-only account and may be stopped. It is a good test bench either way. The product must still be built and measured for 2 cores and 12 GB, because that is what a user gets for free; the VM stack in work package D3 is tested at that size.
 
@@ -150,7 +158,7 @@ Sizes are working days for one person or one Claude session, including tests. "N
 | D7 | Lost device: revoke, rotate, re-wrap | 3 | D3, C2 | The lost device cannot approve or read new data |
 | D8 | Push notifications for cards (iOS, Android) without a Muse server holding content | 4 | D3 | The push carries no private text; the app fetches the card over the Link |
 
-D8 needs one design decision: push services require some sender. The plan is a minimal relay that forwards an empty "wake" signal only; it never sees content. If the owner prefers no Muse-run service at all, approvals on the phone are fetched when the app is opened and LINE carries the prompt.
+D8 uses a minimal relay that forwards an empty "wake" signal only; it never sees content (confirmed by the owner). It is the one exception to "no Muse-run server" in part 1 §5 and §7, and must be stateless, hold no account data, and be replaceable by fetching approvals when the app is opened.
 
 ### Track E: Pay (test network)
 
