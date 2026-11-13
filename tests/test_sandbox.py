@@ -43,7 +43,7 @@ def plain(result) -> dict:
     data = json.loads(json.dumps(result.public(), default=str))
     data.pop("sandbox", None)
     data["used"].pop("seconds", None)
-    data["events"] = [{k: v for k, v in e.items() if k != "t"} for e in data["events"] if not e["kind"].startswith("sandbox")]
+    data["events"] = [{k: v for k, v in e.items() if k not in ("t", "ms")} for e in data["events"] if not e["kind"].startswith("sandbox")]
     return data
 
 

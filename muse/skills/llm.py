@@ -251,6 +251,8 @@ class Answer:
     reasoning_tokens: int = 0  # usage.completion_tokens_details.reasoning_tokens, when reported
     attempts: int = 1  # 2 when ask_with_recovery had to ask again
     reasoning: str = ""  # x-muse-reasoning: the reasoning effort the router set for this call
+    flagged: bool = False  # the router itself said x-muse-answer: empty-reasoning (an older router never does)
+    ms: int = 0  # how long the HTTP call took, in milliseconds (router-side retries and fallbacks included)
 
     @property
     def empty(self) -> bool:
@@ -271,7 +273,7 @@ class Answer:
                 "answer": self.answer, "task": self.task, "privacy": self.privacy, "deployment": self.deployment,
                 "handoff": self.handoff, "tokens_in": self.tokens_in, "tokens_out": self.tokens_out,
                 "empty": self.empty, "empty_reason": self.empty_reason, "finish_reason": self.finish_reason,
-                "reasoning": self.reasoning}
+                "reasoning": self.reasoning, "flagged": self.flagged, "ms": self.ms}
 
 
 @dataclass(frozen=True, slots=True)
@@ -446,6 +448,7 @@ class Client:
         self._post = post
         self.answers: list[dict[str, Any]] = []  # route facts of every 200, never text
         self.last_deferred: Deferred | None = None
+        self._last_ms = 0  # the duration of the latest HTTP call, for the `call` event
 
     # ------------------------------------------------------------ public
 
@@ -501,6 +504,7 @@ class Client:
             tokens_in=_int(usage.get("prompt_tokens")), tokens_out=_int(usage.get("completion_tokens")),
             empty_reason=empty_reason, finish_reason=finish[:40], reasoning_tokens=reasoning_tokens,
             reasoning=h.get("x-muse-reasoning", "").strip().lower()[:20],
+            flagged=flagged == EMPTY_REASONING, ms=self._last_ms,
         )
         if answer.empty:
             self.meter.empty_answers += 1
@@ -540,7 +544,8 @@ class Client:
         provider, cost = h.get("x-muse-provider", ""), _float(h.get("x-muse-cost-usd"))
         used = _int(usage.get("prompt_tokens")) or _int(usage.get("total_tokens"))
         self._settle(estimate, used, 0, cost, provider, h.get("x-muse-cache", ""))
-        self._emit("call", status=200, ok=True, task="embed", provider=provider, cost_usd=cost, tokens_in=used, count=len(texts))
+        self._emit("call", status=200, ok=True, task="embed", provider=provider, cost_usd=cost, tokens_in=used, count=len(texts),
+                   ms=self._last_ms)
         return Embeddings(vectors, provider, h.get("x-muse-deployment", ""), cost)
 
     # ------------------------------------------------------------ internals
@@ -578,7 +583,9 @@ class Client:
             if self.allow_paid:
                 headers["x-muse-allow-paid"] = "true"
             timeout = max(1.0, min(self.timeout, self.meter.remaining()["seconds"]))
+            began = time.monotonic()
             reply = self._post(self._base + path, headers, data, timeout)
+            self._last_ms = int((time.monotonic() - began) * 1000)
             if reply.status == 200:
                 return reply
             self.meter.release(estimate)
@@ -595,7 +602,7 @@ class Client:
                 if self._on_deferred is not None and self._on_deferred(error):
                     continue  # the runner chose to wait and try again
             else:
-                self._emit("call", task=task, status=reply.status, ok=False, error=type(error).__name__)
+                self._emit("call", task=task, status=reply.status, ok=False, error=type(error).__name__, ms=self._last_ms)
             raise error
 
     def _error(self, reply: Reply, task: str, cls: str) -> LlmError:
