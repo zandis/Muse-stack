@@ -75,8 +75,10 @@ def test_every_get_answers_in_every_state_with_the_real_shapes(start, state):
     assert all("payload" not in j and "prompt" not in j for j in jobs)
     apps_ = f.get("/v1/apps")["apps"]
     assert all("token_sha256" not in a for a in apps_)
-    for path in ("/v1/receipts", "/v1/mandates/artifacts"):
-        assert_error(*f.client.call("GET", path), 501, "not_built")
+    assert_error(*f.client.call("GET", "/v1/mandates/artifacts"), 501, "not_built")
+    shown = f.get("/v1/receipts")
+    assert shown["verify"]["ok"] is True and shown["verify"]["size"] == len(shown["records"]) and shown["order"] == "newest_first"
+    assert (state == "empty") == (not shown["records"])
     assert (state == "empty") == (not jobs and not apps_ and not listed["cards"])
 
 
@@ -110,9 +112,9 @@ def test_used_has_every_allowance_at_zero_with_refill_times(start):
 def test_paused_says_so_and_resume_works(start):
     f = start("paused")
     assert f.get("/v1/status")["paused"] is True
-    assert f.client.call("POST", "/v1/resume") == (200, {"paused": False, "was_paused": True})
+    assert f.client.call("POST", "/v1/resume") == (200, {"paused": False, "was_paused": True, "recorded": True})
     assert f.get("/v1/status")["paused"] is False
-    assert f.client.call("POST", "/v1/pause") == (200, {"paused": True})
+    assert f.client.call("POST", "/v1/pause") == (200, {"paused": True, "recorded": True})
     assert f.get("/v1/status")["paused"] is True
 
 

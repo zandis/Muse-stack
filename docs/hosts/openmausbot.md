@@ -27,7 +27,7 @@ muse hosts setup openmausbot
 It does three things:
 
 1. Creates a Muse app called `openmausbot`: interactive priority, no daily caps, not allowed to pay. Its key is shown once. Copy it now.
-2. Creates a device called `openmausbot-tools` for the tools server and writes its token to `~/.muse/host-openmausbot.token`, a file only you can read. That token is not printed.
+2. Creates a device called `openmausbot-tools` for the tools server, with the role `host`, and writes its token to `~/.muse/host-openmausbot.token`, a file only you can read. That token is not printed. A `host` token can do only what the tools server needs (see below).
 3. Prints the two blocks for step 3 and step 4.
 
 It does not touch OpenMausBot's files. `muse hosts show openmausbot` prints the blocks again later, without the key.
@@ -147,7 +147,7 @@ Remember what that proves and what it does not: the bot asked because it chose t
 Three more things to know:
 
 - The Muse app key sits in OpenMausBot's configuration file as plain text. Anything that can read that file can use your free allowance as `openmausbot`, up to that app's limits. Set limits with `muse apps set openmausbot --daily-tokens N`.
-- The tools token sits in `~/.muse/host-openmausbot.token`. A bot that can run commands as you can read it. It cannot answer its own approval cards with it, but it is otherwise a full device token.
+- The tools token sits in `~/.muse/host-openmausbot.token`. A bot that can run commands as you can read it. That is why it is a `host` token and not a full one. With it a program can read Muse's status, ask you questions and read the ones it asked, queue jobs and read or cancel the ones it queued, add records, and list and run skills (reading only folders you put on a list with `muse skills folders add`, by name). It **cannot** pause or resume Muse, store a key, connect a service, see or change apps, answer any approval card, read your records, or see another device's jobs, cards or skill runs. The home refuses those calls itself; `muse home token list` shows the role. If you ran `muse hosts setup` before roles existed, the token it made then can do everything: remove it and run setup again ("How to undo" below, then step 1).
 - OpenMausBot's own security notes describe agents running with your privileges. Muse does not change that.
 
 ## How to undo

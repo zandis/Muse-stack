@@ -38,10 +38,12 @@ D_SUMMARY = b"muse/record/v1/summary\x00"
 
 SIGNED_FIELDS = ("v", "device", "seq", "time", "mandate", "actor", "action", "resource", "summary_hash", "outcome",
                  "cost", "prev")
+SIGNED_OPTIONAL = ("links", "egress")  # signed when present; a record without one has the bytes it always had
 REQUIRED_FIELDS = SIGNED_FIELDS + ("sig",)
-OPTIONAL_FIELDS = ("links", "summary", "summary_salt")
+OPTIONAL_FIELDS = SIGNED_OPTIONAL + ("summary", "summary_salt")
 ENTRY_REQUIRED = ("time", "actor", "action", "outcome", "summary")
-ENTRY_OPTIONAL = ("mandate", "resource", "cost", "links")
+ENTRY_OPTIONAL = ("mandate", "resource", "cost", "links", "egress")
+EGRESS_LEFT = ("service:", "host:")  # the values that mean the content left the person's devices
 
 _HEX32 = re.compile(r"[0-9a-f]{32}\Z")
 _HEX64 = re.compile(r"[0-9a-f]{64}\Z")
@@ -49,6 +51,7 @@ _HEX128 = re.compile(r"[0-9a-f]{128}\Z")
 _ID = re.compile(r"[A-Za-z0-9._:-]{1,128}\Z")
 _ACTION = re.compile(r"[a-z][a-z0-9_]{0,31}(\.[a-z][a-z0-9_]{0,31}){1,3}\Z")
 _CURRENCY = re.compile(r"[A-Z0-9]{3,8}\Z")
+_EGRESS = re.compile(r"(?:none|home|(?:service|host):[a-z0-9][a-z0-9._-]{0,63})\Z")
 
 # Summary rule, part 3 (append only): text that looks like a credential.
 KEY_PREFIXES = ("sk-", "sk_", "pk_", "rk_", "gsk_", "csk-", "nvapi-", "jina_", "hf_", "glpat-", "ghp_", "gho_", "ghu_",
@@ -250,6 +253,8 @@ def _check_common(obj: Mapping[str, Any]) -> None:
     _check_cost(obj.get("cost"))
     if "links" in obj:
         _check_links(obj["links"])
+    if "egress" in obj and not _is(_EGRESS, obj["egress"]):
+        raise RecordError("malformed", detail="egress is none, home, service:<id> or host:<name>")
 
 
 def check_record(record: Any) -> None:
@@ -285,8 +290,9 @@ def canonical_bytes(record: Mapping[str, Any], with_sig: bool = False) -> bytes:
     `summary` and `summary_salt` are never part of them: the record signs `summary_hash`."""
     try:
         obj = {name: record[name] for name in SIGNED_FIELDS}
-        if "links" in record:
-            obj["links"] = record["links"]
+        for name in SIGNED_OPTIONAL:
+            if name in record:
+                obj[name] = record[name]
         if with_sig:
             obj["sig"] = record["sig"]
     except (KeyError, TypeError) as exc:
@@ -424,4 +430,14 @@ def append(head: Mapping[str, Any] | None, entry: Mapping[str, Any], signer: Sig
     }
     if "links" in entry:
         record["links"] = dict(entry["links"])
+    if "egress" in entry:
+        record["egress"] = entry["egress"]
     return sign(record, signer)
+
+
+def left_devices(record: Mapping[str, Any]) -> bool:
+    """Did the content of this action leave the person's devices, by the record's own statement?
+
+    True for `service:...` and `host:...`. False for `none`, `home`, and for a record that does not say."""
+    egress = record.get("egress")
+    return isinstance(egress, str) and egress.startswith(EGRESS_LEFT)

@@ -1,38 +1,65 @@
-"""Where Muse skills get connected to the tools server. Not connected yet.
+"""Where Muse skills are connected to the tools server: through the home, like everything else.
 
-The skills package (muse/skills/) is being built separately. The tools server
-must reach skills the way it reaches everything else, through the home, and
-the home control API has no skills call yet. So `list_skills` and `run_skill`
-answer "not built" until someone connects a backend here.
+`connect(backend)` is the one place. `muse/mcp/server.py::build_context` calls it
+with `HomeSkills(link)`, which turns the three skill tools into three calls on
+the home control API:
 
-To connect it (the integrator's job, one place):
+    list_skills     GET  /v1/skills
+    run_skill       POST /v1/skills/{name}/run      then GET /v1/skills/runs/{id} until it is done
+    skill_status    GET  /v1/skills/runs/{id}
 
-    from muse.mcp import skills
-    skills.connect(backend)      # before the server starts, e.g. in muse/mcp/server.py::build_context
+Nothing here imports the skill runner or its internals. This process holds no
+provider key and must not gain one; the home runs the skill, checks what the
+host asked for (a folder by NAME from the person's list, never a path; nothing
+above the skill's own budget) and writes a proposed file only after the person
+approved it. Until a backend is connected the tools answer "not built".
 
-where `backend` has two methods and returns plain data only:
+A backend returns plain data only:
 
-    backend.list()                          -> [{"name": str, "summary": str}, ...]
-    backend.run(name: str, inputs: dict)    -> {"status": str, ...}
-
-A backend should call the home (a future `GET /v1/skills`, `POST /v1/skills/{name}/run`)
-rather than import the runner: this process holds no provider key and must not
-gain one. Nothing here imports muse.skills internals; it only checks whether
-the package can be imported, to say which of two things is missing.
+    backend.list()                                  -> {"skills": [...], "folders": [...]}
+    backend.run(name, inputs, folders, out)         -> the run, as the home describes it
+    backend.status(run_id)                          -> the run
 """
 
 from __future__ import annotations
 
 import importlib.util
-from typing import Any, Protocol
+from typing import Any, Protocol, Sequence
 
 
 class SkillsBackend(Protocol):
-    def list(self) -> list[dict[str, Any]]:  # pragma: no cover - protocol
+    def list(self) -> dict[str, Any]:  # pragma: no cover - protocol
         ...
 
-    def run(self, name: str, inputs: dict[str, Any]) -> dict[str, Any]:  # pragma: no cover - protocol
+    def run(self, name: str, inputs: dict[str, Any], folders: Sequence[str] = (), out: str | None = None) -> dict[str, Any]:  # pragma: no cover
         ...
+
+    def status(self, run_id: str) -> dict[str, Any]:  # pragma: no cover - protocol
+        ...
+
+
+class HomeSkills:
+    """The backend the tools server uses: the home control API. `link` is muse.mcp.tools.HomeLink."""
+
+    def __init__(self, link: Any) -> None:
+        self.link = link
+
+    def list(self) -> dict[str, Any]:
+        _, payload = self.link.call("GET", "/v1/skills")
+        return payload
+
+    def run(self, name: str, inputs: dict[str, Any], folders: Sequence[str] = (), out: str | None = None) -> dict[str, Any]:
+        body: dict[str, Any] = {"inputs": inputs}
+        if folders:
+            body["folders"] = list(folders)
+        if out is not None:
+            body["out"] = out
+        _, payload = self.link.call("POST", f"/v1/skills/{name}/run", body)
+        return payload.get("run") if isinstance(payload.get("run"), dict) else {}
+
+    def status(self, run_id: str) -> dict[str, Any]:
+        _, payload = self.link.call("GET", f"/v1/skills/runs/{run_id}")
+        return payload.get("run") if isinstance(payload.get("run"), dict) else {}
 
 
 _backend: SkillsBackend | None = None

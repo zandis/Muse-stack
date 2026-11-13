@@ -1,6 +1,8 @@
 # Record format, version 1
 
-Status: implemented in Rust (`core/src/records.rs`) and Python (`muse/records/`), both held to the 2,961 cases in `core/conformance/records.json`. Not reviewed by anyone outside the project; no security audit has been done.
+Status: implemented in Rust (`core/src/records.rs`) and Python (`muse/records/`), both held to the 3,050 cases in `core/conformance/records.json`. Not reviewed by anyone outside the project; no security audit has been done.
+
+Version 1 is not frozen yet. It was amended once before any record left a development machine: the optional signed member `egress` (section 1.2) was added. A record without it has exactly the bytes, signature and hash it had before the amendment.
 
 A **record** ("receipt" in the architecture, section 2.9) is one signed entry in a device's append-only chain: something was done in the person's name, by whom, under which permission, with what result and cost. This document says exactly which bytes are signed and what a verifier must check, so that two independent implementations agree and a third party can check an export with nothing but the file.
 
@@ -22,12 +24,13 @@ A record is a JSON object. Every member below is required unless marked optional
 | `time` | integer | When the action finished, in milliseconds since 1970-01-01T00:00:00Z, by the device's clock. |
 | `mandate` | string or null | Id of the permission the action ran under; `null` for the person's own direct action. 1 to 128 characters of `A-Z a-z 0-9 . _ : -`. |
 | `actor` | string | `person`, `helper` or `system`. |
-| `action` | string | Dotted lower-case name, for example `files.write`, `llm.call`, `pay.spend`, `mandate.issue`, `mandate.revoke`, `card.answer`, `home.pause`. Two to four segments separated by `.`; each segment is 1 to 32 characters, starts with `a-z` and continues with `a-z 0-9 _`. |
+| `action` | string | Dotted lower-case name, for example `files.write`, `llm.call`, `pay.spend`, `mandate.issue`, `mandate.revoke`, `card.answer`, `home.pause`. Two to four segments separated by `.`; each segment is 1 to 32 characters, starts with `a-z` and continues with `a-z 0-9 _`. The names in use are listed in section 1.3. |
 | `resource` | string or null | A keyed reference to what was acted on (section 3.2): 64 lower-case hex. Never the content, a name, or a bare hash of either. `null` when the action has no resource. |
 | `summary_hash` | string | Commitment to the summary (section 3.3): 64 lower-case hex. This is what the signature covers in place of the summary. |
 | `outcome` | string | `ok`, `declined`, `failed` or `undone`. |
 | `cost` | object or null | `{"currency": code, "minor": integer}` or `null`. `currency` is 3 to 8 characters of `A-Z 0-9`: an ISO 4217 code, or `USDC`. `minor` is a non-negative count of the currency's minor unit (ISO 4217 exponent; 6 decimals for `USDC`), so NT$30 is `{"currency":"TWD","minor":3000}`. |
 | `links` | object, optional | Pointers to related things. Present only when non-empty. Allowed members, all strings: `job`, `card`, `payment_ref` (ids, same alphabet as `mandate`), `undo_of` (the hash of the record this one undoes, 64 hex). |
+| `egress` | string, optional | Where the content of the action went (section 1.2): `none`, `home`, `service:<id>` or `host:<name>`. Signed when present. Absent means the record does not say. |
 | `prev` | string | Hash of the previous record in this chain (section 3.4), or the genesis value for `seq` 0. 64 lower-case hex. |
 | `sig` | string | Ed25519 signature (section 3.5): 64 bytes as 128 lower-case hex. |
 | `summary` | string, optional | Short human text that is safe to show (section 1.1). Not signed directly; bound through `summary_hash`. |
@@ -47,6 +50,49 @@ The summary is the one free-text field, and it is stored and shown in clear, so 
 
 A verifier takes the text as the bytes it is given (it does not normalise again) and checks part 2. Part 3 is a guard against accidents in the writer, not a guarantee: a secret written in words, or in pieces shorter than the thresholds, passes. The rule the writer must follow is "say what happened in words; never put content, keys or identifiers of people in a summary".
 
+### 1.2 Where the content went (`egress`)
+
+The Records screen has a filter "Left my devices". `egress` is the member it reads. It answers one question about one action: **where was the content this action worked on sent?** The *content* is the thing itself: the prompt and what was attached to it, the text of a file, the body of a message, an answer. Not the fact that something happened, and not the summary.
+
+| Value | Meaning |
+|---|---|
+| `none` | The content went nowhere: the action happened on the device that signed the record and the content stayed there. A setting changed, a question was answered, a file was written on this device, a model on this same device answered. |
+| `home` | The content was sent to the person's own home (another device of theirs), and no further. A phone that hands a file to the home writes this; the home never writes it about its own actions (for the home, that is `none`). |
+| `host:<name>` | The content was given to a host bot: a program on the person's computer that Muse does not control, named as the home knows it (the name of its device or app, for example `host:openmausbot-tools`). Muse cannot say where the host sends it next, so this counts as having left. |
+| `service:<id>` | The content was sent to an outside service. `<id>` is the service's id in Muse's catalogue (`service:gemini`, `service:nvidia_nim`), or, for a service the catalogue does not list, another stable lower-case id such as its host name. |
+
+`<id>` and `<name>` are 1 to 64 characters of `a-z 0-9 . _ -`, starting with `a-z` or `0-9`. Nothing else is a valid value: no upper case, no spaces, no other prefix.
+
+Rules for the writer:
+
+- **One destination per record.** A record names the one place its action sent the content. Work that reached several places is several actions and several records (one model call, one record), so the filter and an export can show each destination on its own.
+- **The farthest place counts.** Of `none`, `home`, `host:…` and `service:…`, the record carries the last one that applies to its action.
+- **Say it only when you know.** A writer that cannot tell leaves `egress` out. Absent is not `none`.
+- A value is the writer's signed statement, not a proof (section 12).
+
+For a reader: the content **left the person's devices** exactly when `egress` starts with `service:` or `host:`. `none` and `home` did not leave. A record without `egress` is shown as "not stated" and is not counted either way; records written before the amendment are all of this kind.
+
+`egress` is signed (section 2), so it cannot be changed, added or removed after signing without the signature failing. It is not hidden by redaction.
+
+### 1.3 Action names in use
+
+The format fixes the shape of an action name, not the list. These are the names written today; a package that adds an action adds its name here.
+
+| Action | Written by | When |
+|---|---|---|
+| `home.pause`, `home.resume` | the home | The person paused or resumed (`muse pause`, `muse resume`, or the home API). |
+| `card.create` | the home | A device asked the person a question (a card was made). `links.card` is the card. |
+| `card.answer` | the home | A card was answered: `ok` for approved, `declined` for declined. `links.card` is the card. |
+| `app.create`, `app.update`, `app.remove`, `app.rotate` | the home | An app was added, changed or removed, or its token was replaced, through the home API. |
+| `key.store` | the home | A service's key was stored through the home API. The summary names the service's id only; never the key, any part of it, or its hash. |
+| `job.queue`, `job.cancel` | the home | A background job was queued or cancelled through the home API. `links.job` is the job. |
+| `skill.run` | the home | A skill run started through the home API finished. `egress` is `host:<name>` when a host bot asked for it and so received its answer. |
+| `llm.call` | the home | A skill run used an outside service; one record per service, with `egress: service:<id>`. |
+| `files.write` | the home | A file a skill proposed was written after its card was approved (`ok`), or could not be (`failed`). `resource` is `file:<path>`, `links.card` the card. |
+| `mandate.issue`, `mandate.revoke`, `pay.spend` | reserved | For the permissions and payment packages. |
+| `host.…` (for example `host.files.write`, `host.message.send`) | a host bot, through `POST /v1/receipts` | A host's own report of what it did. Always `actor: helper` and `mandate: device:<name>`, and always under `host.`: the home refuses any other name from a device that is not the person's own. So a record whose action does not start with `host.` was done or witnessed by the home itself, never merely claimed by a bot. |
+| anything else | the person's own device, through `POST /v1/receipts` | A note of something the person's own app did (`actor: person`). Not a name whose first segment is `home`, `card`, `app`, `key`, `job`, `skill`, `mandate`, `records` or `host`. |
+
 ---
 
 ## 2. Canonical bytes
@@ -61,7 +107,7 @@ Records are signed and hashed as **RFC 8785 (JSON Canonicalization Scheme)** byt
 
 Text is not normalised by canonicalisation. The one place normalisation happens is the signer's step in section 1.1 (and section 3.2 for resources), before the bytes exist.
 
-The **signed fields** of a record are `v`, `device`, `seq`, `time`, `mandate`, `actor`, `action`, `resource`, `summary_hash`, `outcome`, `cost`, `prev`, and `links` when present. `summary`, `summary_salt` and `sig` are not among them.
+The **signed fields** of a record are `v`, `device`, `seq`, `time`, `mandate`, `actor`, `action`, `resource`, `summary_hash`, `outcome`, `cost`, `prev`, and `links` and `egress` when present. `summary`, `summary_salt` and `sig` are not among them. An absent optional member is left out of the object, never written as `null`, so a record without `links` or `egress` has the same bytes whether or not the writer knew those members existed.
 
 - `canonical_bytes(record)` = JCS of the object holding the signed fields.
 - `canonical_bytes(record, with_sig)` = JCS of the signed fields plus `sig`.
@@ -114,7 +160,7 @@ One chain per device. Record `n` of device `D` has `device = D`, `seq = n`, `pre
 
 A device key is never rotated inside a chain: a new key is a new device with its own chain starting at `seq` 0. How the person's devices tell each other which device keys are theirs belongs to pairing (architecture 2.10), not to this format.
 
-`append(head, entry)` is a pure function: given the previous record (or nothing) and an entry `{time, actor, action, outcome, summary, mandate?, resource?, cost?, links?}` it applies the summary rule, computes the resource reference, salt and summary hash, sets `seq` and `prev`, and signs. Storage must make "read the head, sign, store" one atomic step; signing two different records for one `seq` is a fork (section 6) and is the one thing a device must never do.
+`append(head, entry)` is a pure function: given the previous record (or nothing) and an entry `{time, actor, action, outcome, summary, mandate?, resource?, cost?, links?, egress?}` it applies the summary rule, computes the resource reference, salt and summary hash, sets `seq` and `prev`, and signs. Storage must make "read the head, sign, store" one atomic step; signing two different records for one `seq` is a fork (section 6) and is the one thing a device must never do.
 
 ---
 
@@ -250,7 +296,7 @@ What someone holding an export learns, and does not:
 | They see | They do not see |
 |---|---|
 | Device public key | Who the person is (unless the summaries say) |
-| For each record: `seq`, time to the millisecond, `actor`, `action`, `outcome`, `cost`, `mandate` id, `links` ids | The content acted on, file names, prompts, results |
+| For each record: `seq`, time to the millisecond, `actor`, `action`, `outcome`, `cost`, `mandate` id, `links` ids, and `egress` (which service or host bot the content went to) | The content acted on, file names, prompts, results |
 | Summaries, as written, unless redacted | What a redacted summary said |
 | Resource references: that two records touched the same thing | What the thing is; whether it is the same thing as in another person's vault |
 | How many records are sealed (`size`), so how many they were not given | Anything about records left out of a subset beyond their count |
@@ -372,6 +418,7 @@ A subset export holding only record 1 is the envelope of section 8 with this che
 9. **Signature before sequence and linkage in `verify_chain`.** Everything reported after a signature check concerns records the device signed, which is what makes `fork` and `wrong_prev` meaningful as evidence.
 10. **Strict reading.** Repeated keys, `-0`, exponent forms and lone surrogates are where JSON parsers differ; refusing them removes the chance that two verifiers see two different records in one file.
 11. **Key-shaped text is refused at writing time only.** The list of prefixes will change; if it were part of verification, old valid records would turn invalid.
+12. **`egress` is an optional signed member, and version 1 was amended rather than replaced.** The Records screen needs to answer "what left my devices" from the record itself, and a claim like that is only worth showing if it cannot be edited afterwards, so it is signed. It is optional and left out when absent (like `links`), so every record made before the amendment keeps its bytes, signature and hash, and no second format version has to be carried for records that never left a development machine. The cost is that "absent" has to be read as "not stated" for ever, which is also the honest reading. It is one value, not a list: the filter and an export work per record, and one destination per record keeps both simple.
 
 ---
 
@@ -382,6 +429,7 @@ A subset export holding only record 1 is the envelope of section 8 with this che
 - **Time is the device's own claim.** Nothing here proves when a record was made; that also needs an anchor.
 - **The reference key is per vault.** Until the vault exists the home has its own key, so references made on the home cannot be matched with another device's.
 - **Summaries are visible** wherever the records go unredacted, and the key-shape guard is best effort.
+- **`egress` is what the writer says.** The signature proves the device wrote it and that nobody changed it since; it does not prove the content went only there. The home fills it in for what it does itself. A host bot's own reports (`POST /v1/receipts`) carry whatever the host said, or nothing, and Muse cannot see what a host does with its own tools. Records without `egress` are "not stated", not "stayed".
 - **Unicode versions.** NFC is stable for all assigned characters, so signers on different Unicode versions agree except for text containing code points one of them does not know yet; verification never normalises, so this cannot make a valid record fail, only make two signers write different bytes for such text.
 - **Not covered by the conformance vectors:** Unicode normalisation beyond the cases listed there; Ed25519 edge cases beyond the 64 listed; JSON nesting deeper than 128 (both refuse, by different mechanisms); chains longer than about a thousand records.
 
@@ -405,6 +453,7 @@ For the health add-on, which emits the same entry as a FHIR AuditEvent and treat
 | `summary` | `outcomeDesc` (R5: `outcome.detail`) or `entity.description` | none |
 | `outcome` | `outcome`: `ok` → 0, `declined` → 4, `failed` → 8; `undone` → 0 on the undo event | `event_state` (given, withdrawn) for consent events |
 | `cost` | extension | none |
+| `egress` | `entity` with a role of "destination" (R5: an `agent` of type "destination" with `agent.networkUri` or `who`) | the recipient / third-party field of a data-sharing event, when the action is one |
 | `links.job`, `links.card` | `entity` with role "job" / `agent.policy` | none |
 | `links.undo_of` | `entity.what` pointing at the earlier AuditEvent | the earlier record's `record_id` on a withdrawal |
 | `sig`, checkpoint | `Provenance.signature` over the AuditEvent, or carried as an extension | the receipt's signature; the anchored checkpoint is the "proof" row of architecture 2.8 |

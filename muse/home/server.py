@@ -18,6 +18,17 @@ are bounded (muse.home.api.MAX_BODY_BYTES) and must declare their length; each
 connection has a read timeout and serves one request; paths are matched against
 a fixed route table, never against the file system; nothing from a request
 (path, query, body, headers) is written to a log.
+
+Two limits against abuse, both in memory and both small:
+  * Wrong tokens. Each peer (the uid on the Unix socket, the address on TCP)
+    may fail to sign in AUTH_FAIL_LIMIT times in AUTH_FAIL_WINDOW_S seconds;
+    after that its failed requests get 429 `too_many_requests` with a
+    Retry-After instead of 401, until the window has passed. A request with a
+    correct token is always served: device tokens are 256 random bits, so the
+    limit is there to bound noise and work, and it must not let one program
+    lock the person's own app out by sending rubbish.
+  * Connections. At most MAX_CONNECTIONS are served at once; one more is
+    answered 503 `unavailable` with a Retry-After at once and closed.
 """
 
 from __future__ import annotations
@@ -31,9 +42,11 @@ import stat
 import struct
 import sys
 import threading
+import time
+from collections import OrderedDict, deque
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Hashable, Mapping
 
 import json
 
@@ -47,6 +60,10 @@ DEFAULT_TCP_PORT = 4181
 SOCKET_NAME = "home.sock"
 REQUEST_TIMEOUT_S = 15.0
 MAX_SOCKET_PATH_BYTES = 100  # sun_path is 104 bytes on macOS, 108 on Linux
+MAX_CONNECTIONS = 64  # served at once; the next one gets 503 at once
+AUTH_FAIL_LIMIT = 10  # wrong tokens a peer may send ...
+AUTH_FAIL_WINDOW_S = 60.0  # ... in this many seconds, before its failures get 429
+MAX_TRACKED_PEERS = 256
 
 BASE_HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -78,6 +95,33 @@ def peer_uid(sock: socket.socket) -> int | None:
     except (OSError, struct.error, AttributeError):
         return None
     return None
+
+
+class FailureLimiter:
+    """Counts failed sign-ins per peer in a sliding window. In memory only; forgotten when the server stops."""
+
+    def __init__(self, limit: int = AUTH_FAIL_LIMIT, window_s: float = AUTH_FAIL_WINDOW_S,
+                 clock: Callable[[], float] = time.monotonic, max_peers: int = MAX_TRACKED_PEERS) -> None:
+        self.limit, self.window_s, self.clock, self.max_peers = int(limit), float(window_s), clock, int(max_peers)
+        self._lock = threading.Lock()
+        self._fails: OrderedDict[Hashable, deque[float]] = OrderedDict()
+
+    def fail(self, peer: Hashable) -> int | None:
+        """Note one failed sign-in. None while the peer is within its limit; otherwise the seconds to wait."""
+        now = self.clock()
+        with self._lock:
+            times = self._fails.pop(peer, None) or deque()
+            while times and times[0] <= now - self.window_s:
+                times.popleft()
+            over = len(times) >= self.limit
+            if not over:
+                times.append(now)  # failures beyond the limit are not added, so the wait cannot be stretched for ever
+            self._fails[peer] = times  # most recently seen last
+            while len(self._fails) > self.max_peers:
+                self._fails.popitem(last=False)
+            if not over:
+                return None
+            return max(1, int(times[0] + self.window_s - now + 0.999))
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -152,6 +196,10 @@ class _Handler(BaseHTTPRequestHandler):
         except api.ApiError as err:
             if 0 < length <= api.MAX_BODY_BYTES:
                 self.rfile.read(length)  # let a small body finish so the client can read the 401
+            wait = server.auth_failures.fail(server.peer_key(self.connection, self.client_address))
+            if wait is not None:
+                err = api.ApiError("too_many_requests", "Too many requests with a wrong device token. Wait, then sign in "
+                                                        "with a token from `muse home token add`.", retry_after=wait)
             self._fail(err)
             return
         if length > api.MAX_BODY_BYTES:
@@ -177,12 +225,57 @@ class HomeServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
     home: api.Home
     verifier: Verifier
+    max_connections = MAX_CONNECTIONS
+
+    def _init_limits(self) -> None:
+        self.auth_failures = FailureLimiter()
+        self._slots = threading.BoundedSemaphore(self.max_connections)
 
     def host_ok(self, host: str | None) -> bool:
         return True
 
     def peer_ok(self, conn: socket.socket) -> bool:
         return True
+
+    def peer_key(self, conn: socket.socket, client_address: Any) -> Hashable:
+        """Whom failed sign-ins are counted against."""
+        return "local"
+
+    # -- the connection cap ----------------------------------------------
+    def process_request(self, request: Any, client_address: Any) -> None:
+        if not self._slots.acquire(blocking=False):
+            self._refuse_busy(request)
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)  # starts the thread that runs process_request_thread
+        except BaseException:
+            self._slots.release()
+            raise
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._slots.release()
+
+    @staticmethod
+    def _refuse_busy(request: Any) -> None:
+        """Answer 503 without reading the request or starting a thread. Best effort: the client may already be gone."""
+        err = api.ApiError("unavailable", "The home is busy with other requests. Try again in a moment.", retry_after=1)
+        body = json.dumps(err.payload()).encode("utf-8")
+        head = (f"HTTP/1.1 {err.status} Service Unavailable\r\nContent-Type: application/json; charset=utf-8\r\n"
+                f"Content-Length: {len(body)}\r\nRetry-After: 1\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n")
+        try:
+            request.settimeout(1.0)
+            request.sendall(head.encode("ascii") + body)
+            # Say we are done, then take what the client had already sent, so that closing does not reset the
+            # connection under the reply. A very short wait: this runs on the accepting thread.
+            request.shutdown(socket.SHUT_WR)
+            request.settimeout(0.05)
+            request.recv(65536)
+        except OSError:
+            pass
 
     def handle_error(self, request: Any, client_address: Any) -> None:
         exc = sys.exc_info()[1]
@@ -205,6 +298,7 @@ class UnixHomeServer(HomeServer):
         self._uid = os.getuid()
         self._noted = False
         self._inode: int | None = None
+        self._init_limits()
         super().__init__(str(self.socket_path), _Handler)
 
     def server_bind(self) -> None:
@@ -261,6 +355,10 @@ class UnixHomeServer(HomeServer):
             return True
         return uid == self._uid
 
+    def peer_key(self, conn: socket.socket, client_address: Any) -> Hashable:
+        uid = peer_uid(conn)
+        return "local" if uid is None else ("uid", uid)
+
     @property
     def where(self) -> str:
         return f"unix:{self.socket_path}"
@@ -274,12 +372,16 @@ class TcpHomeServer(HomeServer):
         if host != "127.0.0.1":
             raise ValueError("the home control API only listens on 127.0.0.1")
         self.home, self.verifier = home, verifier
+        self._init_limits()
         super().__init__((host, port), _Handler)
         bound = self.server_address[1]
         self.allowed_hosts = {f"127.0.0.1:{bound}", f"localhost:{bound}"}
 
     def host_ok(self, host: str | None) -> bool:
         return (host or "").strip().lower() in self.allowed_hosts
+
+    def peer_key(self, conn: socket.socket, client_address: Any) -> Hashable:
+        return ("ip", client_address[0]) if isinstance(client_address, tuple) and client_address else "local"
 
     @property
     def port(self) -> int:

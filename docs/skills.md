@@ -157,6 +157,35 @@ The client never sleeps or retries on a 429. The runner may sit out a short `Ret
 
 **Writes.** A skill returns proposed writes as data. They are applied when `run(..., apply_writes=True)` or a later `muse.skills.apply_writes(result)` is called, only when the check passed, and only as new files: an existing file is never overwritten. `muse skills run` asks on a terminal, writes with `--yes`, and otherwise lists what was proposed.
 
+## Through the home: the app and host bots
+
+The home control API runs skills too, for the Muse app and for a host bot's tools server (`list_skills`, `run_skill`, `skill_status`). It uses the same runner; what differs is what the caller may choose, because the caller may be a bot.
+
+```
+GET  /v1/skills                 the skills, what each asks for in plain words, and the folder names
+POST /v1/skills/{name}/run      {inputs, folders: [names], out: name, budget, privacy, task} -> a run id, at once
+GET  /v1/skills/runs/{id}       running, or how it ended, the answer, and what became of each proposed file
+```
+
+**Folders by name, never by path.** `muse skills run` takes `--folder PATH` because you are typing. The API takes only names from a list you keep on the home:
+
+```
+muse skills folders add notes ~/Notes               # skills run through the home may read it
+muse skills folders add reports ~/Reports --output  # ... and propose new files in it
+muse skills folders list [--json]
+muse skills folders rm notes
+```
+
+The list is `MUSE_HOME/skill-folders.json` (owner-only). A folder is stored as its real path. It may not be the whole disk, Muse's own folder, or a folder that holds Muse's own folder, and the same checks are made again each time a name is used, so a folder since replaced by a link is refused. A host bot sees the names; only your own device sees the paths.
+
+**Never more than the skill's own.** A run may be given a smaller budget, a stricter privacy class or a lighter task tier than the skill declares, never a larger, weaker or stronger one. Money is zero unless your own device gives the run some, within the skill's own `paid_usd`; a host bot cannot.
+
+**Writes become cards.** A run through the home applies nothing. Each file the skill proposed (at most 20 a run) becomes a `save_file` card naming the file and its folder, and the bytes wait in `MUSE_HOME/home-state.sqlite`. Approve the card and the home writes the file, by the rule above (a new file only, inside the output folder, checked again at that moment) and records it; decline it, or let it expire (24 hours), and the bytes are erased. A card can be answered once, so a file is written at most once. Without `out`, files go to `MUSE_HOME/skills-out/<name>/`.
+
+**Records.** The home records each run (`skill.run`), one entry per outside service the run used (`llm.call`), each question it asked (`card.create`) and each file it wrote (`files.write`). When a host bot started the run, the run's record says the answer went to that bot (`egress: host:<name>`).
+
+At most two runs at once on a home, one at a time for a device that is not your own. A run cut off by the home stopping is reported as failed.
+
 ## The command line
 
 ```
@@ -166,6 +195,7 @@ muse skills approve <name> [--yes]
 muse skills run <name> [--input KEY=VALUE ...] [--folder PATH ...] [--out PATH]
                        [--task light|everyday|heavy|frontier] [--privacy public|standard|private|local]
                        [--pay USD] [--yes] [--json]
+muse skills folders add <name> <path> [--output] | list [--json] | rm <name>
 ```
 
 `--input KEY=-` reads the value from standard input, which keeps it out of shell history. `--task` sets the tier of steps that name none. `--pay` gives this one run a money budget; without it a run never pays. The answer goes to standard output; one line saying who answered and what it cost ("Answered by groq. Nothing spent."), the notes and any choices go to standard error. The first time a skill is used, its description and what it asks for are shown first.

@@ -80,9 +80,13 @@ def parse_since(text: str, now: float) -> int:
     return max(0, int(moment.timestamp() * 1000))
 
 
-def make_filter(since_ms: int | None, action: str | None, cost_only: bool) -> Callable[[dict[str, Any]], bool] | None:
-    """The filter the list and export commands share; None when nothing is filtered."""
-    if since_ms is None and not action and not cost_only:
+def make_filter(since_ms: int | None, action: str | None, cost_only: bool,
+                left_device: bool = False) -> Callable[[dict[str, Any]], bool] | None:
+    """The filter the list and export commands (and the home API) share; None when nothing is filtered.
+
+    `left_device`: only records that say their content left the person's devices (`egress` is
+    `service:...` or `host:...`). A record that does not say is not among them."""
+    if since_ms is None and not action and not cost_only and not left_device:
         return None
 
     def keep(record: dict[str, Any]) -> bool:
@@ -92,9 +96,23 @@ def make_filter(since_ms: int | None, action: str | None, cost_only: bool) -> Ca
             return False
         if cost_only and not (record["cost"] and record["cost"]["minor"] > 0):
             return False
+        if left_device and not fmt.left_devices(record):
+            return False
         return True
 
     return keep
+
+
+def egress_words(record: Mapping[str, Any]) -> str:
+    """Where the content went, in a few plain words; "" when it stayed or the record does not say."""
+    egress = record.get("egress")
+    if not isinstance(egress, str):
+        return ""
+    if egress.startswith("service:"):
+        return f"sent to {egress[len('service:'):]}"
+    if egress.startswith("host:"):
+        return f"given to the host bot {egress[len('host:'):]}"
+    return "sent to your home" if egress == "home" else ""
 
 
 def _well_formed(record: Any) -> bool:
@@ -151,7 +169,7 @@ def seal(environ: Mapping[str, str]) -> int:
 
 
 def list_records(environ: Mapping[str, str], since: str | None, action: str | None, cost_only: bool, as_json: bool,
-                 now: float | None = None) -> int:
+                 now: float | None = None, left_device: bool = False) -> int:
     try:
         since_ms = parse_since(since, time.time() if now is None else now) if since else None
     except ValueError:
@@ -165,15 +183,20 @@ def list_records(environ: Mapping[str, str], since: str | None, action: str | No
     except RecordError as exc:
         note = _problem(exc) + " Run `muse records verify`."
         records = [r for r in records if _well_formed(r)]  # show what can be shown
-    keep = make_filter(since_ms, action, cost_only)
+    keep = make_filter(since_ms, action, cost_only, left_device)
     chosen = [r for r in records if keep is None or keep(r)]
     if as_json:
         _say(json.dumps(chosen, ensure_ascii=False))
         return 1 if note else 0
     if note:
         _say(note)
+    unsaid = sum(1 for r in records if "egress" not in r) if left_device else 0
     if not chosen:
         _say("No records yet." if not records else "No records match.")
+    if unsaid:
+        _say(f"{unsaid:,} record{'s do' if unsaid != 1 else ' does'} not say where the content went (written before records "
+             "carried that, or by a writer that did not know); they are not listed here.")
+    if not chosen:
         return 1 if note else 0
     day = ""
     for record in reversed(chosen):
@@ -184,8 +207,9 @@ def list_records(environ: Mapping[str, str], since: str | None, action: str | No
         who = f"under {record['mandate']}" if record["mandate"] else "by you" if record["actor"] == "person" else f"by the {record['actor']}"
         outcome = "" if record["outcome"] == "ok" else f" [{record['outcome']}]"
         cost = format_cost(record["cost"])
+        went = egress_words(record)
         line = f"  {when.strftime('%H:%M')}  #{record['seq']:<5} {record.get('summary', '(summary removed)')}{outcome}"
-        _say(f"{line}  ({record['action']}, {who}{', ' + cost if cost else ''})")
+        _say(f"{line}  ({record['action']}, {who}{', ' + cost if cost else ''}{', ' + went if went else ''})")
     return 1 if note else 0
 
 
@@ -263,8 +287,17 @@ def check_file(path: str, device: str | None, as_json: bool = False) -> int:
 
 
 def note_home_event(environ: Mapping[str, str], action: str, summary: str, clock: Callable[[], float] = time.time) -> None:
-    """Append one record of the person's own action on this home (`muse pause`, `muse resume`)."""
+    """Append one record of the person's own action on this home (`muse pause`, `muse resume`).
+
+    Pause and resume go through `muse.records.home.record_pause`, the function the home API also uses,
+    so the command line and the API leave the same record."""
+    if action in ("home.pause", "home.resume"):
+        from muse.records.home import record_pause
+
+        record_pause(environ, action == "home.pause", clock=clock)
+        return
     HomeRecords(environ, clock=clock).write(action, summary, actor="person")
 
 
-__all__ = ["check_file", "export_file", "format_cost", "list_records", "make_filter", "note_home_event", "parse_since", "seal", "verify"]
+__all__ = ["check_file", "egress_words", "export_file", "format_cost", "list_records", "make_filter", "note_home_event",
+           "parse_since", "seal", "verify"]

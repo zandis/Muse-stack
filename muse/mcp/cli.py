@@ -80,6 +80,8 @@ def _hosts_setup(args: argparse.Namespace) -> int:
         print()
     print(f"Created device '{done.device}' for the Muse tools server. Its token is in {done.token_file} (only you can read it);")
     print("it was not printed and is not needed anywhere else.")
+    print("That token has the role `host`: it can read status, ask you questions, queue its own jobs, add records and run")
+    print("skills. It cannot pause or resume, store keys, manage apps, answer a question or read your records.")
     print()
     print(hosts.snippet(host, base, done.token_file))
     print()

@@ -28,7 +28,7 @@ import time
 from pathlib import Path
 from typing import Any, Mapping
 
-from muse.mcp import SERVER_NAME, TOKEN_ENV, tools
+from muse.mcp import SERVER_NAME, TOKEN_ENV, skills, tools
 
 log = logging.getLogger("muse.mcp")
 
@@ -94,7 +94,10 @@ def build_context(args: argparse.Namespace, environ: Mapping[str, str]) -> tools
     listed += [p for p in environ.get(ALLOW_READ_ENV, "").split(os.pathsep) if p.strip()]
     if len(listed) > MAX_ALLOW_READ or any(len(p) > 400 for p in listed):
         raise StartupError(f"too many or too long --allow-read entries (at most {MAX_ALLOW_READ})")
-    return tools.Context(home=tools.HomeLink(client), allowed_read=tuple(listed))
+    link = tools.HomeLink(client)
+    # Skills run on the home and are reached through it, like everything else (muse/mcp/skills.py).
+    skills.connect(skills.HomeSkills(link))
+    return tools.Context(home=link, allowed_read=tuple(listed))
 
 
 def parser() -> argparse.ArgumentParser:

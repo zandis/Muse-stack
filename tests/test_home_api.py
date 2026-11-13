@@ -88,6 +88,37 @@ def test_status_is_the_snapshot_plus_api_version(rig):
     assert rig.last_headers["content-type"] == "application/json; charset=utf-8"
 
 
+def test_status_uses_the_settings_in_the_env_file_as_muse_status_does_and_never_holds_the_keys(rig, monkeypatch):
+    from muse.status import build_snapshot
+
+    monkeypatch.delenv("MUSE_DAILY_PAID_CAP_USD", raising=False)
+    rig.env_file.write_text(
+        "MUSE_DEFAULT_PRIVACY=private\nMUSE_DAILY_PAID_CAP_USD=2.50\nMUSE_TZ=Asia/Taipei\nOLLAMA_API_BASE=http://127.0.0.1:11434\n"
+        f"GROQ_API_KEY={KEY_CANARY}\nMUSE_QUEUE_APP_TOKEN=sk-muse-app-CANARYtoken0123456789abcdef\nMY_SERVICE_SECRET=hunter2\n"
+        f"SOME_OTHER_VALUE={KEY_CANARY}2\n", encoding="utf-8")
+    snap = rig.ok("GET", "/v1/status")
+    merged = build_snapshot(environ=keys.export_env())  # what `muse status` builds, from the environment that holds the keys
+    for key in ("providers", "aliases", "paid", "suggestions"):
+        assert snap[key] == json.loads(json.dumps(merged[key])), key
+    assert snap["paid"]["cap_usd"] == 2.5  # from the file; the process environment has no cap set
+    assert next(p for p in snap["providers"] if p["id"] == "groq")["configured"] is True  # known by name, never by value
+    assert next(p for p in snap["providers"] if p["id"] == "ollama")["configured"] is True  # a local model's address is a setting
+    assert KEY_CANARY not in json.dumps(snap) and "CANARY" not in json.dumps(snap)
+    settings = rig.home.settings_env()
+    assert settings["MUSE_DEFAULT_PRIVACY"] == "private" and settings["MUSE_DAILY_PAID_CAP_USD"] == "2.50"
+    assert settings["OLLAMA_API_BASE"] == "http://127.0.0.1:11434"
+    assert settings["MUSE_TZ"] == "UTC"  # the process's own value wins, as in keys.export_env
+    for name in ("GROQ_API_KEY", "MUSE_QUEUE_APP_TOKEN", "MY_SERVICE_SECRET", "SOME_OTHER_VALUE"):
+        assert name not in settings, name  # a named key, a name that says secret, a value shaped like a key
+    assert "CANARY" not in json.dumps(settings) and "hunter2" not in json.dumps(settings)
+    assert not any(isinstance(v, (str, dict)) and "CANARY" in json.dumps(v) for v in vars(rig.home).values())  # nothing kept on the home
+    # A job queued without a privacy class takes the file's default.
+    assert rig.ok("POST", "/v1/jobs", {"prompt": "x", "alias": "cheap"}, status=201)["job"]["privacy"] == "private"
+    # A skill run's environment has the settings and no provider key.
+    run_env = rig.home.run_env()
+    assert run_env["MUSE_DEFAULT_PRIVACY"] == "private" and "GROQ_API_KEY" not in run_env and "MUSE_QUEUE_APP_TOKEN" not in run_env
+
+
 def test_status_failure_is_a_plain_503_without_the_exception(rig, caplog):
     def boom():
         raise RuntimeError(f"cannot open ledger {ERR_CANARY}")
@@ -100,13 +131,13 @@ def test_status_failure_is_a_plain_503_without_the_exception(rig, caplog):
 
 
 def test_pause_and_resume_are_the_same_switch_as_the_cli(rig):
-    assert rig.ok("POST", "/v1/pause") == {"paused": True}
+    assert rig.ok("POST", "/v1/pause") == {"paused": True, "recorded": True}
     assert queue.is_paused() and (Path(os.environ["MUSE_HOME"]) / "paused").exists()
     assert rig.ok("GET", "/v1/status")["paused"] is True
-    assert rig.ok("POST", "/v1/pause") == {"paused": True}  # idempotent
-    assert rig.ok("POST", "/v1/resume") == {"paused": False, "was_paused": True}
+    assert rig.ok("POST", "/v1/pause") == {"paused": True, "recorded": True}  # idempotent
+    assert rig.ok("POST", "/v1/resume") == {"paused": False, "was_paused": True, "recorded": True}
     assert not queue.is_paused() and rig.ok("GET", "/v1/status")["paused"] is False
-    assert rig.ok("POST", "/v1/resume") == {"paused": False, "was_paused": False}
+    assert rig.ok("POST", "/v1/resume") == {"paused": False, "was_paused": False, "recorded": False}  # nothing happened
     queue.set_paused()  # `muse pause` in a terminal shows up here too
     assert rig.ok("GET", "/v1/status")["paused"] is True
     rig.fails("POST", "/v1/pause", {"why": "x"}, 400, "invalid_request")
@@ -168,7 +199,7 @@ def test_a_key_is_stored_through_the_key_store_and_never_echoed(rig, caplog):
         got = rig.ok("POST", "/v1/keys/groq", {"key": f"  {KEY_CANARY}\n"})
     assert got == {
         "provider": "groq", "stored": ["GROQ_API_KEY"], "backend": "dotenv", "warnings": [], "still_needed": [],
-        "restart": {"needed": True, "proxy_running": True, "command": "muse restart"},
+        "restart": {"needed": True, "proxy_running": True, "command": "muse restart"}, "recorded": True,
     }
     assert KEY_CANARY not in json.dumps(got) and KEY_CANARY not in caplog.text
     assert f"GROQ_API_KEY={KEY_CANARY}" in rig.env_file.read_text()  # cleaned of the stray space and newline
@@ -395,7 +426,7 @@ def test_apps_are_created_changed_rotated_and_removed(rig):
     rotated = rig.ok("POST", "/v1/apps/notes-batch/rotate")
     assert rotated["token"] != token and rotated["app"]["name"] == "notes-batch"
     assert apps.find_by_token(token) is None and apps.find_by_token(rotated["token"]).name == "notes-batch"
-    assert rig.ok("DELETE", "/v1/apps/notes-batch") == {"removed": True}
+    assert rig.ok("DELETE", "/v1/apps/notes-batch") == {"removed": True, "recorded": True}
     assert rig.ok("GET", "/v1/apps") == {"apps": []} and apps.find_by_token(rotated["token"]) is None
     # A token appears in exactly the reply that issued it, and no hash appears anywhere.
     everything = "".join(rig.replies)
@@ -441,7 +472,7 @@ def test_a_malformed_registry_is_reported_and_never_overwritten(rig):
 # ---------------------------------------------------------------- planned, and the error shape
 
 
-@pytest.mark.parametrize("path", ["/v1/receipts", "/v1/receipts?since=2026-11-13T00:00:00Z", "/v1/mandates/artifacts"])
+@pytest.mark.parametrize("path", ["/v1/mandates/artifacts"])
 def test_planned_calls_answer_not_built(rig, path):
     err = rig.fails("GET", path, None, 501, "not_built")
     assert set(err) == {"code", "message"}
@@ -479,7 +510,8 @@ def test_an_unexpected_failure_is_a_plain_500(rig, monkeypatch, caplog):
 def test_error_codes_and_statuses_are_one_table():
     assert api.ERROR_CODES == {
         "invalid_request": 400, "unauthorized": 401, "forbidden": 403, "not_found": 404, "method_not_allowed": 405, "conflict": 409,
-        "card_already_answered": 409, "card_expired": 410, "length_required": 411, "payload_too_large": 413, "internal": 500,
+        "card_already_answered": 409, "card_expired": 410, "length_required": 411, "payload_too_large": 413,
+        "too_many_requests": 429, "internal": 500,
         "not_built": 501, "unavailable": 503,
     }
     err = api.ApiError("unavailable", "Wait a little.", retry_after=7)
@@ -584,7 +616,9 @@ def test_no_secret_or_prompt_in_any_reply_or_log_line(rig, caplog, capfd):
         rig.ok("POST", "/v1/pause")
         rig.ok("POST", "/v1/resume")
         rig.ok("DELETE", f"/v1/jobs/{job}")
-        rig.fails("GET", "/v1/receipts", None, 501, "not_built")
+        rig.ok("POST", "/v1/receipts", {"action": "files.write", "summary": "Wrote a file"}, status=201)
+        rig.fails("POST", "/v1/receipts", {"action": "files.write", "summary": PROMPT_CANARY + "\nsecond line"}, 400, "invalid_request")
+        rig.ok("GET", "/v1/receipts")
         rig.fails("GET", "/v1/mandates/artifacts", None, 501, "not_built")
         rig.fails("GET", f"/v1/cards/{ERR_CANARY}", None, 404, "not_found")
         rig.ok("DELETE", "/v1/apps/one")

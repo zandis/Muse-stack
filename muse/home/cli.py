@@ -19,6 +19,13 @@ from typing import Any
 
 TOKEN_ENV = "MUSE_HOME_TOKEN"
 
+ROLE_WORDS = {
+    "owner": "it can do everything, as you can",
+    "host": "it can read status, ask you questions, queue its own jobs, add records and run skills; "
+            "it cannot pause or resume, store keys, manage apps or answer a question",
+    "viewer": "it can only read: status, services, cards, jobs and records",
+}
+
 
 def _err(msg: str) -> None:
     print(msg, file=sys.stderr)
@@ -71,13 +78,14 @@ def cmd_token(args: argparse.Namespace) -> int:
         if args.token_cmd == "list":
             devices = auth.list_devices()
             if args.json:
-                print(json.dumps([{"name": d.name, "created_at": d.created_at, "rotated_at": d.rotated_at} for d in devices], indent=2))
+                print(json.dumps([{"name": d.name, "role": d.role, "created_at": d.created_at, "rotated_at": d.rotated_at}
+                                  for d in devices], indent=2))
             elif not devices:
                 print("No devices. `muse home token add <name>` creates one.")
             else:
                 for d in devices:
                     rotated = f", token rotated {d.rotated_at}" if d.rotated_at else ""
-                    print(f"{d.name:<24} added {d.created_at}{rotated}")
+                    print(f"{d.name:<24} {d.role:<7} added {d.created_at}{rotated}")
             return 0
         if args.token_cmd == "rm":
             if auth.remove_token(args.name):
@@ -88,8 +96,8 @@ def cmd_token(args: argparse.Namespace) -> int:
         if not _token_display_ok(args):
             return 1
         if args.token_cmd == "add":
-            device, token = auth.add_token(args.name)
-            print(f"Added device '{device.name}'.")
+            device, token = auth.add_token(args.name, role=args.role)
+            print(f"Added device '{device.name}' with the role {device.role}: {ROLE_WORDS[device.role]}.")
         else:
             device, token = auth.rotate_token(args.name)
             print(f"New token for '{device.name}'. The old one no longer works.")
@@ -178,8 +186,11 @@ def register(sub: Any) -> None:
     tsub = t.add_subparsers(dest="token_cmd", required=True)
     ta = tsub.add_parser("add", help="create a device and show its token once")
     ta.add_argument("name")
+    ta.add_argument("--role", choices=("owner", "host", "viewer"), default="owner",
+                    help="what the device may do: owner (everything; the default), host (a host bot's tools server: "
+                         "no pause/resume, keys, apps or answering), viewer (read-only)")
     ta.add_argument("--show-token", action="store_true", help="print the token even when stdout is not a terminal")
-    tl = tsub.add_parser("list", help="every device (names and dates; never tokens)")
+    tl = tsub.add_parser("list", help="every device (names, roles and dates; never tokens)")
     tl.add_argument("--json", action="store_true")
     tr = tsub.add_parser("rm", help="remove a device; its token stops working")
     tr.add_argument("name")

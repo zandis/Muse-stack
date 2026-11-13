@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 from pathlib import Path
@@ -27,13 +28,14 @@ KEY_CANARY = "gsk_CANARYtool0123456789abcdefABCDEF"
 PROMPT_CANARY = "CANARY-PROMPT-4be1 summarise my private notes"
 
 EXPECTED_TOOLS = ["allowance_status", "pause_status", "suggest_service", "ask_approval", "check_approval", "check_permission",
-                  "record_action", "queue_job", "job_status", "list_skills", "run_skill"]
+                  "record_action", "queue_job", "job_status", "list_skills", "run_skill", "skill_status"]
 
 
 class Rig:
     def __init__(self, state: str = "normal") -> None:
         self.home = fake.FakeHome(state)
-        self._ctx = running(self.home, StaticVerifier({HOST: HOST_TOKEN, PHONE: PHONE_TOKEN}))
+        # As `muse hosts setup` makes it: the tools server's device is a `host`, the person's phone an `owner`.
+        self._ctx = running(self.home, StaticVerifier({HOST: HOST_TOKEN, PHONE: PHONE_TOKEN}, roles={HOST: "host"}))
         self.srv = self._ctx.__enter__()
         self.phone = client_for(self.srv, PHONE_TOKEN)
         self.ctx = tools.Context(home=tools.HomeLink(client_for(self.srv, HOST_TOKEN)))
@@ -137,7 +139,8 @@ def test_tools_that_touch_approval_or_permission_say_what_muse_does_not_control(
     for name in ("ask_approval", "check_approval", "check_permission", "run_skill"):
         assert SCOPE_NOTE in tools.BY_NAME[name].description
     assert "advisory" in tools.BY_NAME["check_permission"].description.lower()
-    assert "not built" in tools.BY_NAME["record_action"].description.lower()
+    assert "not built" not in tools.BY_NAME["record_action"].description.lower()
+    assert SCOPE_NOTE in tools.BY_NAME["record_action"].description and "own report" in tools.BY_NAME["record_action"].description
     assert "cannot stop this host's own shell or file tools" in SCOPE_NOTE
 
 
@@ -389,22 +392,58 @@ def test_check_permission_bad_input(rig):
 # ---------------------------------------------------------------- records
 
 
-def test_record_action_says_plainly_that_nothing_was_recorded(rig, tmp_path):
+def test_record_action_writes_a_signed_record_on_the_home_and_returns_its_number_and_hash(rig):
+    pytest.importorskip("cryptography")
+    from muse.records import format as fmt
+    from muse.records.home import HomeRecords
+
+    before = len(HomeRecords(rig.home.environ).records())
     got = rig.call("record_action", {"action": "saved a file", "summary": "Wrote the weekly digest.", "outcome": "done",
-                                     "cost": {"amount": "0", "currency": "USD"}})
-    assert got["recorded"] is False and got["reason"] == "records are not built yet" and "do not tell the person" in got["what_to_do"]
-    assert not list(Path(os.environ["MUSE_HOME"]).iterdir())  # no local fallback log anywhere
-    assert not [p for p in rig.home.root.iterdir() if "record" in p.name or "receipt" in p.name]
-    for bad in ({}, {"action": "a", "summary": "s", "outcome": "great"}, {"action": "a", "summary": "s" * 301, "outcome": "done"}):
+                                     "cost": {"amount": "30", "currency": "TWD"}, "sent_to": "none"})
+    record = HomeRecords(rig.home.environ).records()[-1]
+    assert got == {"recorded": True, "seq": before, "hash": fmt.record_hash(record), "action": "host.saved_a_file",
+                   "recorded_as": "helper", "about": tools.RECORD_NOTE, "scope_note": SCOPE_NOTE}
+    assert (record["action"], record["actor"], record["mandate"], record["outcome"]) == ("host.saved_a_file", "helper", f"device:{HOST}", "ok")
+    assert record["summary"] == "Wrote the weekly digest." and record["cost"] == {"currency": "TWD", "minor": 3000} and record["egress"] == "none"
+    assert fmt.verify_chain(HomeRecords(rig.home.environ).records()) == before + 1
+    assert not list(Path(os.environ["MUSE_HOME"]).iterdir())  # written by the home, in the home's folder: no copy here
+    sent = rig.call("record_action", {"action": "message.send", "summary": "Sent a message", "outcome": "skipped", "sent_to": "service:gmail"})
+    last = HomeRecords(rig.home.environ).records()[-1]
+    assert sent["seq"] == before + 1 and (last["action"], last["outcome"], last["egress"]) == ("host.message.send", "declined", "service:gmail")
+    for bad in ({}, {"action": "a", "summary": "s", "outcome": "great"}, {"action": "a", "summary": "s" * 201, "outcome": "done"},
+                {"action": "a", "summary": "two\nlines", "outcome": "done"}, {"action": "a", "summary": "s", "outcome": "done", "sent_to": "host:me"},
+                {"action": "a", "summary": "s", "outcome": "done", "sent_to": "home"}, {"action": "a", "summary": "s", "outcome": "done", "actor": "person"},
+                {"action": "a", "summary": "s", "outcome": "done", "cost": {"amount": "1", "currency": "XTS"}},
+                {"action": "a", "summary": "s", "outcome": "done", "cost": {"amount": "0.001", "currency": "USD"}}):
         rig.call("record_action", bad, error="invalid_input")
+    assert len(HomeRecords(rig.home.environ).records()) == before + 2
 
 
-def test_record_action_reports_a_record_once_the_home_keeps_them(rig, monkeypatch):
+@pytest.mark.parametrize("given,stored", [
+    ("files.write", "host.files.write"), ("Message.Send", "host.message.send"), ("saved a file", "host.saved_a_file"),
+    ("web search!", "host.web_search"), ("home.pause", "host.home.pause"), ("card.answer", "host.card.answer"), ("key.store", "host.key.store"),
+    ("skill.run", "host.skill.run"), ("llm.call", "host.llm.call"), ("host.files.write", "host.files.write"), ("a.b.c", "host.a.b.c"),
+    ("a.b.c.d", "host.a_b_c_d"), ("3d print", "host.x_3d_print"), ("\u5beb\u5165\u6a94\u6848", "host.x"), ("a" * 80, "host." + "a" * 32),
+    ("a.b.c.d.e", "host.a_b_c_d_e"), ("host", "host.host"), ("host.", "host.x"),
+])
+def test_a_hosts_action_name_is_always_filed_under_host(given, stored):
+    from muse.records import format as fmt
+
+    assert tools.record_action_name(given) == stored
+    assert fmt._ACTION.match(stored) and stored.split(".")[0] == tools.HOST_FAMILY == "host"
+
+
+def test_record_action_says_plainly_when_nothing_was_recorded(rig, monkeypatch):
+    for reply in ((503, {"error": {"code": "unavailable", "message": "x"}}), (501, {"error": {"code": "not_built", "message": "x"}}),
+                  (201, {"record": "odd"}), (201, {})):
+        monkeypatch.setattr(rig.ctx.home.client, "call", lambda m, p, b=None, reply=reply: reply)
+        got = rig.call("record_action", {"action": "a", "summary": "s", "outcome": "done"})
+        assert got["recorded"] is False and "do not tell the person" in got["what_to_do"] and got["scope_note"] == SCOPE_NOTE
     sent = []
-    monkeypatch.setattr(rig.ctx.home.client, "call", lambda m, p, b=None: (sent.append((m, p, b)) or (201, {"id": "r-1"})))
-    got = rig.call("record_action", {"action": "a", "summary": "s", "outcome": "done"})
-    assert got == {"recorded": True, "id": "r-1", "scope_note": SCOPE_NOTE}
-    assert sent == [("POST", "/v1/receipts", {"action": "a", "summary": "s", "outcome": "done"})]
+    monkeypatch.setattr(rig.ctx.home.client, "call", lambda m, p, b=None: (sent.append((m, p, b)) or (201, {"record": {"seq": 4, "actor": "helper"}, "hash": "ab" * 32})))
+    got = rig.call("record_action", {"action": "a", "summary": "s", "outcome": "failed"})
+    assert got["recorded"] is True and got["seq"] == 4 and got["hash"] == "ab" * 32
+    assert sent == [("POST", "/v1/receipts", {"action": "host.a", "summary": "s", "outcome": "failed"})]  # never an actor, a device or a time
 
 
 # ---------------------------------------------------------------- the queue
@@ -429,6 +468,8 @@ def test_a_batch_job(rig):
 
 def test_job_status_of_a_finished_job_gives_the_file_not_the_answer(rig):
     done = next(j for j in rig.home.queue().list() if j.status == "done")
+    rig.call("job_status", {"id": done.id}, error="not_found")  # somebody else's job: a host sees only its own
+    rig.home.book.set_job_owner(done.id, HOST)
     job = rig.call("job_status", {"id": done.id})["job"]
     assert job["status"] == "done" and job["service"] == "gemini" and job["cost_usd"] == 0.0
     assert set(job) == {"id", "status", "kind", "task", "by", "allow_paid", "attempts", "times_held_back", "next_try_at",
@@ -513,22 +554,83 @@ def test_skills_answer_not_built_until_someone_connects_them(rig):
         rig.call("run_skill", bad, error="invalid_input")
 
 
-def test_a_connected_skills_backend_is_used_through_the_one_thin_function(rig):
-    class Backend:
-        def list(self):
-            return [{"name": "weekly-digest", "summary": "Summarise the week.", "internal": "not passed on"}]
+@pytest.fixture()
+def connected(rig):
+    """The tools server as `build_context` leaves it: skills reached through the home."""
+    skills.connect(skills.HomeSkills(rig.ctx.home))
+    yield rig
+    skills.connect(None)
 
-        def run(self, name, inputs):
-            return {"status": "done", "name": name, "inputs": inputs}
+
+def test_skills_are_listed_and_run_through_the_home(connected):
+    rig = connected
+    listed = rig.call("list_skills")
+    assert listed["built"] is True and listed["folders"] == [] and "cannot add one" in listed["about_folders"]
+    by_name = {s["name"]: s for s in listed["skills"]}
+    assert by_name["files-answer"]["can_run"] is True and by_name["files-answer"]["reads_folders"] is True
+    assert set(by_name["files-answer"]) == {"name", "summary", "can_run", "reads_folders", "proposes_files"}
+    assert len(by_name["files-answer"]["summary"]) <= 160
+    ran = rig.call("run_skill", {"name": "files-answer", "inputs": {"question": "what changed?"}})
+    assert ran["built"] is True and ran["ran"] is True and ran["status"] == "done" and ran["checked"] is True
+    assert "fake home" in ran["answer"] and ran["answer_cut_short"] is False and ran["scope_note"] == SCOPE_NOTE
+    assert re.fullmatch(tools.RUN_ID.strip("^$"), ran["run_id"]) and "files" not in ran
+    again = rig.call("skill_status", {"run_id": ran["run_id"]})
+    assert again == ran
+    # The run was started by this host's own device: the person's phone sees it, another device's id does not exist for the host.
+    assert rig.phone.call("GET", f"/v1/skills/runs/{ran['run_id']}")[1]["run"]["started_by"] == HOST
+    rig.call("skill_status", {"run_id": "0" * 16}, error="not_found")
+
+
+def test_run_skill_refusals_say_what_to_do(connected):
+    rig = connected
+    assert "list_skills" in rig.call("run_skill", {"name": "no-such-skill"}, error="not_found")["error"]["message"]
+    err = rig.call("run_skill", {"name": "files-answer", "folders": ["not-on-the-list"]}, error="invalid_input")
+    assert "folder names that list_skills shows" in err["error"]["message"]
+    for bad in ({}, {"name": "Bad Name"}, {"name": "ok", "inputs": "x"}, {"name": "ok", "inputs": {"a": "y" * 5000}},
+                {"name": "ok", "folders": ["/etc"]}, {"name": "ok", "folders": ["../x"]}, {"name": "ok", "out": "/tmp"},
+                {"name": "ok", "folders": ["a"] * 9}, {"name": "ok", "budget": {"paid_usd": 1}}, {"name": "ok", "timeout_s": 601}):
+        rig.call("run_skill", bad, error="invalid_input")  # a path is never a folder name, and a host cannot set a budget
+    rig.call("skill_status", {"run_id": "short"}, error="invalid_input")
+
+
+def test_a_run_that_outlasts_the_wait_is_picked_up_with_skill_status(connected):
+    rig = connected
+    release = threading.Event()
+    canned = rig.home.skills.runner
+    rig.home.skills.runner = lambda skill, inputs, **kw: release.wait(10) and canned(skill, inputs)
+    started = rig.call("run_skill", {"name": "files-answer", "timeout_s": 0})
+    assert started["status"] == "running" and started["ran"] is False and "skill_status" in started["what_to_do"] and "answer" not in started
+    assert "another skill is still running" in rig.call("run_skill", {"name": "files-answer"}, error="conflict")["error"]["message"]
+    release.set()
+    rig.home.skills.wait(started["run_id"])
+    assert rig.call("skill_status", {"run_id": started["run_id"]})["status"] == "done"
+
+
+def test_a_long_answer_is_cut_to_fit_and_says_so_and_proposed_files_are_listed_with_their_cards(connected):
+    rig = connected
+    run = {"id": "ab" * 8, "skill": "writer", "status": "partial", "result": {
+        "output": {"text": "line one\n" + "\"quoted\" " * 2000}, "notes": ["n" * 500] * 9, "check": {"status": "failed", "reasons": ["x"]}},
+        "writes": [{"card_id": f"{i:016x}", "file": "f" * 300, "size": 3, "state": state, "reason": None}
+                   for i, state in enumerate(["pending", "written", "refused", "discarded", "applying", "odd"] * 2)]}
+
+    class Backend:
+        def status(self, run_id):
+            return run
 
     skills.connect(Backend())
-    try:
-        assert rig.call("list_skills") == {"built": True, "skills": [{"name": "weekly-digest", "summary": "Summarise the week."}]}
-        ran = rig.call("run_skill", {"name": "weekly-digest", "inputs": {"week": "46"}})
-        assert ran["ran"] is True and ran["result"] == {"status": "done", "name": "weekly-digest", "inputs": {"week": "46"}}
-        assert ran["scope_note"] == SCOPE_NOTE
-    finally:
-        skills.connect(None)
+    got = rig.call("skill_status", {"run_id": "ab" * 8})
+    assert len(json.dumps(got, ensure_ascii=False)) <= tools.MAX_RESULT_CHARS
+    assert got["answer"].startswith("line one\n") and got["answer_cut_short"] is True and 500 < len(got["answer"]) <= tools.MAX_ANSWER_CHARS
+    assert got["checked"] is False and len(got["notes"]) == 5 and all(len(n) <= tools.MAX_TEXT for n in got["notes"])
+    assert len(got["files"]) == 10 and got["more_files"] == 2 and len(got["files"][0]["file"]) == 80
+    assert [f["state"].split(":")[0].split(";")[0] for f in got["files"][:6]] == [
+        "waiting for the person to approve it in Muse", "written", "approved, but could not be written", "not written", "being written", "unknown"]
+    assert "Do not write the file yourself" in got["about_files"]
+    # Replies of an unexpected shape never crash the tool or leak.
+    for odd in (None, [], "text", {"status": "exploded"}, {"status": "done", "result": "CANARY-ERRTEXT"}):
+        run = odd
+        got = rig.call("skill_status", {"run_id": "ab" * 8})
+        assert "CANARY" not in json.dumps(got) and got["status"] in ("failed", "done")
 
 
 def test_the_skills_bridge_imports_nothing_from_the_skills_package():
@@ -596,6 +698,13 @@ def test_an_unreachable_home_is_a_clear_tool_error_not_a_crash(tmp_path):
     # Tools that do not need the home keep working.
     assert tools.call(ctx, "check_permission", {"action": "write"})[0]["decision"] == "ask"
     assert tools.call(ctx, "list_skills", {})[1] is False
+    skills.connect(skills.HomeSkills(ctx.home))
+    try:
+        for name, args in (("list_skills", {}), ("run_skill", {"name": "files-answer"}), ("skill_status", {"run_id": "0" * 16})):
+            result, is_error = tools.call(ctx, name, args)
+            assert is_error and result["error"]["code"] == "home_unreachable", name
+    finally:
+        skills.connect(None)
 
 
 def test_a_wrong_token_and_an_unavailable_home(start):

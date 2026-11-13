@@ -16,11 +16,33 @@ info:
       unknown token gets the same 401. On the Unix socket the caller must also be the same
       user as the home (403 otherwise). On TCP the `Host` header must be `127.0.0.1:<port>`
       or `localhost:<port>` (403 otherwise).
+    * Every device has a role, and every call needs one scope (`x-scope` on each operation;
+      `x-roles` lists the roles that hold it; the table is `x-role-scopes` below). A device
+      whose role lacks the scope gets `forbidden` (403) before anything else is looked at.
+      `owner` may do everything. `host` (the tools server a host bot runs) may read status
+      and the catalogue, ask the person a question and read its own cards, queue, read and
+      cancel its own jobs, add records, and list and run skills; it may not pause or resume,
+      connect services, store keys, manage apps, answer a card or read the records. `viewer`
+      may only read status, the catalogue, cards, jobs and records. A `host` sees only the
+      jobs, cards and skill runs it made itself: anyone else's answer `not_found` (404),
+      exactly as if they did not exist. Devices created before roles existed are `owner`.
+    * A peer that sends a wrong token more than 10 times in 60 seconds gets
+      `too_many_requests` (429) with `retry_after` for its further wrong tokens; a correct
+      token is always served. At most 64 connections are served at once; one more gets
+      `unavailable` (503) with `retry_after`.
     * Bodies are JSON objects of at most 512 KiB, sent with a `Content-Length`.
-    * A reply never holds a provider key, a prompt, a job's result, or internal error text.
-      The only secret that ever leaves is a new app token, once, when it is created or rotated.
+    * A reply never holds a provider key, a prompt, a queued job's result, or internal error
+      text. The only secret that ever leaves is a new app token, once, when it is created or
+      rotated. One reply holds the person's content on purpose: a skill run's answer
+      (`GET /v1/skills/runs/{id}`), given to the device that started the run.
     * A request that holds anything shaped like a key or token is refused with a generic 400
       (`invalid_request`), everywhere except `POST /v1/keys/{provider}`.
+    * The home writes a signed record (`docs/spec/interfaces/record-format.md`) of what it does
+      through this API: a card asked or answered, pause and resume, an app added, changed,
+      removed or given a new token, a key stored (the service's id only), a job queued or
+      cancelled, a skill run, a file written. Those replies carry `recorded`: true when the
+      record was written, false when it could not be (the action itself still happened, and is
+      never undone or refused because of that) or when the call changed nothing.
     * Every error has one shape (`Error`). `code` is stable and listed below; `message` is one
       plain sentence for the person; `retry_after` (seconds) is present when waiting helps.
     * No CORS headers are sent. Every reply has `Cache-Control: no-store`.
@@ -28,8 +50,8 @@ info:
 
     Error codes: `invalid_request` 400, `unauthorized` 401, `forbidden` 403, `not_found` 404,
     `method_not_allowed` 405, `conflict` 409, `card_already_answered` 409, `card_expired` 410,
-    `length_required` 411, `payload_too_large` 413, `internal` 500, `not_built` 501,
-    `unavailable` 503.
+    `length_required` 411, `payload_too_large` 413, `too_many_requests` 429, `internal` 500,
+    `not_built` 501, `unavailable` 503.
 
     For development, `python -m muse.home --fake` serves this same API from canned data.
 servers:
@@ -48,14 +70,25 @@ x-error-codes:
   card_expired: 410
   length_required: 411
   payload_too_large: 413
+  too_many_requests: 429
   internal: 500
   not_built: 501
   unavailable: 503
+# Which scopes each role holds (muse/home/auth.py::ROLE_SCOPES). Checked by tests/test_home_openapi.py.
+x-role-scopes:
+  owner: [status.read, catalogue.read, connect.write, keys.write, jobs.read, jobs.write, cards.read, cards.ask,
+          cards.answer, pause.write, apps.read, apps.write, receipts.read, receipts.write, skills.read, skills.run,
+          mandates.read]
+  host: [status.read, catalogue.read, jobs.read, jobs.write, cards.read, cards.ask, receipts.write, skills.read,
+         skills.run]
+  viewer: [status.read, catalogue.read, jobs.read, cards.read, receipts.read]
 
 paths:
   /v1/status:
     get:
       operationId: getStatus
+      x-scope: status.read
+      x-roles: [owner, host, viewer]
       summary: The snapshot the dashboard and `muse status` show, plus `api_version`.
       description: Allowances, services, apps, the queue, the paid total and whether the home is paused. Never holds keys or prompts.
       responses:
@@ -70,6 +103,8 @@ paths:
   /v1/catalogue:
     get:
       operationId: getCatalogue
+      x-scope: catalogue.read
+      x-roles: [owner, host, viewer]
       summary: The catalogue with the person's connection state.
       responses:
         "200":
@@ -82,6 +117,8 @@ paths:
   /v1/connect/{provider}:
     post:
       operationId: startConnection
+      x-scope: connect.write
+      x-roles: [owner]
       summary: Start a guided connection; returns the steps.
       description: |
         The home opens no browser: the client shows the steps and opens `open_url` on the
@@ -103,6 +140,8 @@ paths:
   /v1/keys/{provider}:
     post:
       operationId: storeKey
+      x-scope: keys.write
+      x-roles: [owner]
       summary: Store a service's key on the home.
       description: |
         The only call that accepts a key. The key is stored through the home's key store
@@ -138,6 +177,8 @@ paths:
   /v1/jobs:
     get:
       operationId: listJobs
+      x-scope: jobs.read
+      x-roles: [owner, host, viewer]
       summary: Background jobs, oldest first. Metadata only.
       description: A job's prompt and result are never returned by any call.
       parameters:
@@ -159,6 +200,8 @@ paths:
         default: {$ref: "#/components/responses/Error"}
     post:
       operationId: addJob
+      x-scope: jobs.write
+      x-roles: [owner, host]
       summary: Queue a job to run on spare allowance.
       description: |
         The prompt is accepted and kept on the home until the job ends; it is not returned.
@@ -181,6 +224,8 @@ paths:
   /v1/jobs/{id}:
     get:
       operationId: getJob
+      x-scope: jobs.read
+      x-roles: [owner, host, viewer]
       summary: One job's metadata.
       parameters:
         - {$ref: "#/components/parameters/jobId"}
@@ -194,6 +239,8 @@ paths:
         default: {$ref: "#/components/responses/Error"}
     delete:
       operationId: cancelJob
+      x-scope: jobs.write
+      x-roles: [owner, host]
       summary: Cancel a waiting or running job.
       description: The job stays in the list as `cancelled` and its prompt is erased. `conflict` if it had already finished.
       parameters:
@@ -211,6 +258,8 @@ paths:
   /v1/cards:
     get:
       operationId: listCards
+      x-scope: cards.read
+      x-roles: [owner, host, viewer]
       summary: Cards, newest first. "Needs you" is `?status=pending`.
       parameters:
         - name: status
@@ -235,6 +284,8 @@ paths:
         default: {$ref: "#/components/responses/Error"}
     post:
       operationId: askCard
+      x-scope: cards.ask
+      x-roles: [owner, host]
       summary: Ask the person a question. Creates one waiting card.
       description: |
         For a device that acts for the person and must ask first, such as the Muse tools server a
@@ -268,6 +319,8 @@ paths:
   /v1/cards/{id}:
     get:
       operationId: getCard
+      x-scope: cards.read
+      x-roles: [owner, host, viewer]
       summary: One card.
       parameters:
         - {$ref: "#/components/parameters/cardId"}
@@ -283,6 +336,8 @@ paths:
   /v1/cards/{id}/answer:
     post:
       operationId: answerCard
+      x-scope: cards.answer
+      x-roles: [owner]
       summary: Approve or decline a waiting card.
       description: |
         Exactly one answer ever succeeds. A second answer gets `card_already_answered` (409);
@@ -290,6 +345,12 @@ paths:
         `always: true` (only with `approve`) records that the person chose "Always allow this".
         The answering device's name is recorded as `answered_by`.
         A device that asked for the card (`POST /v1/cards`) cannot answer it: `forbidden` (403).
+
+        A card that stands for a file a skill proposed (`POST /v1/skills/{name}/run`) is acted on
+        here: approved, the home writes the file now (a new file only, inside the output folder,
+        checked again at this moment) and the reply says so in `write`; declined, the file's
+        contents are thrown away. Exactly one answer ever succeeds, so the file is written at
+        most once. A card that expires unanswered is treated as declined.
       parameters:
         - {$ref: "#/components/parameters/cardId"}
       requestBody:
@@ -305,10 +366,16 @@ paths:
                 always: {type: boolean, default: false}
       responses:
         "200":
-          description: The card as answered.
+          description: The card as answered, and what was done about a proposed file if it stood for one.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/CardReply"}
+              schema:
+                type: object
+                required: [card, recorded]
+                properties:
+                  card: {$ref: "#/components/schemas/Card"}
+                  recorded: {$ref: "#/components/schemas/Recorded"}
+                  write: {$ref: "#/components/schemas/WriteOutcome"}
         "400": {$ref: "#/components/responses/Invalid"}
         "404": {$ref: "#/components/responses/NotFound"}
         "409":
@@ -326,6 +393,8 @@ paths:
   /v1/pause:
     post:
       operationId: pause
+      x-scope: pause.write
+      x-roles: [owner]
       summary: The one switch, off. Background work sends nothing until resumed.
       description: Same as `muse pause`. In v1 this stops the queue; the router keeps answering apps. No request body. Idempotent.
       responses:
@@ -335,16 +404,19 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [paused]
+                required: [paused, recorded]
                 properties:
                   paused: {const: true}
+                  recorded: {$ref: "#/components/schemas/Recorded"}
         default: {$ref: "#/components/responses/Error"}
 
   /v1/resume:
     post:
       operationId: resume
+      x-scope: pause.write
+      x-roles: [owner]
       summary: The one switch, on.
-      description: Same as `muse resume`. No request body. Idempotent.
+      description: Same as `muse resume`. No request body. Idempotent. A resume that changed nothing leaves no record.
       responses:
         "200":
           description: Running again.
@@ -352,15 +424,18 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [paused, was_paused]
+                required: [paused, was_paused, recorded]
                 properties:
                   paused: {const: false}
                   was_paused: {type: boolean}
+                  recorded: {$ref: "#/components/schemas/Recorded"}
         default: {$ref: "#/components/responses/Error"}
 
   /v1/apps:
     get:
       operationId: listApps
+      x-scope: apps.read
+      x-roles: [owner]
       summary: The apps that share the router, by name. Today's use per app is in `/v1/status`.
       responses:
         "200":
@@ -376,6 +451,8 @@ paths:
         default: {$ref: "#/components/responses/Error"}
     post:
       operationId: addApp
+      x-scope: apps.write
+      x-roles: [owner]
       summary: Register an app. Its token is returned once.
       requestBody:
         required: true
@@ -402,6 +479,8 @@ paths:
   /v1/apps/{name}:
     patch:
       operationId: updateApp
+      x-scope: apps.write
+      x-roles: [owner]
       summary: Change an app's priority, caps, paid permission, privacy or note.
       description: Send only what changes. `null` clears an optional cap; `allow_paid null` returns to the priority's default.
       parameters:
@@ -418,15 +497,18 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [app]
+                required: [app, recorded]
                 properties:
                   app: {$ref: "#/components/schemas/App"}
+                  recorded: {$ref: "#/components/schemas/Recorded"}
         "400": {$ref: "#/components/responses/Invalid"}
         "404": {$ref: "#/components/responses/NotFound"}
         "503": {$ref: "#/components/responses/Unavailable"}
         default: {$ref: "#/components/responses/Error"}
     delete:
       operationId: removeApp
+      x-scope: apps.write
+      x-roles: [owner]
       summary: Remove an app. Its token stops working at the next request.
       parameters:
         - {$ref: "#/components/parameters/appName"}
@@ -437,9 +519,10 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [removed]
+                required: [removed, recorded]
                 properties:
                   removed: {const: true}
+                  recorded: {$ref: "#/components/schemas/Recorded"}
         "404": {$ref: "#/components/responses/NotFound"}
         "503": {$ref: "#/components/responses/Unavailable"}
         default: {$ref: "#/components/responses/Error"}
@@ -447,6 +530,8 @@ paths:
   /v1/apps/{name}/rotate:
     post:
       operationId: rotateAppToken
+      x-scope: apps.write
+      x-roles: [owner]
       summary: Issue a new token for an app; the old one stops working at once.
       description: No request body.
       parameters:
@@ -464,20 +549,227 @@ paths:
   /v1/receipts:
     get:
       operationId: listReceipts
-      summary: Planned. Receipts written on the home.
-      description: Not built yet; answers 501 `not_built` until the records module exists.
-      x-planned: true
+      x-scope: receipts.read
+      x-roles: [owner, viewer]
+      summary: The home's records, newest first, with whether they check out.
+      description: |
+        A page of the signed records on the home (`muse records list` shows the same). Newest
+        first, by `seq` descending: `seq` is the order the home signed them in, and it never
+        repeats. At most 200 a page (default 50); `next_before` is the `before` value that
+        fetches the next, older page, or null on the last one.
+
+        Every reply also says whether the whole chain checks out (`verify`) and what the last
+        seal covers (`sealed`). When `verify.ok` is false the records that can still be read
+        are returned, and `kind` and `index` name the first problem (the kinds are those of
+        `muse records verify`). The check is redone whenever the records file has changed.
       parameters:
         - name: since
           in: query
+          description: Only records at or after this time. A time with a zone.
+          schema: {type: string, examples: ["2026-11-01T00:00:00Z"]}
+        - name: action
+          in: query
+          description: One action (`files.write`) or a family (`files`).
           schema: {type: string}
+        - name: left_device
+          in: query
+          description: "`true`: only records whose content left the person's devices (`egress` is `service:...` or `host:...`). Records that do not say are not among them."
+          schema: {enum: ["true", "false"], default: "false"}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+        - name: before
+          in: query
+          description: Only records with a `seq` below this. Pass the previous page's `next_before`.
+          schema: {type: integer, minimum: 0}
       responses:
-        "501": {$ref: "#/components/responses/NotBuilt"}
+        "200":
+          description: A page of records.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [records, order, next_before, verify, sealed, device]
+                properties:
+                  records: {type: array, maxItems: 200, items: {$ref: "#/components/schemas/Record"}}
+                  order: {const: newest_first}
+                  next_before: {type: [integer, "null"]}
+                  verify:
+                    type: object
+                    required: [ok, size]
+                    properties:
+                      ok: {type: boolean, description: Every record and the last seal check out.}
+                      size: {type: integer, description: How many records the home holds.}
+                      kind: {type: string, description: "When not ok: the first problem, such as `bad_signature` or `size_mismatch`."}
+                      index: {type: [integer, "null"], description: "When not ok: the position of the first bad record, if there is one."}
+                  sealed:
+                    type: [object, "null"]
+                    description: The last seal (checkpoint), or null when nothing was sealed yet.
+                    required: [size, root, time]
+                    properties:
+                      size: {type: integer, description: How many records it covers.}
+                      root: {type: string}
+                      time: {$ref: "#/components/schemas/Time"}
+                  device: {type: [string, "null"], description: "The home's signing key (64 hex), or null before the first record."}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+    post:
+      operationId: addReceipt
+      x-scope: receipts.write
+      x-roles: [owner, host]
+      summary: Report something a device did. The home signs it into the records.
+      description: |
+        For a device that acts for the person and wants it written down, such as the Muse tools
+        server a host bot runs (its `record_action` tool). The home decides who did it and when;
+        a caller cannot: `actor` is `helper` for a `host` device and `person` for an `owner`,
+        `mandate` is `device:<name>` for a helper, the time is the home's clock, and the record is
+        signed by the home's key. The record's fields are checked by the records module: the
+        summary rule (one line, at most 200 characters, nothing shaped like a key) and the
+        shapes of `cost`, `links` and `egress`.
+
+        This is the device's own report. The home writes down what it was told and cannot check
+        it. A device may add at most 600 records an hour (`too_many_requests`, 429, beyond that).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/NewRecord"}
+      responses:
+        "201":
+          description: The signed record and its hash.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [record, hash, recorded]
+                properties:
+                  record: {$ref: "#/components/schemas/Record"}
+                  hash: {type: string, pattern: "^[0-9a-f]{64}$", description: "The record's hash: what the next record links to."}
+                  recorded: {const: true}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "429":
+          description: "`too_many_requests`: this device added too many records in the last hour."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/skills:
+    get:
+      operationId: listSkills
+      x-scope: skills.read
+      x-roles: [owner, host]
+      summary: The skills on the home, in plain words, and the folders a run may be given.
+      description: |
+        Every skill the home can load: what it does, what it asks for (one plain sentence per
+        line, the same lines `muse skills show` prints), and whether it may run. `approved` is
+        true for a skill that ships with Muse and for one of the person's own that they approved
+        and that has not changed since.
+
+        `folders` are the names a run may use for folders: the list the person keeps on the home
+        with `muse skills folders add|list|rm`. An `owner` device also sees each folder's path;
+        any other device sees names only.
+      responses:
+        "200":
+          description: The skills and the folder names.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [skills, broken, folders]
+                properties:
+                  skills: {type: array, items: {$ref: "#/components/schemas/Skill"}}
+                  broken: {type: integer, description: Skill folders on the home that could not be loaded. `muse skills list` names them.}
+                  folders:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, output]
+                      properties:
+                        name: {$ref: "#/components/schemas/FolderName"}
+                        output: {type: boolean, description: Skills may propose new files in it.}
+                        path: {type: string, description: Only for an `owner` device.}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/skills/{name}/run:
+    post:
+      operationId: runSkill
+      x-scope: skills.run
+      x-roles: [owner, host]
+      summary: Start a skill run. Answers at once with the run's id.
+      description: |
+        Runs one skill through the home's ordinary runner (the one `muse skills run` uses). The
+        reply comes at once with `status: running`; `GET /v1/skills/runs/{id}` says how it went.
+
+        A caller may be a host bot, so what it can choose is narrow:
+        * The skill must be `approved` (`conflict`, 409, otherwise).
+        * `folders` and `out` are NAMES from the person's list (`GET /v1/skills`), never paths. A
+          name that is not on the list, or whose folder has since gone or been replaced by a link,
+          is refused (`invalid_request`). `out` must be a folder the person allowed for new files.
+        * `budget`, `privacy` and `task` are optional and never beyond the skill's own: no budget
+          number above the skill's, no privacy class weaker than the skill's, no tier stronger
+          than the skill's (`invalid_request`). `paid_usd` is 0 unless given, and only an `owner`
+          device may give more than 0 (`forbidden`, 403, for anyone else).
+        * At most 2 runs at once on a home, and 1 at a time for a device that is not an `owner`
+          (`conflict`, 409).
+
+        Nothing a skill proposes is written by the run. Each proposed file (at most 20 a run)
+        becomes a `save_file` card; the home writes the file only when that card is approved
+        (`POST /v1/cards/{id}/answer`), and throws it away when the card is declined or expires.
+
+        The home records the run (`skill.run`; `egress` is `host:<name>` when a device that is not
+        an `owner` asked, since the answer goes back to it) and one `llm.call` per outside service
+        the run used.
+      parameters:
+        - {$ref: "#/components/parameters/skillName"}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/NewSkillRun"}
+      responses:
+        "202":
+          description: Started.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SkillRunReply"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/skills/runs/{id}:
+    get:
+      operationId: getSkillRun
+      x-scope: skills.read
+      x-roles: [owner, host]
+      summary: How a skill run went, and what became of the files it proposed.
+      description: |
+        `status` is `running`, or how the run ended: `done`, `partial` (something could not be
+        done; the notes say what), `needs_choice` (it could not finish on free allowance; the
+        choices the router offered are in `result.options`) or `failed`. `result.output` is the
+        skill's answer and may hold the person's content. `writes` lists each proposed file with
+        its card and its state. A device that is not an `owner` or `viewer` sees only the runs it
+        started; the home keeps the last 200 runs.
+      parameters:
+        - {$ref: "#/components/parameters/runId"}
+      responses:
+        "200":
+          description: The run.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SkillRunReply"}
+        "404": {$ref: "#/components/responses/NotFound"}
         default: {$ref: "#/components/responses/Error"}
 
   /v1/mandates/artifacts:
     get:
       operationId: listMandateArtifacts
+      x-scope: mandates.read
+      x-roles: [owner]
       summary: Planned. Per-target state from the mandate compiler.
       description: Not built yet; answers 501 `not_built` until the compiler exists.
       x-planned: true
@@ -491,8 +783,8 @@ components:
       type: http
       scheme: bearer
       description: |
-        A device token made on the home with `muse home token add <name>`; the home keeps only
-        its SHA-256. In a later version this becomes a mandate token narrowed from the
+        A device token made on the home with `muse home token add <name> [--role owner|host|viewer]`;
+        the home keeps only its SHA-256 and the role. `muse hosts setup` makes `host` tokens. In a later version this becomes a mandate token narrowed from the
         device's mandate; the header stays the same.
 
   parameters:
@@ -517,6 +809,17 @@ components:
       in: path
       required: true
       schema: {$ref: "#/components/schemas/AppName"}
+    skillName:
+      name: name
+      in: path
+      required: true
+      description: A skill's name, from `GET /v1/skills`.
+      schema: {type: string, pattern: "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$"}
+    runId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, pattern: "^[0-9a-f]{16}$"}
 
   responses:
     Error:
@@ -563,10 +866,198 @@ components:
           properties:
             code:
               enum: [invalid_request, unauthorized, forbidden, not_found, method_not_allowed, conflict,
-                     card_already_answered, card_expired, length_required, payload_too_large, internal,
-                     not_built, unavailable]
+                     card_already_answered, card_expired, length_required, payload_too_large,
+                     too_many_requests, internal, not_built, unavailable]
             message: {type: string, description: One plain sentence. Never a secret, a prompt or internal error text.}
             retry_after: {type: integer, minimum: 0, description: Seconds. Also sent as the Retry-After header.}
+
+    FolderName:
+      type: string
+      pattern: "^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$"
+      description: A name on the person's list of folders skills may be given (`muse skills folders`).
+
+    Skill:
+      type: object
+      required: [name, description, version, source, approved, state, needs, reads_folders, writes_files, tier_default, privacy_default, budget]
+      properties:
+        name: {type: string}
+        description: {type: string}
+        version: {type: string}
+        source: {enum: [shipped, home], description: Ships with Muse, or is in the person's own skills folder.}
+        approved: {type: boolean, description: It may run.}
+        state: {enum: [ready, not-approved, changed]}
+        needs: {type: array, items: {type: string}, description: What it asks for, one plain sentence each.}
+        reads_folders: {type: boolean, description: It reads the folders named for a run.}
+        writes_files: {type: boolean, description: It proposes new files (each needs the person's approval).}
+        tier_default: {type: string}
+        privacy_default: {type: string}
+        budget:
+          type: object
+          required: [requests, tokens, seconds, paid_usd]
+          properties:
+            requests: {type: integer}
+            tokens: {type: integer}
+            seconds: {type: number}
+            paid_usd: {type: number}
+
+    NewSkillRun:
+      type: object
+      additionalProperties: false
+      properties:
+        inputs:
+          type: object
+          maxProperties: 32
+          description: The skill's inputs. Names are letters, digits and `_`; values are text (at most 20,000 characters), numbers, true or false.
+        folders: {type: array, maxItems: 8, items: {$ref: "#/components/schemas/FolderName"}, description: Folders the skill may read, by name.}
+        out: {oneOf: [{$ref: "#/components/schemas/FolderName"}, {type: "null"}], description: "The folder new files may be proposed in, by name. Absent: Muse's own folder for that skill."}
+        budget:
+          type: object
+          additionalProperties: false
+          description: Less than the skill's own budget, never more.
+          properties:
+            requests: {type: integer, minimum: 0}
+            tokens: {type: integer, minimum: 0}
+            seconds: {type: number, minimum: 0}
+            paid_usd: {type: number, minimum: 0, default: 0}
+        privacy: {type: [string, "null"], enum: [public, standard, private, local, null], description: "Never weaker than the skill's own."}
+        task: {type: [string, "null"], enum: [light, everyday, heavy, frontier, null], description: "Never stronger than the skill's own."}
+
+    WriteOutcome:
+      type: object
+      required: [state, file, reason]
+      properties:
+        state: {enum: [written, refused, discarded], description: "`refused`: approved, but it could not be written (the reason says why)."}
+        file: {type: string, description: The file's name.}
+        reason: {type: [string, "null"]}
+
+    SkillRun:
+      type: object
+      required: [id, skill, status, created_at, finished_at, started_by, result, writes]
+      properties:
+        id: {type: string, pattern: "^[0-9a-f]{16}$"}
+        skill: {type: string}
+        status: {enum: [running, done, partial, needs_choice, failed]}
+        created_at: {$ref: "#/components/schemas/Time"}
+        finished_at: {oneOf: [{$ref: "#/components/schemas/Time"}, {type: "null"}]}
+        started_by: {type: string, description: The device that started it.}
+        result:
+          type: [object, "null"]
+          description: Null while running. `output` is the skill's answer and may hold the person's content.
+          properties:
+            output: {}
+            notes: {type: array, items: {type: string}}
+            check:
+              type: object
+              properties:
+                status: {enum: [passed, failed, not-run]}
+                reasons: {type: array, items: {type: string}}
+            used: {type: object, description: "Requests, tokens, cost and the services used. Counts only."}
+            options: {type: array, items: {type: object}, description: "For `needs_choice`: exactly what the router offered."}
+            refusal: {type: [object, "null"]}
+            privacy: {type: string}
+        writes:
+          type: array
+          description: The files the run proposed. Each is a card; nothing is written until its card is approved.
+          items:
+            type: object
+            required: [card_id, file, size, state, reason]
+            properties:
+              card_id: {type: string, pattern: "^[0-9a-f]{16}$"}
+              file: {type: string}
+              size: {type: integer}
+              state: {enum: [pending, applying, written, refused, discarded]}
+              reason: {type: [string, "null"]}
+
+    SkillRunReply:
+      type: object
+      required: [run]
+      properties:
+        run: {$ref: "#/components/schemas/SkillRun"}
+
+    Recorded:
+      type: boolean
+      description: |
+        True when the home wrote a record of this call. False when it could not (the action still
+        happened) or when the call changed nothing. Present on calls that change something;
+        calls that only read do not carry it.
+
+    Record:
+      type: object
+      description: |
+        One signed record, exactly as `docs/spec/interfaces/record-format.md` section 1 defines it.
+        `summary` and `summary_salt` are present unless the record was redacted; `links` and
+        `egress` only when the record has them.
+      required: [v, device, seq, time, mandate, actor, action, resource, summary_hash, outcome, cost, prev, sig]
+      additionalProperties: false
+      properties:
+        v: {const: 1}
+        device: {type: string, pattern: "^[0-9a-f]{64}$", description: The home's signing key.}
+        seq: {type: integer, minimum: 0}
+        time: {type: integer, minimum: 0, description: Milliseconds since 1970-01-01T00:00:00Z.}
+        mandate: {type: [string, "null"], description: "`device:<name>` for a record a helper device caused; null for the person's own."}
+        actor: {enum: [person, helper, system]}
+        action: {type: string, description: "A dotted name such as `card.answer`; the list is in record-format.md section 1.3."}
+        resource: {type: [string, "null"], pattern: "^[0-9a-f]{64}$", description: A keyed reference; never a name or content.}
+        summary_hash: {type: string, pattern: "^[0-9a-f]{64}$"}
+        outcome: {enum: [ok, declined, failed, undone]}
+        cost:
+          type: [object, "null"]
+          required: [currency, minor]
+          additionalProperties: false
+          properties:
+            currency: {type: string, pattern: "^[A-Z0-9]{3,8}$"}
+            minor: {type: integer, minimum: 0, description: "A count of the currency's smallest unit: NT$30 is 3000."}
+        links:
+          type: object
+          additionalProperties: false
+          properties:
+            job: {type: string}
+            card: {type: string}
+            payment_ref: {type: string}
+            undo_of: {type: string, pattern: "^[0-9a-f]{64}$"}
+        egress:
+          type: string
+          pattern: "^(?:none|home|(?:service|host):[a-z0-9][a-z0-9._-]{0,63})$"
+          description: |
+            Where the content of the action went: `none`, `home`, `service:<id>` or `host:<name>`.
+            Absent: the record does not say. "Left my devices" is `service:` or `host:`.
+        prev: {type: string, pattern: "^[0-9a-f]{64}$"}
+        sig: {type: string, pattern: "^[0-9a-f]{128}$"}
+        summary: {type: string, maxLength: 200, description: Short plain text that is safe to show. Render it as text.}
+        summary_salt: {type: string, pattern: "^[0-9a-f]{32}$"}
+
+    NewRecord:
+      type: object
+      additionalProperties: false
+      required: [action, summary]
+      properties:
+        action:
+          type: string
+          description: |
+            A dotted lower-case name, two to four segments. From a `host` device it must start with
+            `host.` (`host.files.write`, `host.message.send`), so a host's own report can never pass
+            for something the home did. From an `owner` device it is a name of its own (`note.add`),
+            not one of the home's families (`home`, `card`, `app`, `key`, `job`, `skill`, `mandate`,
+            `records`) and not `host`.
+        summary: {type: string, minLength: 1, maxLength: 200, description: "What was done, in words, on one line. No content, no names of people, nothing shaped like a key."}
+        outcome: {enum: [ok, declined, failed, undone], default: ok}
+        cost:
+          type: [object, "null"]
+          required: [currency, minor]
+          additionalProperties: false
+          properties:
+            currency: {type: string, pattern: "^[A-Z0-9]{3,8}$"}
+            minor: {type: integer, minimum: 0}
+        links:
+          type: object
+          additionalProperties: false
+          properties:
+            job: {type: string}
+            card: {type: string}
+            payment_ref: {type: string}
+            undo_of: {type: string, pattern: "^[0-9a-f]{64}$"}
+        egress: {type: string, pattern: "^(?:none|home|(?:service|host):[a-z0-9][a-z0-9._-]{0,63})$", description: Where the content went. Leave it out when not known.}
+        resource: {type: [string, "null"], maxLength: 1024, description: "The thing acted on, as a name such as `file:/Notes/a.md`. Only a keyed reference to it is stored."}
 
     Time:
       type: string
@@ -700,9 +1191,10 @@ components:
 
     KeyStored:
       type: object
-      required: [provider, stored, backend, warnings, still_needed, restart]
+      required: [provider, stored, backend, warnings, still_needed, restart, recorded]
       properties:
         provider: {type: string}
+        recorded: {$ref: "#/components/schemas/Recorded"}
         stored: {type: array, items: {type: string}, description: The names that were stored. Never values.}
         backend: {type: [string, "null"], description: "keychain or dotenv (fake on a fake home)."}
         warnings: {type: array, items: {type: string}}
@@ -792,6 +1284,7 @@ components:
       required: [job]
       properties:
         job: {$ref: "#/components/schemas/Job"}
+        recorded: {$ref: "#/components/schemas/Recorded"}
 
     Card:
       $ref: "card.schema.json"
@@ -801,6 +1294,7 @@ components:
       required: [card]
       properties:
         card: {$ref: "#/components/schemas/Card"}
+        recorded: {$ref: "#/components/schemas/Recorded"}
 
     AppName:
       type: string
@@ -831,8 +1325,9 @@ components:
 
     AppWithToken:
       type: object
-      required: [app, token, token_shown_once]
+      required: [app, token, token_shown_once, recorded]
       properties:
         app: {$ref: "#/components/schemas/App"}
+        recorded: {$ref: "#/components/schemas/Recorded"}
         token: {type: string, readOnly: true, description: The app's router token. Shown this once; store it on the device that needs it.}
         token_shown_once: {const: true}

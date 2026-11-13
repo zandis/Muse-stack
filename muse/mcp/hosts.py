@@ -1,7 +1,8 @@
 """Host bots: what to paste into a host, and a read-only look at a host's configuration.
 
     setup(...)          create the host's app (its own key, interactive, not allowed to pay) and a
-                        device token for the tools server, written to a 0600 file and never printed
+                        device token with the `host` role for the tools server, written to a 0600
+                        file and never printed
     snippet(...)        the text to paste into the host; holds no secret
     check_config(...)   read a host's configuration file and say, in plain words, whether an engine
                         points at Muse and which other engines Muse is not part of
@@ -107,7 +108,9 @@ def setup(host: presets.HostPreset, *, app_name: str | None = None, app_environ:
         except apps.AppError:
             raise SetupError("the app could not be created; run `muse doctor`") from None
     try:
-        _, device_token = auth.add_token(device, home_environ)
+        # The host's shell can read this token's file, so it gets the `host` role: what the tools server
+        # needs and nothing else (no pause/resume, keys, apps, or answering its own questions).
+        _, device_token = auth.add_token(device, home_environ, role=auth.HOST)
     except auth.TokenError:
         raise SetupError("the tools device could not be created; `muse home token list` shows what exists") from None
     try:

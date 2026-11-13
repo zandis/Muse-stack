@@ -6,7 +6,7 @@ no files, no clock (`now` is always an argument), no async, no `unsafe`.
 
 Each function returns what the Python function of the same name returns for
 the same input. That is checked, not promised: `core/conformance/*.json` holds
-8,109 inputs with the answers Python gave (5,148 for the ported rules, 2,961 for records), and `cargo test` replays all of them
+8,198 inputs with the answers Python gave (5,148 for the ported rules, 3,050 for records), and `cargo test` replays all of them
 (floats must match bit for bit).
 5,148 inputs with the answers Python gave, and `cargo test` replays all of them
 (floats must match bit for bit). Permissions add 584 more of a different kind
@@ -50,7 +50,7 @@ cannot hold is `{"$float": "nan" | "inf" | "-inf"}`.
 | `ration.burn_rate`, `pace_position`, `pace_release_at`, `pace_holds` (and `Limit`, `Pace`, `Settings`) | `ration::` same names | 30, 494, 684, 348 |
 | `ration.options_trailer`, `parse_options` | `ration::` same names | 33, 59 |
 | `cache.cacheable`, `cache_key` | `cache::` same names | 236, 104 |
-| `muse.records` (see "Records" below) | `records::` same names | 2,961 in `records.json` |
+| `muse.records` (see "Records" below) | `records::` same names | 3,050 in `records.json` |
 | `muse.permissions` (`propose_from_fields`, `issue`, `narrow`, `check`, `describe`, `RevocationList`, `SpentSet`) | `permissions::` same names | 584 (see below) |
 
 Supporting modules: `pyjson` (JSON read and written by Python's rules, needed
@@ -103,10 +103,16 @@ own record). Signatures must match byte for byte: Ed25519 is deterministic.
 | --- | --- |
 | `jcs::canonicalize`, `jcs::loads_strict` (RFC 8785, integers only; strict reading) | 59, 39 |
 | `check_summary`, `key_shaped`, `resource_ref`, `summary_salt`, `summary_hash`, `genesis` | 59, 30, 19, 11, 9, 5 |
-| `append`, `canonical_bytes`, `hash`, `redact` | 102, 17, 17, 10 |
-| `verify_record`, `verify_signature`, `verify_chain` | 97, 64, 105 |
+| `append`, `canonical_bytes`, `hash`, `redact` | 143, 27, 22, 15 |
+| `verify_record`, `verify_signature`, `verify_chain` | 117, 64, 108 |
 | `merkle_root`, `inclusion_proof`, `verify_inclusion`, `consistency_proof`, `verify_consistency` | 77, 614, 638, 682, 166 |
-| `checkpoint`, `verify_checkpoint`, `export`, `export_text`, `verify_export`, `verify_export_text` | 15, 17, 19, 3, 66, 21 |
+| `checkpoint`, `verify_checkpoint`, `export`, `export_text`, `verify_export`, `verify_export_text` | 15, 17, 21, 3, 69, 21 |
+
+89 of these (the last ones in the file) are for `egress`, the optional signed
+member added to format v1 (record-format.md section 1.2): its allowed values,
+its bytes, and that changing, adding or removing it breaks the signature.
+`records::left_devices(&record)` is the reader's rule for the "Left my devices"
+filter. Every vector that existed before is byte for byte what it was.
 
 Storage is not here: `records::RecordStore` is the trait the vault will
 implement, and `MemoryStore` is for tests. Keys come in through the `Signer`

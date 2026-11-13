@@ -24,7 +24,7 @@ GOOD = {"kind": "save_file", "title": "Save a file", "thing": "notes.md", "where
 class Rig:
     def __init__(self) -> None:
         self.home = fake.FakeHome("empty")
-        self._ctx = running(self.home, StaticVerifier({ASKER: ASKER_TOKEN, PHONE: PHONE_TOKEN}))
+        self._ctx = running(self.home, StaticVerifier({ASKER: ASKER_TOKEN, PHONE: PHONE_TOKEN}, roles={ASKER: "host"}))
         self.srv = self._ctx.__enter__()
         self.asker = client_for(self.srv, ASKER_TOKEN)
         self.phone = client_for(self.srv, PHONE_TOKEN)
@@ -72,9 +72,15 @@ def test_the_asking_device_cannot_answer_its_own_card(rig):
         assert_error(status, payload, 403, "forbidden")
     assert rig.home.cards.get(card_id)["status"] == "pending"
     assert rig.phone.call("POST", f"/v1/cards/{card_id}/answer", {"decision": "approve"})[0] == 200
-    # A card the home itself made (no asking device) can still be answered by any device, as before.
+    # A host device answers nothing at all, also not a card the home itself made.
     own = rig.home.cards.create(kind="save_file", title="t", thing="x")
-    assert rig.asker.call("POST", f"/v1/cards/{own}/answer", {"decision": "approve"})[0] == 200
+    assert_error(*rig.asker.call("POST", f"/v1/cards/{own}/answer", {"decision": "approve"}), 403, "forbidden")
+    assert rig.home.cards.get(own)["status"] == "pending"
+    # The person's own device may answer the home's cards, but not a question it asked itself.
+    assert rig.phone.call("POST", f"/v1/cards/{own}/answer", {"decision": "approve"})[0] == 200
+    asked_by_phone = rig.phone.call("POST", "/v1/cards", GOOD)[1]["card"]["id"]
+    err = assert_error(*rig.phone.call("POST", f"/v1/cards/{asked_by_phone}/answer", {"decision": "approve"}), 403, "forbidden")
+    assert "asked for itself" in err["message"]
 
 
 def test_the_lifetime_is_the_stores_default_or_what_was_asked(rig):

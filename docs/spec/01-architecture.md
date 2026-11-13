@@ -346,19 +346,28 @@ Local only: a Unix socket on the home (`MUSE_HOME/home.sock`, mode 0600, same us
 
 Authenticated by a device token sent as `Authorization: Bearer`. In v1 the token is a random secret made by `muse home token add` and stored on the home only as a hash. The check sits behind one interface (`verify(token) -> Device`), so a token narrowed from the device's mandate (section 2.7) replaces it without changing any call.
 
-| Call | Purpose |
-|---|---|
-| `GET /v1/status` | The snapshot the dashboard uses today: allowances, apps, queue, paid total, paused |
-| `GET /v1/catalogue` | The catalogue with the person's connection state |
-| `POST /v1/connect/{provider}` | Start a guided connection; returns the steps (the client opens the pages) |
-| `POST /v1/keys/{provider}` | Store a key (sent inside the Link's encrypted channel); the only call that accepts one |
-| `GET /v1/jobs`, `POST /v1/jobs`, `GET /v1/jobs/{id}`, `DELETE /v1/jobs/{id}` | Jobs. Prompts are accepted and never returned |
-| `GET /v1/cards`, `GET /v1/cards/{id}`, `POST /v1/cards/{id}/answer` | Approvals: the cards waiting for the person, and their answers |
-| `POST /v1/cards` | A device asks the person a question (added 13 November 2026 for the Muse tools server, part 5): one waiting card, by the card store's rules; at most 20 waiting per device; the asking device cannot answer it |
-| `GET /v1/apps`, `POST /v1/apps`, `PATCH /v1/apps/{name}`, `DELETE /v1/apps/{name}`, `POST /v1/apps/{name}/rotate` | The apps that share the router; a new app token is returned once |
-| `POST /v1/pause`, `POST /v1/resume` | The one switch |
-| `GET /v1/mandates/artifacts` | Per-target state from the compiler (answers 501 until the compiler exists) |
-| `GET /v1/receipts?since=` | Receipts written on the home (answers 501 until the records module exists) |
+Each device has a **role**, and each call needs one **scope**; the route table names the scope and one function checks it before the handler runs (a route without a scope is refused for everyone). `owner` (the person's own app or command line) holds every scope. `host` (the tools server a host bot runs, part 5) holds only what that server needs and sees only the jobs, cards and skill runs it made itself. `viewer` only reads. The column "Who" below says which roles may make each call. Tokens from before roles existed are `owner`. Roles are the v1 stand-in for what a mandate token will carry as caveats.
+
+The home writes a record (section 2.9, `docs/spec/interfaces/record-format.md`) of what it does through this API; a failure to record never stops or undoes the action, and the reply says `recorded: false`.
+
+| Call | Who | Purpose |
+|---|---|---|
+| `GET /v1/status` | owner, host, viewer | The snapshot the dashboard uses today: allowances, apps, queue, paid total, paused. Built from the process environment plus the settings in the home's `.env` (privacy default, time zone, paid cap), never from the keys |
+| `GET /v1/catalogue` | owner, host, viewer | The catalogue with the person's connection state |
+| `POST /v1/connect/{provider}` | owner | Start a guided connection; returns the steps (the client opens the pages) |
+| `POST /v1/keys/{provider}` | owner | Store a key (sent inside the Link's encrypted channel); the only call that accepts one |
+| `GET /v1/jobs`, `GET /v1/jobs/{id}` | owner, host (its own), viewer | Jobs. Prompts are accepted and never returned |
+| `POST /v1/jobs`, `DELETE /v1/jobs/{id}` | owner, host (its own) | Queue or cancel a job |
+| `GET /v1/cards`, `GET /v1/cards/{id}` | owner, host (its own), viewer | Approvals: the cards waiting for the person, and their answers |
+| `POST /v1/cards/{id}/answer` | owner | Answer a card. An approved card that stands for a file a skill proposed makes the home write that file, once; a declined or expired one throws it away |
+| `POST /v1/cards` | owner, host | A device asks the person a question (added 13 November 2026 for the Muse tools server, part 5): one waiting card, by the card store's rules; at most 20 waiting per device; the asking device cannot answer it |
+| `GET /v1/apps`, `POST /v1/apps`, `PATCH /v1/apps/{name}`, `DELETE /v1/apps/{name}`, `POST /v1/apps/{name}/rotate` | owner | The apps that share the router; a new app token is returned once |
+| `POST /v1/pause`, `POST /v1/resume` | owner | The one switch |
+| `GET /v1/receipts?since=&action=&left_device=&limit=&before=` | owner, viewer | The records on the home, newest first in bounded pages, with whether the chain checks out and what the last seal covers |
+| `POST /v1/receipts` | owner, host | A device reports something it did. The home sets who did it (`helper` under `device:<name>` for a host, `person` for an owner), the time and the signing key; a caller cannot |
+| `GET /v1/skills` | owner, host | The skills on the home, what each asks for in plain words, and the folder names a run may be given |
+| `POST /v1/skills/{name}/run`, `GET /v1/skills/runs/{id}` | owner, host (its own) | Run a skill through the ordinary runner and read how it went. Folders are given by name from the person's list (`muse skills folders`), never by path; budget, privacy and task never beyond the skill's own. Proposed files become `save_file` cards and are written only when approved |
+| `GET /v1/mandates/artifacts` | owner | Per-target state from the compiler (answers 501 until the compiler exists) |
 
 Approvals are answered on the card, not on the job (`POST /v1/cards/{id}/answer` replaces the earlier `POST /jobs/{id}/answer`): one job can ask several questions, and a card can come from something that is not a job, such as a permission request. A card's shape is `docs/spec/interfaces/card.schema.json`; cards wait in `MUSE_HOME/cards.sqlite`.
 
