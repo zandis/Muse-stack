@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -573,6 +574,39 @@ def h_card_get(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
         raise _card_error(exc) from None
 
 
+# A device that asks (POST /v1/cards) is named on the card as `job_ref: "device:<name>"`. That is how
+# the per-device cap is counted and how the home knows not to let the asker answer its own question.
+MAX_PENDING_PER_DEVICE = 20
+_ask_lock = threading.Lock()
+
+
+def asked_by(device: Device) -> str:
+    return f"device:{device.name}"
+
+
+def h_card_ask(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
+    """A device asks the person a question: one pending card, made by the store's own rules."""
+    body = req.body
+    _fields(body, {"kind": str, "title": str, "thing": str, "where": str, "under": str, "cost": (dict, _NONE),
+                   "extra": (dict, _NONE), "ttl_s": (int, float)}, required=("kind", "title", "thing"))
+    mine = asked_by(req.device)
+    with _ask_lock:  # count and create together, so two requests at once cannot both slip under the cap
+        waiting = sum(1 for c in home.cards.list("pending", limit=1000) if c["job_ref"] == mine)
+        if waiting >= MAX_PENDING_PER_DEVICE:
+            raise ApiError("conflict", f"This device already has {MAX_PENDING_PER_DEVICE} cards waiting for an answer. "
+                                       "Wait for some to be answered or to expire.")
+        try:
+            card_id = home.cards.create(
+                kind=body["kind"], title=body["title"], thing=body["thing"], where=body.get("where", ""),
+                under=body.get("under", ""), cost=body.get("cost"), extra=body.get("extra"), ttl_s=body.get("ttl_s"),
+                job_ref=mine,
+            )
+        except CardError:  # the store's sentence may repeat part of the request; this reply never does
+            raise ApiError("invalid_request", "The card was not accepted. Check its kind, text lengths, cost and the "
+                                              "extra fields for that kind (card.schema.json).") from None
+    return 201, {"card": home.cards.get(card_id)}
+
+
 def h_card_answer(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
     _fields(req.body, {"decision": str, "always": bool}, required=("decision",))
     decision, always = req.body["decision"], req.body.get("always", False)
@@ -580,6 +614,11 @@ def h_card_answer(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
         raise ApiError("invalid_request", "decision must be approve or decline.")
     if always and decision != "approve":
         raise ApiError("invalid_request", "'always' can only be set when approving.")
+    try:
+        if home.cards.get(req.params["id"])["job_ref"] == asked_by(req.device):
+            raise ApiError("forbidden", "A device cannot answer a card it asked for itself. Answer it from another device.")
+    except CardError as exc:
+        raise _card_error(exc) from None
     try:
         card = home.cards.answer(req.params["id"], decision, req.device.name, always)
     except CardError as exc:
@@ -755,6 +794,7 @@ ROUTES: tuple[Route, ...] = (
     _r("GET", "/jobs/{id}", h_job_get),
     _r("DELETE", "/jobs/{id}", h_job_cancel),
     _r("GET", "/cards", h_cards_list),
+    _r("POST", "/cards", h_card_ask),
     _r("GET", "/cards/{id}", h_card_get),
     _r("POST", "/cards/{id}/answer", h_card_answer),
     _r("POST", "/pause", h_pause),

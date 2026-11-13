@@ -233,6 +233,37 @@ paths:
                     additionalProperties: {type: integer}
         "400": {$ref: "#/components/responses/Invalid"}
         default: {$ref: "#/components/responses/Error"}
+    post:
+      operationId: askCard
+      summary: Ask the person a question. Creates one waiting card.
+      description: |
+        For a device that acts for the person and must ask first, such as the Muse tools server a
+        host bot runs (`python -m muse.mcp`). The card is made by the same rules as every other
+        card (`card.schema.json`): fixed kinds, bounded text, a cost that is always stated, the
+        extra fields of its kind, and nothing shaped like a key.
+
+        The home names the asking device on the card as `job_ref: "device:<name>"`. A device may
+        have at most 20 cards waiting at once (`conflict`, 409, beyond that), and it cannot answer
+        a card it asked for itself (`forbidden`, 403, on the answer call). To learn the answer,
+        read the card again with `GET /v1/cards/{id}`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/NewCard"}
+      responses:
+        "201":
+          description: The waiting card.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CardReply"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "409":
+          description: "`conflict`: this device already has 20 cards waiting."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        default: {$ref: "#/components/responses/Error"}
 
   /v1/cards/{id}:
     get:
@@ -258,6 +289,7 @@ paths:
         a card whose time ran out gets `card_expired` (410) and can no longer be approved.
         `always: true` (only with `approve`) records that the person chose "Always allow this".
         The answering device's name is recorded as `answered_by`.
+        A device that asked for the card (`POST /v1/cards`) cannot answer it: `forbidden` (403).
       parameters:
         - {$ref: "#/components/parameters/cardId"}
       requestBody:
@@ -683,6 +715,27 @@ components:
             proxy_running: {type: boolean}
             command: {type: string, description: What makes the router read the new key.}
 
+    NewCard:
+      type: object
+      additionalProperties: false
+      required: [kind, title, thing]
+      properties:
+        kind: {enum: [save_file, message, spend, grant_permission, oneoff_credit, send_private, install_skill]}
+        title: {type: string, minLength: 1, maxLength: 80}
+        thing: {type: string, minLength: 1, maxLength: 200, description: What exactly, such as the file name or the payee and amount.}
+        where: {type: string, maxLength: 200, description: Where it goes or happens.}
+        under: {type: string, maxLength: 200, description: "Who is asking and under what, in words."}
+        cost:
+          type: [object, "null"]
+          description: '`{"nothing": true}` (the default) or `{"amount": "30", "currency": "TWD"}`. A spend card needs an amount.'
+        extra:
+          type: [object, "null"]
+          description: The fields of this kind of card, exactly as in card.schema.json.
+        ttl_s:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 2592000
+          description: Seconds until the card expires. Default 24 hours; 5 minutes for a spend card.
     NewJob:
       type: object
       additionalProperties: false
