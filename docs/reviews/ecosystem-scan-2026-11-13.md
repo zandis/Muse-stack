@@ -49,3 +49,21 @@ The advisory details above come from the scan and have not been re-read by a sec
 ## The Handoff² article
 
 The article at hermes-ai.net is a rewrite of a vendor post. Handoff² is a closed feature of a paid consumer app (Hark): no code, model, API or licence. Its headline "beats Claude Opus" contradicts its own text, which says "within five points" of Opus and about twice as fast. All figures are the vendor's, on an unpublished benchmark. One idea is worth testing here: fewer, larger model calls. On 13 November the files skill made 2.2 calls a run and was right 97% of the time; the research skill made 11.7 and was right 41%.
+
+## DeepSeek's chat demo (deepseek-ai/chat-demo)
+
+Read on 2026-11-13: the repository page, README, licence, package file and its API client source. Not installed or run. It sits under the organisation that links to deepseek.com; MIT; two commits; no tests.
+
+What it is: a static chat page with no server of its own. The browser talks straight to DeepSeek's API with a key the person pastes into Settings, kept in the browser's storage.
+
+| What it does | What this project takes from it |
+|---|---|
+| Each request can switch the model's hidden reasoning on or off (`thinking: enabled / disabled`) | Confirms the direction of the research-skill fix: short tasks should ask for no reasoning where a provider allows it. DeepSeek is a paid entry in the catalogue, so this is a note for that entry, to verify on DeepSeek's own API docs |
+| A reply that stops at its length limit can be continued | **Adopt**: a "Continue" action in Ask when an answer is cut short or comes back empty. Passed to the app work |
+| Files are uploaded to the provider, which parses PDFs and Office files and cites them | **Do not copy as the default.** The file leaves the device. Muse reads files locally first; a provider's parser could be an option for scans, shown with the "Standard" badge |
+| When the provider forgets an uploaded file, the app re-uploads from the copy it kept | The pattern to keep: originals stay local, anything remote is disposable |
+| Web search and page reading are the provider's own tools, with citations returned | **An idea to test**: answer web questions by asking a provider's built-in search tool, instead of Muse fetching pages. It needs no fetching sandbox. The question leaves the device, so it is "Standard" only. Which free services offer such a tool is unverified |
+| The README says deleting chats does not delete files already sent to the service | **Adopt** the honesty: say in the app what stays with a service after local deletion |
+| Markdown, tables and code are rendered from a parsed tree | **Adopt** for Ask, without ever inserting HTML |
+| Message branching, edit and regenerate, automatic titles, voice input and read-aloud | Later. Voice matters for non-technical users; it is outside the first release |
+| The key is pasted and stored in the browser's storage; Simplified Chinese and English only | Where Muse differs: the app's web view never holds a key, the first sign-in needs no pasting, and Traditional Chinese comes first |
