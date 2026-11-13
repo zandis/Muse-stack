@@ -120,7 +120,7 @@ The report is filled from what the child said it applied, in a frame sent after 
 
 | Platform | State |
 |---|---|
-| Linux x86_64 | Built and tested by the author: bubblewrap 0.9.0, Landlock ABI 7, seccomp, kernel 6.18, as root in a container |
+| Linux x86_64 | Built and tested by the author: bubblewrap 0.9.0, Landlock ABI 7, seccomp, kernel 6.18, in a container, once as root and once as an unprivileged user (`nobody`) |
 | Linux aarch64 (the owner's VM) | Same code. **Not run by the author.** The seccomp syscall numbers for aarch64 come from the kernel's generic table and are checked at start-up by a self-test (a socket must be refused, or the layer is reported as not working). Run the suite there: section 6 |
 | macOS | `sandbox-exec` with a generated profile (`muse/sandbox/launch.py::macos_profile`): deny by default, the same paths, no network. **UNTESTED**: written without a Mac. It is used only if its self-test passes on the machine, never counts as isolation, and `require` refuses on macOS. Apple marks `sandbox-exec` deprecated |
 | Windows | Nothing. `probe()` says no isolation is available; `auto` runs in-process and says so; `require` refuses. Work package A13 |
@@ -145,7 +145,7 @@ A test is skipped, with the reason, when the layer it needs cannot run on the ma
 
 ## 7. What was tested, and what each layer stopped
 
-On the author's machine (Linux x86_64, all three layers available), each attempt ran against each layer by itself and against all together. "✓" = the attempt failed and the test checked the trace outside the sandbox; "—" = that layer is not meant to stop it.
+On the author's machine (Linux x86_64, all three layers available; the suite was run as root and again as `nobody`), each attempt ran against each layer by itself and against all together. "✓" = the attempt failed and the test checked the trace outside the sandbox; "—" = that layer is not meant to stop it.
 
 | Attempt by the hostile skill | bubblewrap | Landlock | seccomp |
 |---|---|---|---|
@@ -166,7 +166,7 @@ On the author's machine (Linux x86_64, all three layers available), each attempt
 | Many files in `data` past the cap | ✓ ended by the parent's watch (all layers; bounded overshoot) | | |
 | Fill the temp folder | ✓ tmpfs size | ✓ parent's watch | — |
 | Allocate past the memory cap; spin past the time budget | ✓ `RLIMIT_AS`; wall-clock kill (all layers, and with none) | | |
-| Fork bomb | `RLIMIT_NPROC`: **skipped on the author's machine** (root is exempt in the kernel) | | |
+| Fork bomb | ✓ `RLIMIT_NPROC`, when run as an unprivileged user. As root the test is skipped: the kernel exempts root | | |
 | See a secret environment variable; inherit an open file | ✓ scrubbed environment, closed descriptors (all layers, and with none) | | |
 | Garbage, oversized frames, early exit, forged events, a lie about a write, content in an error | ✓ the parent's protocol checks (all layers, and with none) | | |
 
