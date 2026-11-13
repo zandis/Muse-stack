@@ -1012,9 +1012,12 @@ def cmd_ask(args: argparse.Namespace) -> int:
         _err("The proxy answered 200 but the body was not a chat completion.")
         return 1
     print(answer if answer is not None else "")
+    lower = {str(k).lower(): v for k, v in dict(resp_headers).items()}
+    if str(lower.get("x-muse-answer", "")).strip().lower() == "empty-reasoning":
+        _err("No visible answer: the model used its whole output allowance thinking. Ask again and allow a longer reply.")
     if args.show_route:
-        lower = {k.lower(): v for k, v in resp_headers.items()}
-        shown = {k: v for k, v in lower.items() if k in {"x-muse-provider", "x-muse-deployment"} or k.startswith("x-litellm-")}
+        shown = {k: v for k, v in lower.items()
+                 if k in {"x-muse-provider", "x-muse-deployment", "x-muse-min-output", "x-muse-answer"} or k.startswith("x-litellm-")}
         _err("route:" if shown else "route: (the proxy sent no routing headers)")
         for k in sorted(shown):
             _err(f"  {k}: {shown[k]}")

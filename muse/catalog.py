@@ -60,6 +60,8 @@ HANDOFF_SCHEMES = {"claude"}
 ASSUMED_TOKENS_PER_REQUEST = 2000
 
 SUGGESTIBLE_TIERS = {"free", "trial"}
+# An output floor is a few hundred tokens; a larger number is almost certainly a typing mistake.
+MIN_OUTPUT_TOKENS_MAX = 8192
 
 
 # ------------------------------------------------------------------ strings
@@ -298,10 +300,18 @@ class Provider:
     source_urls: tuple[str, ...]
     policy: dict[str, Any]
     raw: dict[str, Any] = field(repr=False, compare=False, default_factory=dict)
+    min_output_tokens: int | None = None  # the provider's default output floor for its chat deployments
 
     @property
     def local(self) -> bool:
         return self.kind == "local"
+
+    def min_output_for(self, deployment_id: str) -> int | None:
+        """The output floor of one of this provider's deployments (see min_output_tokens_for)."""
+        for dep in self.raw.get("deployments") or []:
+            if isinstance(dep, Mapping) and str(dep.get("id")) == deployment_id:
+                return min_output_tokens_for(self.raw, dep)
+        return None
 
     def headline(self) -> AllowanceEntry | None:
         """The entry quoted as "what you gain": flagged, else the first that is not per-minute."""
@@ -462,6 +472,46 @@ def _flags(value: Any) -> dict[str, str]:
     return out
 
 
+def _min_output(value: Any) -> int | None:
+    """A usable min_output_tokens value, else None (validation reports what is wrong)."""
+    if isinstance(value, int) and not isinstance(value, bool) and 0 < value <= MIN_OUTPUT_TOKENS_MAX:
+        return value
+    return None
+
+
+def min_output_tokens_for(provider: Mapping[str, Any], deployment: Mapping[str, Any]) -> int | None:
+    """The output floor for one deployment: its own `min_output_tokens`, else the provider's.
+
+    Chat deployments only: the floor is about visible answer text. The router
+    raises a smaller max_tokens to this number (muse/hook.py), because a
+    reasoning model spends output tokens on hidden reasoning before it writes.
+    scripts/render_config.py renders the same value as model_info.muse_min_output_tokens.
+    """
+    if str(deployment.get("mode")) != "chat":
+        return None
+    if deployment.get("min_output_tokens") is not None:
+        return _min_output(deployment.get("min_output_tokens"))
+    return _min_output(provider.get("min_output_tokens"))
+
+
+def validate_min_output_tokens(item: Mapping[str, Any], where: str) -> list[str]:
+    """`min_output_tokens` on a provider and on its deployments: a whole number from 1 to MIN_OUTPUT_TOKENS_MAX."""
+    problems: list[str] = []
+    need = f"must be a whole number from 1 to {MIN_OUTPUT_TOKENS_MAX}"
+    if "min_output_tokens" in item and _min_output(item["min_output_tokens"]) is None:
+        problems.append(f"{where}.min_output_tokens: {need}")
+    deployments = item.get("deployments")
+    for dep in deployments if isinstance(deployments, list) else []:
+        if not isinstance(dep, Mapping) or "min_output_tokens" not in dep:
+            continue
+        spot = f"{where}: deployment {dep.get('id', '?')}.min_output_tokens"
+        if _min_output(dep["min_output_tokens"]) is None:
+            problems.append(f"{spot}: {need}")
+        elif str(dep.get("mode")) != "chat":
+            problems.append(f"{spot}: only a chat deployment has an output floor")
+    return problems
+
+
 def provider_from_dict(item: Mapping[str, Any]) -> Provider:
     """Build a Provider from one entry of providers.yaml. Tolerant: validation is separate."""
     local = item.get("kind", "cloud") == "local"
@@ -485,6 +535,7 @@ def provider_from_dict(item: Mapping[str, Any]) -> Provider:
         source_urls=_strs(item.get("source_urls")),
         policy=_map(item.get("policy")),
         raw=dict(item),
+        min_output_tokens=_min_output(item.get("min_output_tokens")),
     )
 
 
@@ -849,6 +900,7 @@ def validate_provider(item: Mapping[str, Any], today: date) -> list[str]:
     local = item.get("kind", "cloud") == "local"
     if not isinstance(item.get("name"), str) or not item["name"].strip():
         problems.append(f"{where}: name is needed")
+    problems.extend(validate_min_output_tokens(item, where))
     if local:
         problems.extend(validate_terms_flags(item.get("terms_flags"), f"{where}.terms_flags"))
         return problems

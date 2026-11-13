@@ -49,7 +49,12 @@ class Logged:
 
 @dataclass
 class FakeUpstream:
-    """Behaviours: ok, slow_ok, 429_minute, 429_daily, 401, 400, 500."""
+    """Behaviours: ok, slow_ok, ok_reasoning_only, reasoning_below:<N>, 429_minute, 429_retry_after:<s>, 429_daily, 401, 400, 500.
+
+    `reasoning_below:<N>` is a reasoning model: a request whose max_tokens (or
+    max_completion_tokens) is below N gets the reasoning-only reply, any other
+    request (a larger cap, or none) the normal one.
+    """
 
     behaviours: dict[str, str] = field(default_factory=dict)
     limit_headers: dict[str, dict[str, str]] = field(default_factory=dict)  # per model, replaces the default x-ratelimit-*
@@ -107,10 +112,14 @@ class FakeUpstream:
                 model = str(body.get("model", ""))
                 with upstream._lock:
                     behaviour = upstream.behaviours.get(model, upstream.default)
+                sent_max = body.get("max_tokens", body.get("max_completion_tokens"))
+                sent_max = sent_max if isinstance(sent_max, int) and not isinstance(sent_max, bool) else None
+                if behaviour.startswith("reasoning_below:"):
+                    starved = sent_max is not None and sent_max < int(behaviour.split(":", 1)[1])
+                    behaviour = "ok_reasoning_only" if starved else "ok"
                 status, payload, headers = upstream._respond(behaviour, model, self.path)
                 with upstream._lock:
-                    sent_max = body.get("max_tokens", body.get("max_completion_tokens"))
-                    upstream.log.append(Logged(self.path, model, status, time.time(), sent_max if isinstance(sent_max, int) else None))
+                    upstream.log.append(Logged(self.path, model, status, time.time(), sent_max))
                 if behaviour == "slow_ok":
                     time.sleep(upstream.slow_seconds)
                 self._send(status, payload, headers)

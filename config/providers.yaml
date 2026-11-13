@@ -24,6 +24,21 @@
 #   provider's own pricing page after checking, never from notes or memory.
 #   tier free, trial and local cost 0 by definition.
 #
+# min_output_tokens: optional, per deployment (chat only), a whole number from 1
+#   to 8192; also accepted on the provider as the default for its chat
+#   deployments (the deployment's own value wins). A reasoning model spends
+#   output tokens on hidden reasoning before it writes anything visible, so a
+#   request with a small max_tokens comes back as HTTP 200 with empty content
+#   and finish_reason "length". The renderer writes the number as
+#   model_info.muse_min_output_tokens and the hook (muse/hook.py) raises a
+#   smaller max_tokens / max_completion_tokens / max_output_tokens to it for
+#   that one upstream call, reported as `x-muse-min-output: raised:<from>-><to>`.
+#   A request that sets no cap is left alone, and nothing is ever lowered.
+#   The 256 used below is NOT from any provider's documentation. It is the
+#   owner's observation on real keys on 2026-11-12/13: gpt-oss models returned
+#   an empty answer at max_tokens 16-20 and a normal one at 300. Set it only
+#   on models known to reason before answering.
+#
 # quota: optional, per provider, e.g. {requests_per_month: 1000}. Used by
 #   `muse status` and by the reserve rule when the provider reports nothing.
 #
@@ -278,6 +293,9 @@ providers:
       - id: groq-gpt-oss-20b
         model: groq/openai/gpt-oss-20b
         mode: chat
+        # 2026-11-13: owner's observation (2026-11-12/13), not provider documentation: gpt-oss
+        # reasons first; empty answer at max_tokens 16-20, fine at 300.
+        min_output_tokens: 256
         aliases: [fast, cheap]
         order: 1
         rpm: 30
@@ -288,6 +306,9 @@ providers:
       - id: groq-gpt-oss-120b
         model: groq/openai/gpt-oss-120b
         mode: chat
+        # 2026-11-13: owner's observation (2026-11-12/13), not provider documentation: gpt-oss
+        # reasons first; empty answer at max_tokens 16-20, fine at 300.
+        min_output_tokens: 256
         aliases: [smart]
         order: 1
         rpm: 20
@@ -713,6 +734,9 @@ providers:
       - id: novita-gpt-oss-120b
         model: novita/openai/gpt-oss-120b
         mode: chat
+        # 2026-11-13: owner's observation (2026-11-12/13), not provider documentation: gpt-oss
+        # reasons first; empty answer at max_tokens 16-20, fine at 300.
+        min_output_tokens: 256
         aliases: [cheap, smart]
         order: 4
         rpm: 8
@@ -911,6 +935,9 @@ providers:
       - id: nim-gpt-oss-20b
         model: nvidia_nim/openai/gpt-oss-20b
         mode: chat
+        # 2026-11-13: owner's observation (2026-11-12/13), not provider documentation: gpt-oss
+        # reasons first; empty answer at max_tokens 16-20, fine at 300.
+        min_output_tokens: 256
         aliases: [fast, cheap]
         order: 5
         rpm: 5
@@ -997,6 +1024,9 @@ providers:
       - id: cerebras-gpt-oss-120b
         model: cerebras/gpt-oss-120b
         mode: chat
+        # 2026-11-13: owner's observation (2026-11-12/13), not provider documentation: gpt-oss
+        # reasons first; empty answer at max_tokens 16-20, fine at 300.
+        min_output_tokens: 256
         aliases: [smart]
         order: 2
         rpm: 5

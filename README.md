@@ -57,6 +57,38 @@ What it adds:
 Response headers `x-muse-provider`, `x-muse-deployment` and `x-muse-privacy`
 say where a request went. Set `MUSE_DISABLE_HOOK=true` to run the plain proxy.
 
+**Output floor for reasoning models.** A reasoning model (the gpt-oss family, for
+one) spends output tokens on hidden reasoning before it writes anything, so a
+request with a small `max_tokens` comes back as HTTP 200 with empty content and
+`finish_reason: "length"`. A chat deployment can carry `min_output_tokens` in
+`config/providers.yaml` (per deployment, or on the provider as the default for
+its chat deployments; rendered as `model_info.muse_min_output_tokens`). Two
+response headers go with it:
+
+- `x-muse-min-output: raised:<from>-><to>`, for example `raised:16->256`. The
+  request set `max_tokens`, `max_completion_tokens` or `max_output_tokens`
+  below the floor of the deployment that answered, and Muse sent `<to>` to that
+  provider instead. `<from>` is the smallest cap the request carried. When a
+  task's ceiling (`x-muse-task`) is itself below the floor, the floor wins for
+  that deployment, because an empty answer is worse than a slightly longer one,
+  and the value ends `;over-ceiling:<ceiling>`, for example
+  `raised:100->256;over-ceiling:100`. The header is absent when nothing was
+  changed: a cap at or above the floor is never lowered, a request with no cap
+  gets none, and embedding and rerank calls are not touched. After a fallback
+  it describes the deployment that answered; a deployment without a floor
+  receives the value the client sent. For a paid deployment the daily paid cap
+  is held on the raised figure.
+- `x-muse-answer: empty-reasoning`. A 200 whose answer has no visible text
+  and no tool call, and which either stopped at the length limit or reports
+  reasoning tokens: the model used its whole allowance thinking. Ask again
+  with a longer reply allowed (`muse ask` prints this hint). The body is passed
+  on unchanged and nothing from it is logged or stored. Streamed responses do
+  not carry this header, because headers are sent before the answer is known.
+
+The shipped floor is 256 on the gpt-oss deployments. That figure is the
+owner's observation on real keys on 2026-11-12/13 (empty at 16 to 20 tokens,
+fine at 300), not a number from any provider's documentation.
+
 A provider's `Retry-After` on a 429 is honoured twice over. LiteLLM cools that
 one deployment for the stated time (the rendered config sets no `allowed_fails`
 and no per-deployment `cooldown_time`, either of which would defeat this). The
@@ -150,7 +182,7 @@ muse ask --task light "Tag this: invoice from ACME"
 muse queue add --task heavy "Write the weekly report"   # without --task or --alias: the queue's default task (light)
 ```
 
-An app asks for a task with the header `x-muse-task: <task>` and any model name, or with the model `auto` (no header: the app's default task from the file, else `everyday`). The proxy replaces the model with the task's alias and lowers `max_tokens` to the task's ceiling (a lower one is kept). An unknown task is HTTP 400 listing the valid ones; the response says `x-muse-task: <task>`. A word in a task *name* can pick the task (`classify-emails` is `light`); prompt text is never read for this.
+An app asks for a task with the header `x-muse-task: <task>` and any model name, or with the model `auto` (no header: the app's default task from the file, else `everyday`). The proxy replaces the model with the task's alias and lowers `max_tokens` to the task's ceiling (a lower one is kept). The one exception is a deployment whose output floor is above the ceiling: see `x-muse-min-output` above. An unknown task is HTTP 400 listing the valid ones; the response says `x-muse-task: <task>`. A word in a task *name* can pick the task (`classify-emails` is `light`); prompt text is never read for this.
 
 **Spend what expires soonest.** For each daily or monthly allowance with a known limit (from the provider's headers, or the catalogue's `quota:` minus the ledger) the router draws a straight line from full at the last reset (midnight Pacific for Gemini, UTC otherwise, the calendar month, or the reset time minus one window for rolling limits) to empty at the next. `surplus = remaining/limit - (1 - elapsed/window)`.
 

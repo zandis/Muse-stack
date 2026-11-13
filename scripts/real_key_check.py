@@ -51,7 +51,7 @@ MAX_BURST = 60
 SAFE_VALUE = re.compile(r"^[0-9A-Za-z.:+\-]{1,40}$")
 KEEP_STR_KEYS = {"code", "status", "type", "@type", "quotaMetric", "quotaId", "reason", "domain", "param"}
 SAFE_ENUM = re.compile(r"^[A-Za-z0-9_.@/\-]{1,120}$")
-SAFE_MUSE_HEADER = re.compile(r"^[A-Za-z0-9_.@/:,\-]{1,120}$")
+SAFE_MUSE_HEADER = re.compile(r"^[A-Za-z0-9_.@/:,;>\-]{1,120}$")  # ; and > are in x-muse-min-output: raised:16->256
 KEYWORDS = ("per day", "per minute", "per month", "per hour", "try again in", "quota", "rate limit", "trial", "free-models-per-day",
             "free-models-per-min", "daily", "monthly", "resource_exhausted", "tokens per", "requests per", "retry")
 
@@ -195,6 +195,14 @@ def body_ok(mode: str, raw: bytes) -> bool:
 
 
 CUT_SHORT_NOTE = f"no visible text: the model used all {MAX_OUT_TOKENS} output tokens on reasoning; the key and route work"
+
+
+def floor_note(headers: Mapping[str, str]) -> str:
+    """`; ` plus what the output floor did, when the response says x-muse-min-output; else nothing."""
+    value = str(headers.get("x-muse-min-output") or "").strip()
+    if not value:
+        return ""
+    return f"; output floor: max_tokens {value[len('raised:'):] if value.startswith('raised:') else value} for this model (x-muse-min-output)"
 
 
 def provider_busy(status: int, headers: Mapping[str, str], raw: bytes) -> bool:
@@ -398,7 +406,8 @@ def run(args: argparse.Namespace, env: dict[str, str]) -> int:
         served = headers.get("x-muse-provider")
         if ok and served in (None, p["id"]):
             report.add(f"provider:{p['id']}", f"{p['id']}: one tiny call to {p['deployment']}", "pass",
-                       f"{entry['latency_ms']} ms" + (f"; {CUT_SHORT_NOTE}" if entry["answer_state"] == "cut_short" else ""))
+                       f"{entry['latency_ms']} ms" + (f"; {CUT_SHORT_NOTE}" if entry["answer_state"] == "cut_short" else "")
+                       + floor_note(headers))
         elif rate_limited_now(env, p, status, headers, raw):
             # Not a failure of the key or of Muse: a shared free tier turned the call away. Record what Muse decided.
             entry["busy"] = True
@@ -428,7 +437,8 @@ def run(args: argparse.Namespace, env: dict[str, str]) -> int:
         report.data["aliases"].append(entry)
         if ok:
             report.add(f"alias:{alias['name']}", f"alias {alias['name']}: one tiny call", "pass",
-                       f"served by {headers.get('x-muse-deployment', '?')}" + (f"; {CUT_SHORT_NOTE}" if state == "cut_short" else ""))
+                       f"served by {headers.get('x-muse-deployment', '?')}" + (f"; {CUT_SHORT_NOTE}" if state == "cut_short" else "")
+                       + floor_note(headers))
         elif provider_busy(status, headers, raw):
             entry["busy"] = True
             report.add(f"alias:{alias['name']}", f"alias {alias['name']}: one tiny call", "info",

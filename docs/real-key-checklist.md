@@ -36,7 +36,7 @@ It first prints exactly what it will send: for each configured provider, the mos
 How to read the result:
 
 - `✓` passed, `✗` failed, `·` a note, `-` skipped. Only `✗` makes the script exit 1.
-- A reply with no visible text still passes when the model used its 16 output tokens on reasoning (gpt-oss and other reasoning models do). The note says so. The key and the route work; give such models a few hundred output tokens in real use.
+- A reply with no visible text still passes when the model used its 16 output tokens on reasoning (gpt-oss and other reasoning models do). The note says so. The key and the route work; give such models a few hundred output tokens in real use. A model with `min_output_tokens` in the catalogue does not hit this: the router raises the 16 to the floor, the reply has text, and the check's detail says `output floor: max_tokens 16->256`.
 - `HTTP 429 from the provider` is a note, not a failure: a shared free tier (OpenRouter `:free` models especially) was busy. The key was not rejected. Run the check again later.
 
 

@@ -528,6 +528,70 @@ def scenario_oneoff_and_also_env() -> None:
             check(f"\n      {extra}:" in (ROOT / "docker-compose.yml").read_text(encoding="utf-8"), f"{extra} is not passed through docker-compose.yml")
 
 
+def scenario_min_output_tokens() -> None:
+    """The output floor: rendered as model_info.muse_min_output_tokens on chat deployments that declare it, and nowhere else."""
+    import copy
+    from datetime import date
+
+    from muse import catalog as catalog_mod
+
+    catalog = load_catalog(CATALOG_PATH)
+    keys = {str(p["env"]): "k" for p in catalog["providers"] if p.get("env")}
+    keys.update({str(n): "a" * 32 for p in catalog["providers"] for n in p.get("also_env") or []})
+    config, _ = render(catalog, env_with(MUSE_ALLOW_PAID_FALLBACK="true", **keys))
+    declared = {
+        str(d["id"]): catalog_mod.min_output_tokens_for(p, d)
+        for p in catalog["providers"] for d in p.get("deployments") or []
+    }
+    check(any(declared.values()), "no shipped deployment declares min_output_tokens")
+    for entry in config["model_list"]:
+        info = entry["model_info"]
+        want = declared[str(info["id"]).split("__")[0]]
+        got = info.get("muse_min_output_tokens")
+        check(got == want, f"{info['id']}: muse_min_output_tokens {got!r}, the catalogue says {want!r}")
+        check(got is None or (isinstance(got, int) and not isinstance(got, bool) and got > 0 and info["mode"] == "chat"),
+              f"{info['id']}: a floor must be a positive whole number on a chat deployment")
+    # The shipped figure is an observation on gpt-oss only; anything else needs its own evidence and this check updated.
+    for dep_id, floor in declared.items():
+        check((floor == 256) == ("gpt-oss" in dep_id), f"{dep_id}: min_output_tokens {floor!r}; only gpt-oss deployments carry 256")
+    # A provider-level default reaches its chat deployments; a deployment's own value wins; other modes get none.
+    custom = copy.deepcopy(catalog)
+    cohere = next(p for p in custom["providers"] if p["id"] == "cohere")
+    cohere["min_output_tokens"] = 128
+    cohere["deployments"][0]["min_output_tokens"] = 512
+    first = str(cohere["deployments"][0]["id"])
+    config, _ = render(custom, env_with(COHERE_API_KEY="c"))
+    for entry in config["model_list"]:
+        info = entry["model_info"]
+        want = None if info["mode"] != "chat" else 512 if str(info["id"]).split("__")[0] == first else 128
+        check(info.get("muse_min_output_tokens") == want, f"{info['id']}: floor {info.get('muse_min_output_tokens')!r}, expected {want!r}")
+    check(not catalog_mod.validate_provider(cohere, date.today()), "a valid min_output_tokens was reported as a problem")
+    # Bad values stop the render and are reported by the schema check.
+    for level, bad in (("deployment", 0), ("deployment", -5), ("deployment", "256"), ("deployment", True), ("deployment", 2.5),
+                       ("deployment", 100_000), ("provider", 0), ("provider", "many")):
+        broken = copy.deepcopy(catalog)
+        target = next(p for p in broken["providers"] if p["id"] == "cohere")
+        (target if level == "provider" else target["deployments"][0])["min_output_tokens"] = bad
+        check(any("min_output_tokens" in p for p in catalog_mod.validate_provider(target, date.today())),
+              f"{level} min_output_tokens {bad!r} passed the schema check")
+        try:
+            render(broken, env_with(COHERE_API_KEY="c"))
+        except SystemExit:
+            continue
+        raise Failure(f"{level} min_output_tokens {bad!r} was rendered")
+    broken = copy.deepcopy(catalog)
+    target = next(p for p in broken["providers"] if p["id"] == "cohere")
+    embed = next(d for d in target["deployments"] if d["mode"] != "chat")
+    embed["min_output_tokens"] = 256
+    check(any("only a chat deployment" in p for p in catalog_mod.validate_provider(target, date.today())),
+          "a floor on a non-chat deployment passed the schema check")
+    try:
+        render(broken, env_with(COHERE_API_KEY="c"))
+    except SystemExit:
+        return
+    raise Failure("a floor on a non-chat deployment was rendered")
+
+
 # ---------------------------------------------------------------- supply chain
 
 # Files that can install or pin a package, by suffix or exact name.
@@ -681,6 +745,7 @@ def main() -> int:
         scenario_auth_and_no_secrets,
         scenario_catalogue_v2,
         scenario_oneoff_and_also_env,
+        scenario_min_output_tokens,
         scenario_native_retry_after,
         scenario_supply_chain,
     ]

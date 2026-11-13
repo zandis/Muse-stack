@@ -26,13 +26,23 @@ Hooks used, with the 1.108.5 signatures (litellm/integrations/custom_logger.py):
   never to nothing; other levels, retries and fallbacks are untouched.
 - async_pre_call_deployment_hook: second privacy check on the chosen deployment
   (a request that names a deployment id skips async_filter_deployments), rationing
-  for such direct requests, and the atomic paid-cap hold (Ledger.try_hold_paid).
+  for such direct requests, the output floor, and the atomic paid-cap hold
+  (Ledger.try_hold_paid). The floor: a reasoning model spends output tokens on
+  hidden reasoning first, so a small max_tokens returns no visible text. A chat
+  call whose cap is below the chosen deployment's model_info.muse_min_output_tokens
+  is raised to it for that one upstream call (never lowered, never invented when
+  the client set no cap). LiteLLM hands this hook a fresh copy of the request for
+  every attempt, so a fallback to a deployment without a floor sends the client's
+  own value; the paid hold below it is estimated on the raised figure.
 - async_post_call_failure_deployment_hook: one call per failed attempt (retries
   and fallbacks too), unlike async_log_failure_event which fires once per request.
 - async_log_success_event: record the call (app, priority, cost, paid) and limits.
 - async_post_call_response_headers_hook: x-muse-provider / -deployment / -privacy /
   -app, x-muse-cost-usd, x-muse-ration and Retry-After on a rationing refusal,
-  x-muse-task (the task applied), x-muse-handoff: suggest (rule 6), x-muse-cache.
+  x-muse-task (the task applied), x-muse-handoff: suggest (rule 6), x-muse-cache,
+  x-muse-min-output (the output floor below raised this call's cap) and
+  x-muse-answer: empty-reasoning (a 200 whose visible answer is empty because
+  the model spent its output allowance on reasoning; the body is not changed).
   A 429 whose last failure was a provider limit (the provider answered 429 and
   that set or met a quota block, or every allowed deployment was already
   blocked) carries `x-muse-wait: provider-limit` and Retry-After = seconds until
@@ -91,6 +101,11 @@ ONEOFF_HEADER = "x-muse-allow-oneoff"
 ALLOW_PAID_HEADER = "x-muse-allow-paid"
 WAIT_HEADER = "x-muse-wait"  # response: why a 429 that is not a rationing refusal says Retry-After
 WAIT_PROVIDER_LIMIT = "provider-limit"
+MIN_OUTPUT_HEADER = "x-muse-min-output"  # response: raised:<from>-><to>[;over-ceiling:<task ceiling>]
+ANSWER_HEADER = "x-muse-answer"  # response: empty-reasoning
+ANSWER_EMPTY_REASONING = "empty-reasoning"
+MIN_OUTPUT_INFO = "muse_min_output_tokens"  # model_info field, rendered from the catalogue's min_output_tokens
+OUTPUT_CAP_KEYS = ("max_tokens", "max_completion_tokens", "max_output_tokens")
 AUTO_MODEL = "auto"
 CACHE_PROVIDER = "cache"  # provider/upstream recorded for an answer served from the exact-repeat cache
 TRUTHY = {"1", "true", "on", "yes"}
@@ -190,6 +205,11 @@ class _Note:
     # most recent failure was one (a later privacy refusal, rationing refusal or other error clears it).
     provider_until: float | None = None
     provider_limit_last: bool = False
+    # The output floor, per deployment id: the x-muse-min-output value for the attempt sent to it.
+    min_output: dict[str, str] = field(default_factory=dict)
+    # What the latest attempt's raise changed (key -> (from, to)), so a request dict that is
+    # reused for the next deployment gets the client's own value back first.
+    raised_last: dict[str, tuple[int, int]] = field(default_factory=dict)
 
 
 def _metadata(data: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -293,7 +313,7 @@ def _estimate_tokens(data: Mapping[str, Any]) -> tuple[int, int]:
     ascii_chars = sum(1 for ch in text if ord(ch) < 128)
     chars = ascii_chars + 3 * (len(text) - ascii_chars)
     out = 0
-    for key in ("max_tokens", "max_completion_tokens", "max_output_tokens"):
+    for key in OUTPUT_CAP_KEYS:
         value = data.get(key)
         if isinstance(value, int) and not isinstance(value, bool) and value > 0:
             out = value
@@ -320,7 +340,7 @@ def _call_mode(call_type: Any) -> str | None:
 def apply_ceiling(data: dict[str, Any], ceiling: int) -> None:
     """Cap the answer length: a lower limit the client set is kept, a higher one is lowered."""
     present = False
-    for key in ("max_tokens", "max_completion_tokens", "max_output_tokens"):
+    for key in OUTPUT_CAP_KEYS:
         value = data.get(key)
         if isinstance(value, int) and not isinstance(value, bool) and value > 0:
             present = True
@@ -328,6 +348,79 @@ def apply_ceiling(data: dict[str, Any], ceiling: int) -> None:
                 data[key] = ceiling
     if not present:
         data["max_tokens"] = ceiling
+
+
+def min_output_of(info: Mapping[str, Any] | None) -> int | None:
+    """The deployment's output floor (model_info.muse_min_output_tokens); None when it has none."""
+    value = info.get(MIN_OUTPUT_INFO) if isinstance(info, Mapping) else None
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    return None
+
+
+def apply_floor(data: dict[str, Any], floor: int | None) -> dict[str, tuple[int, int]]:
+    """Raise an output cap the request set that is below `floor`; the mirror of apply_ceiling.
+
+    Returns {key: (before, after)} for what changed. Never lowers a value, and
+    never adds a cap to a request that set none (the provider's default applies).
+    """
+    changed: dict[str, tuple[int, int]] = {}
+    if not floor or floor <= 0:
+        return changed
+    for key in OUTPUT_CAP_KEYS:
+        value = data.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and 0 < value < floor:
+            data[key] = floor
+            changed[key] = (value, floor)
+    return changed
+
+
+def min_output_header(changed: Mapping[str, tuple[int, int]], ceiling: Any = None) -> str | None:
+    """`raised:<from>-><to>`, plus `;over-ceiling:<n>` when the task's ceiling n is below the floor."""
+    if not changed:
+        return None
+    before = min(pair[0] for pair in changed.values())
+    after = max(pair[1] for pair in changed.values())
+    text = f"raised:{before}->{after}"
+    if isinstance(ceiling, int) and not isinstance(ceiling, bool) and 0 < ceiling < after:
+        text += f";over-ceiling:{ceiling}"
+    return text
+
+
+def _get(obj: Any, name: str) -> Any:
+    return obj.get(name) if isinstance(obj, Mapping) else getattr(obj, name, None)
+
+
+def empty_reasoning(response: Any) -> bool:
+    """A chat answer with no visible text because the output allowance went on reasoning.
+
+    True when every choice has empty content and no tool call, and either a
+    choice stopped at the length limit or the usage reports reasoning tokens.
+    Reads lengths and flags only; nothing from the answer is kept or logged.
+    """
+    choices = _get(response, "choices")
+    if not isinstance(choices, (list, tuple)) or not choices:
+        return False
+    cut = False
+    for choice in choices:
+        message = _get(choice, "message")
+        if message is None:
+            return False  # not a chat completion (a stream chunk, a text completion)
+        content = _get(message, "content")
+        if isinstance(content, str):
+            if content.strip():
+                return False
+        elif content:  # a list of parts, or anything else that is not empty
+            return False
+        if _get(message, "tool_calls") or _get(message, "function_call"):
+            return False
+        if _get(choice, "finish_reason") == "length":
+            cut = True
+    if cut:
+        return True
+    details = _get(_get(response, "usage"), "completion_tokens_details")
+    spent = _get(details, "reasoning_tokens")
+    return isinstance(spent, int) and not isinstance(spent, bool) and spent > 0
 
 
 def _model_info(data: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -670,13 +763,17 @@ class MuseHook(CustomLogger):
         if messages is not None and not view.get("messages"):
             view["messages"] = messages
         tin, tout = _estimate_tokens(view)
+        caps = {key: view.get(key) for key in OUTPUT_CAP_KEYS}
         out: dict[str, float] = {}
         for dep in deployments:
             info = dep.get("model_info") or {}
             dep_id = str(info.get("id", ""))
             price = ration.price_of(info)
             if dep_id in held and price is not None:
-                est = cost_mod.from_price(price, tin, tout)
+                floored = dict(caps)
+                # The paid hold is estimated on the raised cap (see _output_floor), so the offer is too.
+                dep_out = _estimate_tokens(floored)[1] if apply_floor(floored, min_output_of(info)) else tout
+                est = cost_mod.from_price(price, tin, dep_out)
                 if est is not None:
                     out[dep_id] = float(est)
         return out
@@ -719,6 +816,7 @@ class MuseHook(CustomLogger):
         if not any(isinstance(data.get(key), dict) for key in ("metadata", "litellm_metadata")):
             metadata = data["metadata"] = {}
         metadata["muse_privacy"] = cls
+        metadata.pop("muse_output_ceiling", None)  # only _apply_task may say a task ceiling was applied
         app = app_of(data)
         metadata["muse_app"] = app.name  # informational; rules read user_api_key_metadata
         metadata["muse_priority"] = app.priority
@@ -750,6 +848,7 @@ class MuseHook(CustomLogger):
         data["model"] = route.alias
         if route.mode == "chat" and route.max_output_tokens:
             apply_ceiling(data, route.max_output_tokens)
+            metadata["muse_output_ceiling"] = int(route.max_output_tokens)  # for x-muse-min-output's over-ceiling
         metadata["muse_task"] = route.task
         metadata["muse_handoff"] = route.handoff
         metadata["muse_deterministic"] = route.deterministic
@@ -920,10 +1019,48 @@ class MuseHook(CustomLogger):
                 assert outcome.decision is not None
                 raise MuseDirectRationError(outcome.decision)
 
+        # The output floor for this deployment, before the paid hold so the hold counts the raised cap.
+        raised = self._output_floor(info, kwargs, call_type, call_id)
+
         # The paid cap, atomically across workers, right before money is spent.
         if ration.is_paid(info):
             await self._hold_paid(info, kwargs, call_id)
-        return None
+        return kwargs if raised else None
+
+    def _output_floor(self, info: Mapping[str, Any], kwargs: dict, call_type: Any, call_id: str | None) -> bool:
+        """Raise this attempt's output cap to the chosen deployment's floor. True when it changed.
+
+        Chat calls only. `kwargs` is this attempt's own copy of the request
+        (litellm/utils.py async_pre_call_deployment_hook copies it), so the raise
+        reaches this upstream call and no other. Should a caller ever reuse one
+        dict across deployments, what the previous attempt raised is put back
+        first: a deployment without a floor gets the client's own value.
+        An error here is counted and the request goes out as the client sent it.
+        """
+        try:
+            note = self._note(call_id, create=False)
+            dep_id = str(info.get("id", ""))
+            if note is not None:
+                for key, (before, after) in note.raised_last.items():
+                    if kwargs.get(key) == after:
+                        kwargs[key] = before
+                note.raised_last = {}
+                note.min_output.pop(dep_id, None)
+            if _call_mode(call_type) != "chat":
+                return False
+            changed = apply_floor(kwargs, min_output_of(info))
+            if not changed:
+                return False
+            header = min_output_header(changed, _metadata(kwargs).get("muse_output_ceiling"))
+            note = self._note(call_id)
+            if note is not None and header:
+                note.raised_last = dict(changed)
+                note.min_output[dep_id] = header
+                note.details.append(f"min-output: {dep_id}: {header}")
+            return True
+        except Exception as exc:
+            self._fault("min_output", exc)
+            return False
 
     async def _hold_paid(self, info: Mapping[str, Any], kwargs: Mapping[str, Any], call_id: str | None) -> None:
         settings = self.settings()
@@ -1171,6 +1308,11 @@ class MuseHook(CustomLogger):
                     out["x-muse-cost-usd"] = f"{cost:.6f}"
                 if note is not None and note.codes:
                     out["x-muse-ration"] = ",".join(sorted(note.codes))
+                # The floor of the deployment that answered, not of one tried before it.
+                if note is not None and info.get("id") and str(info["id"]) in note.min_output:
+                    out[MIN_OUTPUT_HEADER] = note.min_output[str(info["id"])]
+                if empty_reasoning(response):
+                    out[ANSWER_HEADER] = ANSWER_EMPTY_REASONING
             elif note is not None and note.provider_limit_last and note.provider_until is not None:
                 # The request ended on a provider's limit (see _failed). Checked before the rationing
                 # notes: an earlier group may have been rationed, but the last word was the provider's.

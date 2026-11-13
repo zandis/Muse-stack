@@ -462,6 +462,41 @@ def test_ask_success_sends_headers_and_shows_route(monkeypatch, proxy, capsys):
     assert SECRET not in cap.out + cap.err
 
 
+def test_ask_says_when_the_model_spent_its_allowance_thinking(monkeypatch, proxy, capsys):
+    healthy_env(monkeypatch)
+
+    def reasoning_only(method, path, headers, body):
+        return 200, {"x-muse-provider": "groq", "x-muse-deployment": "groq-gpt-oss-20b", "X-Muse-Answer": "empty-reasoning",
+                     "x-muse-min-output": "raised:16->256"}, {"choices": [{"message": {"content": ""}, "finish_reason": "length"}]}
+
+    proxy(reasoning_only)
+    assert cli.main(["ask", "hi"]) == 0  # the provider answered; the hint explains the empty line
+    cap = capsys.readouterr()
+    assert cap.out.strip() == ""
+    hint = [line for line in cap.err.splitlines() if "allowance thinking" in line]
+    assert len(hint) == 1 and "longer reply" in hint[0]
+    assert "x-muse-min-output" not in cap.err  # routing details only with --show-route
+    assert cli.main(["ask", "hi", "--show-route"]) == 0
+    cap = capsys.readouterr()
+    assert "x-muse-min-output: raised:16->256" in cap.err and "x-muse-answer: empty-reasoning" in cap.err
+    assert SECRET not in cap.out + cap.err
+
+
+def test_ask_has_no_thinking_hint_on_a_normal_answer(monkeypatch, proxy, capsys):
+    healthy_env(monkeypatch)
+    proxy(chat_ok)
+    assert cli.main(["ask", "hi"]) == 0
+    cap = capsys.readouterr()
+    assert cap.out.strip() == "hello there" and cap.err.strip() == ""
+
+    def other_value(method, path, headers, body):
+        return 200, {"x-muse-answer": "something-else"}, {"choices": [{"message": {"content": "hello there"}}]}
+
+    proxy(other_value)
+    assert cli.main(["ask", "hi"]) == 0
+    assert "thinking" not in capsys.readouterr().err
+
+
 def test_ask_model_overrides_alias(monkeypatch, proxy):
     healthy_env(monkeypatch)
     p = proxy(chat_ok)

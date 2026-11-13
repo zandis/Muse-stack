@@ -32,6 +32,7 @@ CUSTOM_AUTH = "muse.auth.user_api_key_auth"
 PAID_TIERS = {"paid", "metered"}
 PAID_ORDER_OFFSET = 20
 FALSY = {"0", "false", "no", "off"}
+MIN_OUTPUT_TOKENS_MAX = 8192  # same bound as muse/catalog.py (this script imports nothing from muse)
 
 
 def load_dotenv(path: Path, environ: dict[str, str]) -> None:
@@ -204,6 +205,31 @@ def _price(deployment: Mapping[str, Any]) -> tuple[float, float] | None:
     return out[0], out[1]
 
 
+def _min_output_tokens(provider: Mapping[str, Any], deployment: Mapping[str, Any]) -> int | None:
+    """The output floor for a chat deployment: its own `min_output_tokens`, else the provider's default.
+
+    Same rule as muse.catalog.min_output_tokens_for. A bad value stops the
+    render for a catalogue provider; a hand-edited local catalog must not stop
+    startup, so there a bad value means no floor.
+    """
+    found: list[int] = []
+    for owner, label in ((deployment, str(deployment.get("id"))), (provider, str(provider.get("id")))):
+        value = owner.get("min_output_tokens")
+        if value is None:
+            continue
+        if isinstance(value, int) and not isinstance(value, bool) and 0 < value <= MIN_OUTPUT_TOKENS_MAX:
+            found.append(value)
+        elif is_local(provider):
+            return None
+        else:
+            raise SystemExit(f"{label}: min_output_tokens must be a whole number from 1 to {MIN_OUTPUT_TOKENS_MAX}")
+    if str(deployment.get("mode")) != "chat":
+        if deployment.get("min_output_tokens") is not None and not is_local(provider):
+            raise SystemExit(f"{deployment.get('id')}: min_output_tokens is for chat deployments only")
+        return None
+    return found[0] if found else None
+
+
 def _quota_list(provider: Mapping[str, Any]) -> list[dict[str, Any]]:
     """The provider's declared `quota:` as [{window, metric, limit}] for the hook's reserve rule."""
     raw = provider.get("quota")
@@ -280,6 +306,10 @@ def _model_info(provider: Mapping[str, Any], deployment: Mapping[str, Any], depl
     if price is not None:
         # USD per million tokens; muse/cost.py and the paid gate read these.
         info["muse_price_in"], info["muse_price_out"] = price
+    floor = _min_output_tokens(provider, deployment)
+    if floor is not None:
+        # muse/hook.py raises a smaller max_tokens to this for the one upstream call (reasoning models).
+        info["muse_min_output_tokens"] = floor
     declared = _quota_list(provider)
     if declared:
         info["muse_quota"] = declared

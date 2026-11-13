@@ -506,3 +506,150 @@ def test_generic_wire_formats_and_local_runtimes_may_repeat(tmp_path):
         {"id": "b", "env": "B_KEY", "api_base": "https://api.b.example/v1", "deployments": [{"model": "openai/y"}]},
         {"id": "l1", "kind": "local", "base_env": "L1"}, {"id": "l2", "kind": "local", "base_env": "L2"},
     ]) == []
+
+
+# ----------------------------------------------------------- min_output_tokens (the output floor for reasoning models)
+
+FLOOR_ENV = {"LITELLM_MASTER_KEY": "sk-test-master", "MUSE_ALLOW_PAID_FALLBACK": "true"}
+
+
+def all_keys(cat: dict) -> dict:
+    env = dict(FLOOR_ENV)
+    for p in cat["providers"]:
+        if p.get("env"):
+            env[p["env"]] = "k"
+        for extra in p.get("also_env") or []:
+            env[extra] = "a" * 32
+    return env
+
+
+def floors(config: dict) -> dict:
+    return {e["model_info"]["id"]: e["model_info"].get("muse_min_output_tokens") for e in config["model_list"]}
+
+
+def test_shipped_floor_is_on_the_gpt_oss_deployments_only():
+    cat = real()
+    declared = {d["id"]: d.get("min_output_tokens") for p in cat["providers"] for d in p.get("deployments") or []}
+    floored = {dep_id for dep_id, value in declared.items() if value is not None}
+    assert floored == {"groq-gpt-oss-20b", "groq-gpt-oss-120b", "novita-gpt-oss-120b", "nim-gpt-oss-20b", "cerebras-gpt-oss-120b"}
+    assert floored == {dep_id for dep_id in declared if "gpt-oss" in dep_id}
+    assert {declared[dep_id] for dep_id in floored} == {256}
+    assert all("min_output_tokens" not in p for p in cat["providers"])  # no provider-level default is shipped
+    text = CATALOG_PATH.read_text(encoding="utf-8")
+    assert "owner's observation" in text and "2026-11-12/13" in text and "NOT from any provider's documentation" in text
+
+
+def test_loader_gives_the_floor_per_deployment():
+    loaded = catalog.load_catalog()
+    groq = loaded.provider("groq")
+    assert groq.min_output_tokens is None
+    assert groq.min_output_for("groq-gpt-oss-20b") == 256 and groq.min_output_for("groq-gpt-oss-120b") == 256
+    assert groq.min_output_for("no-such-deployment") is None
+    gemini = loaded.provider("gemini")
+    assert all(gemini.min_output_for(d["id"]) is None for d in gemini.raw["deployments"])
+
+
+def test_floor_provider_default_and_deployment_override():
+    item = {"id": "p", "min_output_tokens": 128, "deployments": [
+        {"id": "a", "mode": "chat"},
+        {"id": "b", "mode": "chat", "min_output_tokens": 512},
+        {"id": "c", "mode": "chat", "min_output_tokens": 64},  # a lower value on the deployment also wins
+        {"id": "e", "mode": "embedding"},
+        {"id": "r", "mode": "rerank"},
+    ]}
+    p = catalog.provider_from_dict(item)
+    assert p.min_output_tokens == 128
+    assert [p.min_output_for(i) for i in "abcer"] == [128, 512, 64, None, None]
+    assert catalog.min_output_tokens_for({}, {"mode": "chat"}) is None
+    assert catalog.min_output_tokens_for({}, {"mode": "chat", "min_output_tokens": 256}) == 256
+    assert catalog.min_output_tokens_for({"min_output_tokens": 256}, {"min_output_tokens": 256}) is None  # no mode: not chat
+    # A value that fails validation is never used, and never falls through to the provider's.
+    assert catalog.min_output_tokens_for({"min_output_tokens": 128}, {"mode": "chat", "min_output_tokens": "many"}) is None
+    assert catalog.provider_from_dict({"id": "p", "min_output_tokens": True}).min_output_tokens is None
+
+
+@pytest.mark.parametrize("bad", [0, -1, "256", True, False, 2.5, 256.0, None, [256], {"tokens": 256}, catalog.MIN_OUTPUT_TOKENS_MAX + 1])
+def test_bad_floor_is_reported_and_stops_the_render(tmp_path, bad):
+    for level in ("deployment", "provider"):
+        d = real()
+        target = provider(d, "groq") if level == "provider" else provider(d, "groq")["deployments"][0]
+        target["min_output_tokens"] = bad
+        assert has(validate_with(tmp_path, d), "provider groq", "min_output_tokens", "whole number"), (level, bad)
+        if bad is None:
+            continue  # the renderer reads a null as "not set"; validation is what reports it
+        with pytest.raises(SystemExit) as err:
+            render_config.render(d, all_keys(d))
+        assert "min_output_tokens" in str(err.value)
+
+
+@pytest.mark.parametrize("good", [1, 16, 256, 4096, catalog.MIN_OUTPUT_TOKENS_MAX])
+def test_good_floor_values(tmp_path, good):
+    d = real()
+    provider(d, "groq")["deployments"][0]["min_output_tokens"] = good
+    assert validate_with(tmp_path, d) == []
+    assert floors(render_config.render(d, all_keys(d))[0])["groq-gpt-oss-20b"] == good
+
+
+def test_floor_on_a_non_chat_deployment_is_an_error(tmp_path):
+    d = real()
+    embed = next(dep for dep in provider(d, "gemini")["deployments"] if dep["mode"] == "embedding")
+    embed["min_output_tokens"] = 256
+    assert has(validate_with(tmp_path, d), "provider gemini", embed["id"], "only a chat deployment")
+    with pytest.raises(SystemExit) as err:
+        render_config.render(d, all_keys(d))
+    assert "chat deployments only" in str(err.value)
+
+
+def test_renderer_writes_the_floor_on_every_entry_of_a_floored_deployment():
+    cat = real()
+    got = floors(render_config.render(cat, all_keys(cat))[0])
+    assert got["groq-gpt-oss-20b"] == 256 and got["groq-gpt-oss-20b__fast"] == 256 and got["groq-gpt-oss-20b__cheap"] == 256
+    assert got["groq-gpt-oss-120b__smart"] == 256 and got["cerebras-gpt-oss-120b__smart"] == 256
+    assert got["novita-gpt-oss-120b"] == 256 and got["nim-gpt-oss-20b"] == 256
+    for dep_id, value in got.items():
+        assert (value == 256) == ("gpt-oss" in dep_id), dep_id
+        assert value is None or type(value) is int
+    # Not set means the field is absent, not null or zero.
+    config, _ = render_config.render(cat, all_keys(cat))
+    assert all("muse_min_output_tokens" not in e["model_info"] for e in config["model_list"] if "gpt-oss" not in e["model_info"]["id"])
+    text = render_config.dumps(config, [])
+    assert "muse_min_output_tokens: 256" in text
+
+
+def test_renderer_provider_default_reaches_chat_deployments_only():
+    cat = real()
+    cohere = provider(cat, "cohere")
+    cohere["min_output_tokens"] = 128
+    cohere["deployments"][0]["min_output_tokens"] = 512
+    first = cohere["deployments"][0]["id"]
+    config, _ = render_config.render(cat, {**FLOOR_ENV, "COHERE_API_KEY": "c"})
+    assert config["model_list"]
+    for entry in config["model_list"]:
+        info = entry["model_info"]
+        want = None if info["mode"] != "chat" else 512 if info["id"].split("__")[0] == first else 128
+        assert info.get("muse_min_output_tokens") == want, info["id"]
+    assert catalog.validate_provider(cohere, TODAY) == []
+
+
+def test_renderer_and_loader_agree_on_every_shipped_deployment():
+    cat = real()
+    got = floors(render_config.render(cat, all_keys(cat))[0])
+    for p in cat["providers"]:
+        for dep in p.get("deployments") or []:
+            assert got[dep["id"]] == catalog.min_output_tokens_for(p, dep), dep["id"]
+    assert render_config.MIN_OUTPUT_TOKENS_MAX == catalog.MIN_OUTPUT_TOKENS_MAX
+
+
+def test_local_catalog_floor_is_rendered_and_a_bad_one_never_stops_startup(tmp_path):
+    local = tmp_path / "local.yaml"
+    local.write_text(yaml.safe_dump({"ollama": [
+        {"id": "local-think", "model": "ollama/gpt-oss:20b", "mode": "chat", "aliases": ["fast"], "min_output_tokens": 256},
+        {"id": "local-odd", "model": "ollama/odd", "mode": "chat", "aliases": ["fast"], "min_output_tokens": "lots"},
+        {"id": "local-embed", "model": "ollama/embed", "mode": "embedding", "aliases": ["embed"], "min_output_tokens": 256},
+        {"id": "local-plain", "model": "ollama/llama", "mode": "chat", "aliases": ["fast"]},
+    ]}), encoding="utf-8")
+    config, enabled = render_config.render(real(), {**FLOOR_ENV, "OLLAMA_API_BASE": "http://127.0.0.1:11434", "MUSE_LOCAL_CATALOG": str(local)})
+    got = floors(config)
+    assert "ollama" in enabled
+    assert got["local-think"] == 256 and got["local-think__fast"] == 256
+    assert got["local-odd"] is None and got["local-embed"] is None and got["local-plain"] is None

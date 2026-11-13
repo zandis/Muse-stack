@@ -166,3 +166,44 @@ def test_a_rejected_key_is_still_a_failure_not_a_busy_note(make_proxy, upstream,
     checks = {c["id"]: c for c in data["checks"]}
     assert checks["provider:freeb"]["result"] == "fail" and r.returncode == 1
     assert not next(p for p in data["providers"] if p["id"] == "freeb").get("busy")
+
+
+def test_floor_note_reads_the_header_and_nothing_else():
+    rkc = _script_module()
+    assert rkc.MAX_OUT_TOKENS == 16  # the check keeps asking for a tiny answer; the router's floor is what makes it visible
+    assert rkc.floor_note({}) == "" and rkc.floor_note({"x-muse-min-output": ""}) == ""
+    assert rkc.floor_note({"x-muse-min-output": "raised:16->256"}) == "; output floor: max_tokens 16->256 for this model (x-muse-min-output)"
+    assert "100->256;over-ceiling:100" in rkc.floor_note({"x-muse-min-output": "raised:100->256;over-ceiling:100"})
+    safe = rkc.safe_headers({"x-muse-min-output": "raised:16->256", "x-muse-answer": "empty-reasoning", "x-muse-other": "a b <script>"})
+    assert safe == {"x-muse-min-output": "raised:16->256", "x-muse-answer": "empty-reasoning", "x-muse-other": "<redacted>"}
+    assert rkc.safe_headers({"x-muse-min-output": "raised:100->256;over-ceiling:100"})["x-muse-min-output"] == "raised:100->256;over-ceiling:100"
+
+
+def floored_ration_catalog(upstream):
+    """The rationing catalogue, with a-model as a reasoning model that has an output floor."""
+    from ration_catalog import build_ration_catalog
+
+    catalog = build_ration_catalog(upstream)
+    freea = next(p for p in catalog["providers"] if p["id"] == "freea")
+    freea["deployments"][0]["min_output_tokens"] = 256
+    return catalog
+
+
+def test_the_check_notes_the_output_floor_and_then_sees_a_real_answer(make_proxy, upstream, tmp_path):
+    proxy = make_proxy(local=False, catalog=floored_ration_catalog, local_aliases=("chat",), env={"MUSE_TZ": "UTC"})
+    upstream.set("a-model", "reasoning_below:200")  # empty at the script's max_tokens=16, fine at the floor
+    r, report = run_script(proxy, tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+    data = json.loads(report.read_text())
+    checks = {c["id"]: c for c in data["checks"]}
+    detail = checks["provider:freea"]["detail"]
+    assert checks["provider:freea"]["result"] == "pass"
+    assert "output floor: max_tokens 16->256" in detail and "output tokens on reasoning" not in detail
+    a = next(p for p in data["providers"] if p["id"] == "freea")
+    assert a["answer_state"] == "answer" and a["headers"]["x-muse-min-output"] == "raised:16->256"
+    b = next(p for p in data["providers"] if p["id"] == "freeb")
+    assert "x-muse-min-output" not in b["headers"] and "output floor" not in checks["provider:freeb"]["detail"]
+    a_calls = [c.max_tokens for c in upstream.calls("a-model") if c.max_tokens is not None]
+    assert a_calls and set(a_calls) == {256}
+    assert {c.max_tokens for c in upstream.calls("b-model") if c.path.endswith("/chat/completions")} <= {16}
+    assert_clean(report.read_text() + r.stdout + r.stderr, proxy)
