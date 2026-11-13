@@ -348,8 +348,12 @@ class Client:
         return self.meter.remaining()
 
     def ask(self, messages: Sequence[Mapping[str, Any]], *, task: str | None = None, privacy: str | None = None,
-            max_tokens: int | None = None, json_schema: Mapping[str, Any] | None = None) -> Answer:
-        """One chat call. `task` defaults to the job's tier; `privacy` may only be stricter than the job's class."""
+            max_tokens: int | None = None, json_schema: Mapping[str, Any] | None = None, handoff: bool = False) -> Answer:
+        """One chat call. `task` defaults to the job's tier; `privacy` may only be stricter than the job's class.
+
+        `handoff=True` marks the step as one the person could do in their own subscription app instead: the
+        request carries `x-muse-handoff: suggest`. Whether a hand-off is offered is still the router's decision.
+        """
         task = raised(task or self.default_task, self.raise_steps)
         cls = self._class(privacy)
         body: dict[str, Any] = {"model": "auto", "messages": list(messages)}
@@ -361,7 +365,7 @@ class Client:
             body["response_format"] = {"type": "json_schema",
                                        "json_schema": {"name": "answer", "schema": dict(json_schema), "strict": True}}
         estimate = estimate_tokens(_text_of(messages)) + (max_tokens or self._ceiling(task))
-        reply = self._send(CHAT_PATH, body, task, cls, estimate)
+        reply = self._send(CHAT_PATH, body, task, cls, estimate, {"x-muse-handoff": "suggest"} if handoff else None)
         try:
             payload = json.loads(reply.body)
             message = payload["choices"][0]["message"]
@@ -439,14 +443,15 @@ class Client:
         if cache == "hit":
             self.meter.cache_hits += 1
 
-    def _send(self, path: str, body: Mapping[str, Any], task: str, cls: str, estimate: int) -> Reply:
+    def _send(self, path: str, body: Mapping[str, Any], task: str, cls: str, estimate: int,
+              extra: Mapping[str, str] | None = None) -> Reply:
         """Count, send, and turn every non-200 into a typed error. Returns only a 200."""
         data = json.dumps(body, ensure_ascii=False).encode("utf-8")
         refreshed = False
         while True:
             self.meter.reserve(estimate)  # raises BudgetExceeded: nothing is sent
             headers = {"Content-Type": "application/json", "Authorization": f"Bearer {self._token}",
-                       "x-muse-task": task, "x-muse-privacy": cls}
+                       "x-muse-task": task, "x-muse-privacy": cls, **(extra or {})}
             if self.allow_paid:
                 headers["x-muse-allow-paid"] = "true"
             timeout = max(1.0, min(self.timeout, self.meter.remaining()["seconds"]))

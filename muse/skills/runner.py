@@ -90,6 +90,7 @@ class Context:
         self._emit = emit
         self.notes: list[str] = []
         self.incomplete = False
+        self.kept: Any = None  # see keep()
 
     @property
     def data_dir(self) -> Path:
@@ -109,6 +110,15 @@ class Context:
         if text and text not in self.notes:
             self.notes.append(text)
         self.incomplete = self.incomplete or incomplete
+
+    def keep(self, output: Any) -> None:
+        """What the person should still get if a later step cannot be done (deferred, refused, over budget).
+
+        A long job calls this with its partial result before a step it may not get. If that step then ends the
+        run, the runner returns this output (after the skill's own check) with the status it would have given
+        anyway: `needs_choice` with the router's options for a deferral, `partial` for a budget stop.
+        """
+        self.kept = output
 
     def stop(self, message: str) -> None:
         """End the run as failed with one plain sentence (a missing input, nothing to work on). No content in it."""
@@ -277,6 +287,8 @@ def run(
         """An attempt ended in an exception. `kept` is the first attempt's (output, check, notes) on the retry."""
         output, check_state, notes = kept if kept is not None else (None, {"status": "not-run", "reasons": []}, [])
         notes = list(notes) + [n for n in ctx.notes if n not in notes]
+        if kept is None and ctx.kept is not None and isinstance(exc, (Deferred, PrivacyRefused, BudgetExceeded, RouterError)):
+            output, check_state = ctx.kept, run_check(ctx, ctx.kept)  # the skill's partial result (ctx.keep)
         if isinstance(exc, Deferred):
             options = exc.options
             when = f" It said to come back in about {_duration(exc.retry_after)}." if exc.retry_after else ""
