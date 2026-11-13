@@ -44,6 +44,10 @@ def plain(result) -> dict:
     data.pop("sandbox", None)
     data["used"].pop("seconds", None)
     data["events"] = [{k: v for k, v in e.items() if k not in ("t", "ms")} for e in data["events"] if not e["kind"].startswith("sandbox")]
+    # A skill may name its output file after the clock (report-20261113-165339-...); two runs can straddle a second.
+    for write in data.get("writes") or []:
+        if isinstance(write, dict) and isinstance(write.get("path"), str):
+            write["path"] = re.sub(r"-\d{8}-\d{6}-", "-<when>-", write["path"])
     return data
 
 
