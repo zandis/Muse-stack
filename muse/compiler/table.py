@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS approvals (
   privacy TEXT NOT NULL,
   job TEXT,
   mode TEXT NOT NULL,                -- advise | enforce, as it was for the run that asked
-  state TEXT NOT NULL,               -- pending | used | refused
+  state TEXT NOT NULL,               -- pending | used | refused | revoked
   created_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS drafts (
@@ -207,8 +207,10 @@ class Table:
             conn.execute("UPDATE approvals SET state=? WHERE card_id=?", (state, card_id))
 
     def drop_approvals(self, mandate_id: str) -> None:
+        """A stopped permission's waiting approvals are kept, marked `revoked`: deleting them would make a card
+        approved later look like one no permission was involved in."""
         with self._conn(write=True) as conn:
-            conn.execute("DELETE FROM approvals WHERE mandate_id=? AND state='pending'", (mandate_id,))
+            conn.execute("UPDATE approvals SET state='revoked' WHERE mandate_id=? AND state='pending'", (mandate_id,))
 
     # ---------------------------------------------------------------- drafts
 

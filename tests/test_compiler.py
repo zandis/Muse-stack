@@ -515,7 +515,8 @@ def test_an_approval_token_is_single_use_and_short_lived(compiler, clock):
     assert compiler.use_approval(token, request, "card0002").allowed  # another card is another approval
     elsewhere = P.Request(holder="helper:home", action="files.write", resource=P.Resource("folder", "/etc/passwd"),
                           privacy="private", job="skill.writer")
-    assert compiler.use_approval(token, elsewhere, "card0003").detail == "resource_not_allowed"  # an approval widens nothing
+    refused = compiler.use_approval(token, elsewhere, "card0003")  # an approval widens nothing: it is narrowed to the resource
+    assert refused.kind == "deny" and refused.detail in ("not_narrower", "resource_not_allowed")
     compiler.revoke(mandate.id)
     assert compiler.use_approval(token, request, "card0004").detail == "revoked"
     spent = json.loads((compiler.store.dir / "spent.json").read_text())

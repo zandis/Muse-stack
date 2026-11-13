@@ -702,6 +702,11 @@ def test_auto_reports_exactly_the_layers_that_were_active(box, proxy):
 @posix
 def test_a_skill_of_your_own_always_runs_with_require(box, proxy, monkeypatch):
     real_home_skills(monkeypatch)
+    # This test is about the sandbox. A skill of your own is also always checked against permissions (`enforce`,
+    # muse/compiler/guard.py), which would refuse it here for want of one; tests/test_compiler_guard.py covers that.
+    from muse.compiler import guard as guard_mod
+
+    monkeypatch.setattr(guard_mod, "mode_for", lambda source, env: "off")
     write_skill(box.home, "mine")
     env_ = {k: v for k, v in box.env.items() if k != "MUSE_SKILLS_DIR"}
     proxy.responder = lambda request: chat("GOOD")

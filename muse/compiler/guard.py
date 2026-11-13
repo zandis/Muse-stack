@@ -423,7 +423,7 @@ def settle_write(env: Mapping[str, str] | None, card_id: str, *, clock: Callable
         return {"known": False, "allowed": True, "reason": "", "mandate": None, "mode": ""}
     out = {"known": True, "allowed": False, "reason": "", "mandate": row["mandate_id"], "mode": row["mode"]}
     if row["state"] != "pending":
-        out["reason"] = "already_used"
+        out["reason"] = "revoked" if row["state"] == "revoked" else "already_used"
         return out
     try:
         parent = compiler.store.load(row["token_name"], compiler.keys.public())

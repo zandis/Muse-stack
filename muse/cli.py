@@ -2312,6 +2312,10 @@ def _cmd_permissions(args: argparse.Namespace, P: Any, pstore: Any) -> int:
             return 1
         revoked.add(ident, now, keys_.load())
         store.save_revocations(revoked)
+        if not args.only_this_copy or len(ids) == 1:  # the whole permission: router apps made from it stop at once
+            from muse.compiler import gate
+
+            gate.mark_stopped([mandate.id], _env(), now)
         print(f"Stopped. The revocation list now has {len(revoked)} entr{'y' if len(revoked) == 1 else 'ies'} ({store.dir / 'revocations.json'}).")
         return 0
     return 2

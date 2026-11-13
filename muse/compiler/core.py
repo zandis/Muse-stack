@@ -365,8 +365,12 @@ class Compiler:
         check the request under that token, and remember the card as used. A second use of the same card is
         refused (`already_used`), also by another process. Returns the Decision."""
         now = self.now()
+        # The approval covers exactly what the card showed: this action, this resource, at most this amount, briefly.
+        caps = tuple(sorted({P.Cap(a.kind, a.unit, a.value) for a in request.amounts}))
+        resources = (request.resource,) if request.resource.value != "*" else ()
         try:
-            child = P.narrow(parent, P.Narrowing(actions=(request.action,), card=card_id, not_after=min(now + ttl, parent.not_after())))
+            child = P.narrow(parent, P.Narrowing(actions=(request.action,), resources=resources, caps=caps, card=card_id,
+                                                 not_after=min(now + ttl, parent.not_after())))
         except P.PermissionError as exc:
             if exc.code == "library_missing":
                 raise

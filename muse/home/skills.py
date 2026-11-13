@@ -468,7 +468,13 @@ class SkillRuns:
             return settle_write(self.home.environ, card_id, clock=self.home.clock, record=self.home.record)
         except Exception as exc:
             log.error("skills: an approval could not be turned into a permission (%s)", type(exc).__name__)
-            return {"known": False, "allowed": True, "reason": "", "mandate": None, "mode": ""}
+            # Fail closed when a permission might have been involved (the compiler's table exists); a home that
+            # never set up permissions keeps writing approved files as it always did.
+            from muse.compiler.table import table_path
+
+            involved = table_path(self.home.environ).exists()
+            return {"known": involved, "allowed": not involved, "reason": "unavailable" if involved else "", "mandate": None,
+                    "mode": "enforce" if involved else ""}
 
     def sweep(self) -> int:
         """Settle every waiting file whose card has ended some other way than an answer through this API:

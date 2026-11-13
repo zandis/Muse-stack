@@ -47,7 +47,13 @@ EXPECTED: dict[tuple[str, str], set[str]] = {
     ("GET", "/v1/skills"): {O, H},
     ("POST", "/v1/skills/{name}/run"): {O, H},
     ("GET", "/v1/skills/runs/{id}"): {O, H},
-    ("GET", "/v1/mandates/artifacts"): {O},
+    ("GET", "/v1/mandates"): {O, V},
+    ("POST", "/v1/mandates"): {O, H},  # a host only ASKS (a card the person answers); the handler decides
+    ("POST", "/v1/mandates/draft"): {O, H},
+    ("POST", "/v1/mandates/check"): {O, H},
+    ("GET", "/v1/mandates/declined"): {O, H},
+    ("POST", "/v1/mandates/{id}/stop"): {O},
+    ("GET", "/v1/mandates/artifacts"): {O, V},
 }
 
 PARAMS = {"provider": "groq", "id": "0123456789ab", "name": "some-name"}  # nothing by these names exists
