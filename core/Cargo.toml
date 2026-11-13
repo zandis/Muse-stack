@@ -16,11 +16,22 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 sha2 = "0.10"
 # Records (src/records.rs): Ed25519 signatures, HMAC-SHA-256 references, NFC for signed text.
 ed25519-dalek = { version = "2", default-features = false, features = ["std", "fast", "zeroize"] }
-hmac = "0.12"
-unicode-normalization = "0.1"
 # Permissions (core/src/permissions.rs): the token format. Pinned exactly; the Python twin
 # (biscuit-python 0.4.0) wraps this same release, so both sides run the same Datalog engine.
 biscuit-auth = { version = "=6.0.0", default-features = false, features = ["datalog-macro"] }
+# Vault (src/vault.rs). Pinned exactly, at the versions `age` itself resolves, so
+# each primitive is compiled once. See docs/spec/interfaces/vault-format.md section 17.
+age = { version = "=0.12.1", default-features = false }
+argon2 = { version = "=0.5.3", default-features = false, features = ["alloc"] }
+bech32 = "=0.11.1"
+chacha20poly1305 = "=0.10.1"
+getrandom = "=0.2.17"
+hkdf = "=0.12.4"
+hmac = "=0.12.1"
+subtle = "=2.6.1"
+unicode-normalization = "=0.1.26"
+x25519-dalek = { version = "=2.0.1", features = ["static_secrets"] }
+zeroize = { version = "=1.9.1", features = ["derive"] }
 
 [dev-dependencies]
 # Only to cross-check the hand-ported Pacific DST rule against tzdata (tests/pacific_tzdata.rs).

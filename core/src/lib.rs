@@ -21,6 +21,7 @@ pub mod pytext;
 pub mod quota;
 pub mod ration;
 pub mod records;
+pub mod vault;
 
 pub use error::PyError;
 pub use pyjson::PyJson;
