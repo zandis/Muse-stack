@@ -1144,6 +1144,18 @@ def register_catalog_commands(sub: Any) -> None:
 # ===== END catalogue v2 =====
 
 
+# ===== BEGIN home control API: `muse home serve|token|call` (own block; logic lives in muse/home/) =====
+
+
+def register_home_commands(sub: Any) -> None:
+    from muse.home import cli as home_cli
+
+    home_cli.register(sub)
+
+
+# ===== END home control API =====
+
+
 def cmd_version(args: argparse.Namespace) -> int:
     print(f"muse {__version__}")
     return 0
@@ -1712,6 +1724,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     register_connect_commands(sub)
     register_catalog_commands(sub)  # catalogue v2 block above
+    register_home_commands(sub)  # home control API block above
 
     e = sub.add_parser("env", help="export lines for an OpenAI-compatible client")
     e.add_argument("--show-master-key", action="store_true", help="print the real key instead of the variable name")
@@ -1812,6 +1825,7 @@ def build_parser() -> argparse.ArgumentParser:
     v = sub.add_parser("version", help="print the version")
     v.set_defaults(func=cmd_version)
     add_rules_parser(sub)
+    register_skills_commands(sub)
     return p
 
 
@@ -1877,6 +1891,18 @@ def add_rules_parser(sub: Any) -> None:
 
 
 # ============================================================ end routing rules
+
+
+# ===== BEGIN skills: `muse skills list|show|approve|run` (own block; logic lives in muse/skills/cli.py) =====
+
+
+def register_skills_commands(sub: Any) -> None:
+    from muse.skills import cli as skills_cli
+
+    skills_cli.register(sub, _env)
+
+
+# ===== END skills =====
 
 
 def main(argv: list[str] | None = None) -> int:

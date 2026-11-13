@@ -21,6 +21,31 @@ def error(message: str, status: int = 429) -> bytes:
     return json.dumps({"error": {"message": message, "type": "x", "code": status}}).encode()
 
 
+def embeddings(vectors: list[list[float]], tokens: int = 5) -> bytes:
+    return json.dumps({"object": "list", "data": [{"object": "embedding", "index": i, "embedding": v} for i, v in enumerate(vectors)],
+                       "usage": {"prompt_tokens": tokens, "total_tokens": tokens}}).encode()
+
+
+def ration_429(code: str = "defer:reserve", retry_after: int | None = 600, options: str | None = "wait:2026-11-14T00:00:00Z",
+               wait: str | None = None) -> tuple[int, dict[str, str], bytes]:
+    """A 429 as the real router sends it: Retry-After, x-muse-ration (or x-muse-wait) and the ` | options=` trailer."""
+    headers: dict[str, str] = {}
+    if code:
+        headers["x-muse-ration"] = code
+    if wait:
+        headers["x-muse-wait"] = wait
+    if retry_after is not None:
+        headers["Retry-After"] = str(retry_after)
+    message = "[muse] held back: nothing free fits right now" + (f" | options={options}" if options is not None else "")
+    return 429, headers, error(message, 429)
+
+
+def privacy_403(cls: str = "local") -> tuple[int, dict[str, str], bytes]:
+    """The router's privacy refusal: no deployment may receive a request of this class."""
+    return 403, {"x-muse-privacy": cls}, error(
+        f"[muse] no deployment of 'cheap' may receive a '{cls}' request (privacy policy): only local models qualify", 403)
+
+
 class FakeProxy:
     """Plays scripted (status, headers, body) answers in order; after the script, a 200 completion."""
 
@@ -28,6 +53,7 @@ class FakeProxy:
         self.script: deque[tuple[int, dict[str, str], bytes]] = deque()
         self.requests: list[dict[str, Any]] = []
         self.on_request: Any = None
+        self.responder: Any = None  # callable(request dict) -> (status, headers, body) | None, used once the script is empty
         proxy = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -39,14 +65,29 @@ class FakeProxy:
             def do_POST(self) -> None:
                 raw = self.rfile.read(int(self.headers.get("content-length") or 0))
                 body = json.loads(raw or b"{}")
-                proxy.requests.append({
+                messages = body.get("messages") or []
+                request = {
                     "path": self.path, "auth": self.headers.get("authorization", ""), "privacy": self.headers.get("x-muse-privacy"),
-                    "model": body.get("model"), "max_tokens": body.get("max_tokens"), "prompt": body["messages"][0]["content"],
+                    "model": body.get("model"), "max_tokens": body.get("max_tokens"),
+                    "prompt": messages[0]["content"] if messages else None,
                     "task": self.headers.get("x-muse-task"),
-                })
+                    # For the skills tests: the whole request (an embeddings call has `input`, no messages).
+                    "messages": messages, "input": body.get("input"), "body": body,
+                    "headers": {k.lower(): v for k, v in self.headers.items()},
+                }
+                proxy.requests.append(request)
                 if proxy.on_request:
                     proxy.on_request(len(proxy.requests))
-                status, headers, data = proxy.script.popleft() if proxy.script else (
+                answer = None
+                if proxy.script:
+                    answer = proxy.script.popleft()
+                elif proxy.responder is not None:
+                    answer = proxy.responder(request)  # (status, headers, body) or None for the default
+                if answer is None and self.path.endswith("/embeddings"):
+                    texts = body.get("input") or []
+                    answer = (200, {"x-muse-provider": "freea", "x-muse-deployment": "e-model", "x-muse-cost-usd": "0.000000"},
+                              embeddings([[1.0, 0.0]] * len(texts if isinstance(texts, list) else [texts])))
+                status, headers, data = answer if answer is not None else (
                     200, {"x-muse-provider": "freea", "x-muse-deployment": "a-model", "x-muse-cost-usd": "0.000500"}, completion())
                 self.send_response(status)
                 self.send_header("content-type", "application/json")

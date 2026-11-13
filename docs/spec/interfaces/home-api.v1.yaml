@@ -1,0 +1,785 @@
+openapi: 3.1.0
+info:
+  title: Muse home control API
+  version: "1"
+  summary: The one way an app talks to the home.
+  description: |
+    Local only. The home listens on a Unix socket (`MUSE_HOME/home.sock`, mode 0600) on
+    Linux and macOS, and on `127.0.0.1` on Windows or when started with `--tcp PORT`.
+    Later the same calls are carried over the Link.
+
+    Written by hand from `muse/home/api.py`. A test (`tests/test_home_openapi.py`) walks the
+    server's route table and fails if a route is missing here, or listed here and not served.
+
+    Rules that hold for every call:
+    * Every request carries `Authorization: Bearer <device token>`. A missing, malformed or
+      unknown token gets the same 401. On the Unix socket the caller must also be the same
+      user as the home (403 otherwise). On TCP the `Host` header must be `127.0.0.1:<port>`
+      or `localhost:<port>` (403 otherwise).
+    * Bodies are JSON objects of at most 512 KiB, sent with a `Content-Length`.
+    * A reply never holds a provider key, a prompt, a job's result, or internal error text.
+      The only secret that ever leaves is a new app token, once, when it is created or rotated.
+    * A request that holds anything shaped like a key or token is refused with a generic 400
+      (`invalid_request`), everywhere except `POST /v1/keys/{provider}`.
+    * Every error has one shape (`Error`). `code` is stable and listed below; `message` is one
+      plain sentence for the person; `retry_after` (seconds) is present when waiting helps.
+    * No CORS headers are sent. Every reply has `Cache-Control: no-store`.
+    * All text in a reply is plain text. Render it as text (textContent), never as HTML.
+
+    Error codes: `invalid_request` 400, `unauthorized` 401, `forbidden` 403, `not_found` 404,
+    `method_not_allowed` 405, `conflict` 409, `card_already_answered` 409, `card_expired` 410,
+    `length_required` 411, `payload_too_large` 413, `internal` 500, `not_built` 501,
+    `unavailable` 503.
+
+    For development, `python -m muse.home --fake` serves this same API from canned data.
+servers:
+  - url: http://127.0.0.1:4181
+    description: TCP (Windows, or `--tcp PORT`). On Linux and macOS the default is the Unix socket MUSE_HOME/home.sock.
+security:
+  - deviceToken: []
+x-error-codes:
+  invalid_request: 400
+  unauthorized: 401
+  forbidden: 403
+  not_found: 404
+  method_not_allowed: 405
+  conflict: 409
+  card_already_answered: 409
+  card_expired: 410
+  length_required: 411
+  payload_too_large: 413
+  internal: 500
+  not_built: 501
+  unavailable: 503
+
+paths:
+  /v1/status:
+    get:
+      operationId: getStatus
+      summary: The snapshot the dashboard and `muse status` show, plus `api_version`.
+      description: Allowances, services, apps, the queue, the paid total and whether the home is paused. Never holds keys or prompts.
+      responses:
+        "200":
+          description: The snapshot.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Status"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/catalogue:
+    get:
+      operationId: getCatalogue
+      summary: The catalogue with the person's connection state.
+      responses:
+        "200":
+          description: Services, which are connected, what to add next, and the non-AI resources and subscriptions.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Catalogue"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/connect/{provider}:
+    post:
+      operationId: startConnection
+      summary: Start a guided connection; returns the steps.
+      description: |
+        The home opens no browser: the client shows the steps and opens `open_url` on the
+        person's device. In v1 every connection finishes with `POST /v1/keys/{provider}`
+        (`finish_with: paste_key`), including services whose catalogue method is `oauth_pkce`.
+        No request body.
+      parameters:
+        - {$ref: "#/components/parameters/provider"}
+      responses:
+        "200":
+          description: What the person does next.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ConnectionStart"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/keys/{provider}:
+    post:
+      operationId: storeKey
+      summary: Store a service's key on the home.
+      description: |
+        The only call that accepts a key. The key is stored through the home's key store
+        (OS keychain, else the 0600 dotenv file) and is never echoed, logged or returned.
+        `also` carries the extra settings some services need (for example an account id);
+        its names must be ones the catalogue lists for the service.
+      parameters:
+        - {$ref: "#/components/parameters/provider"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [key]
+              properties:
+                key: {type: string, minLength: 1, maxLength: 512, writeOnly: true}
+                also:
+                  type: object
+                  additionalProperties: {type: string, maxLength: 512, writeOnly: true}
+      responses:
+        "200":
+          description: Stored. Says what must restart for the key to be used.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/KeyStored"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/jobs:
+    get:
+      operationId: listJobs
+      summary: Background jobs, oldest first. Metadata only.
+      description: A job's prompt and result are never returned by any call.
+      parameters:
+        - name: status
+          in: query
+          description: One status, or several separated by commas.
+          schema: {type: string, examples: ["queued,running,deferred"]}
+      responses:
+        "200":
+          description: The jobs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobs]
+                properties:
+                  jobs: {type: array, items: {$ref: "#/components/schemas/Job"}}
+        "400": {$ref: "#/components/responses/Invalid"}
+        default: {$ref: "#/components/responses/Error"}
+    post:
+      operationId: addJob
+      summary: Queue a job to run on spare allowance.
+      description: |
+        The prompt is accepted and kept on the home until the job ends; it is not returned.
+        With neither `task` nor `alias`, the routing rules' default for the queue is used.
+        The result is written to a file on the home (`out_path`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/NewJob"}
+      responses:
+        "201":
+          description: Queued.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobReply"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/jobs/{id}:
+    get:
+      operationId: getJob
+      summary: One job's metadata.
+      parameters:
+        - {$ref: "#/components/parameters/jobId"}
+      responses:
+        "200":
+          description: The job.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobReply"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+    delete:
+      operationId: cancelJob
+      summary: Cancel a waiting or running job.
+      description: The job stays in the list as `cancelled` and its prompt is erased. `conflict` if it had already finished.
+      parameters:
+        - {$ref: "#/components/parameters/jobId"}
+      responses:
+        "200":
+          description: Cancelled.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobReply"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/cards:
+    get:
+      operationId: listCards
+      summary: Cards, newest first. "Needs you" is `?status=pending`.
+      parameters:
+        - name: status
+          in: query
+          description: One status, or several separated by commas. Absent means all.
+          schema: {type: string, examples: ["pending"]}
+      responses:
+        "200":
+          description: The cards and how many there are in each status.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [cards, counts]
+                properties:
+                  cards: {type: array, items: {$ref: "#/components/schemas/Card"}}
+                  counts:
+                    type: object
+                    required: [pending, approved, declined, expired]
+                    additionalProperties: {type: integer}
+        "400": {$ref: "#/components/responses/Invalid"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/cards/{id}:
+    get:
+      operationId: getCard
+      summary: One card.
+      parameters:
+        - {$ref: "#/components/parameters/cardId"}
+      responses:
+        "200":
+          description: The card.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CardReply"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/cards/{id}/answer:
+    post:
+      operationId: answerCard
+      summary: Approve or decline a waiting card.
+      description: |
+        Exactly one answer ever succeeds. A second answer gets `card_already_answered` (409);
+        a card whose time ran out gets `card_expired` (410) and can no longer be approved.
+        `always: true` (only with `approve`) records that the person chose "Always allow this".
+        The answering device's name is recorded as `answered_by`.
+      parameters:
+        - {$ref: "#/components/parameters/cardId"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [decision]
+              properties:
+                decision: {enum: [approve, decline]}
+                always: {type: boolean, default: false}
+      responses:
+        "200":
+          description: The card as answered.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CardReply"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409":
+          description: "`card_already_answered`."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "410":
+          description: "`card_expired`."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/pause:
+    post:
+      operationId: pause
+      summary: The one switch, off. Background work sends nothing until resumed.
+      description: Same as `muse pause`. In v1 this stops the queue; the router keeps answering apps. No request body. Idempotent.
+      responses:
+        "200":
+          description: Paused.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [paused]
+                properties:
+                  paused: {const: true}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/resume:
+    post:
+      operationId: resume
+      summary: The one switch, on.
+      description: Same as `muse resume`. No request body. Idempotent.
+      responses:
+        "200":
+          description: Running again.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [paused, was_paused]
+                properties:
+                  paused: {const: false}
+                  was_paused: {type: boolean}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/apps:
+    get:
+      operationId: listApps
+      summary: The apps that share the router, by name. Today's use per app is in `/v1/status`.
+      responses:
+        "200":
+          description: The registered apps. Token hashes are never returned.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [apps]
+                properties:
+                  apps: {type: array, items: {$ref: "#/components/schemas/App"}}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+    post:
+      operationId: addApp
+      summary: Register an app. Its token is returned once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - {$ref: "#/components/schemas/AppSettings"}
+                - type: object
+                  required: [name, priority]
+                  properties:
+                    name: {$ref: "#/components/schemas/AppName"}
+      responses:
+        "201":
+          description: Created. `token` is shown this once; the home keeps only its hash.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AppWithToken"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/apps/{name}:
+    patch:
+      operationId: updateApp
+      summary: Change an app's priority, caps, paid permission, privacy or note.
+      description: Send only what changes. `null` clears an optional cap; `allow_paid null` returns to the priority's default.
+      parameters:
+        - {$ref: "#/components/parameters/appName"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/AppSettings"}
+      responses:
+        "200":
+          description: The app as changed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [app]
+                properties:
+                  app: {$ref: "#/components/schemas/App"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+    delete:
+      operationId: removeApp
+      summary: Remove an app. Its token stops working at the next request.
+      parameters:
+        - {$ref: "#/components/parameters/appName"}
+      responses:
+        "200":
+          description: Removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [removed]
+                properties:
+                  removed: {const: true}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/apps/{name}/rotate:
+    post:
+      operationId: rotateAppToken
+      summary: Issue a new token for an app; the old one stops working at once.
+      description: No request body.
+      parameters:
+        - {$ref: "#/components/parameters/appName"}
+      responses:
+        "200":
+          description: The new token, shown this once.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AppWithToken"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/receipts:
+    get:
+      operationId: listReceipts
+      summary: Planned. Receipts written on the home.
+      description: Not built yet; answers 501 `not_built` until the records module exists.
+      x-planned: true
+      parameters:
+        - name: since
+          in: query
+          schema: {type: string}
+      responses:
+        "501": {$ref: "#/components/responses/NotBuilt"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/mandates/artifacts:
+    get:
+      operationId: listMandateArtifacts
+      summary: Planned. Per-target state from the mandate compiler.
+      description: Not built yet; answers 501 `not_built` until the compiler exists.
+      x-planned: true
+      responses:
+        "501": {$ref: "#/components/responses/NotBuilt"}
+        default: {$ref: "#/components/responses/Error"}
+
+components:
+  securitySchemes:
+    deviceToken:
+      type: http
+      scheme: bearer
+      description: |
+        A device token made on the home with `muse home token add <name>`; the home keeps only
+        its SHA-256. In a later version this becomes a mandate token narrowed from the
+        device's mandate; the header stays the same.
+
+  parameters:
+    provider:
+      name: provider
+      in: path
+      required: true
+      description: A service id from the catalogue, such as `gemini`.
+      schema: {type: string, pattern: "^[a-z][a-z0-9_]{0,23}$"}
+    jobId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, pattern: "^[0-9a-f]{12}$"}
+    cardId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, pattern: "^[0-9a-f]{16}$"}
+    appName:
+      name: name
+      in: path
+      required: true
+      schema: {$ref: "#/components/schemas/AppName"}
+
+  responses:
+    Error:
+      description: Any error. See the list of codes in the description at the top.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    Invalid:
+      description: "`invalid_request`: a field is missing, unknown, mistyped or out of range, or part of the request looks like a key."
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    NotFound:
+      description: "`not_found`."
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    Conflict:
+      description: "`conflict`: it already exists, or it already finished."
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    Unavailable:
+      description: "`unavailable`: the home could not read or write its own state. Comes with `retry_after` when waiting helps."
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    NotBuilt:
+      description: "`not_built`: planned, not built yet."
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              enum: [invalid_request, unauthorized, forbidden, not_found, method_not_allowed, conflict,
+                     card_already_answered, card_expired, length_required, payload_too_large, internal,
+                     not_built, unavailable]
+            message: {type: string, description: One plain sentence. Never a secret, a prompt or internal error text.}
+            retry_after: {type: integer, minimum: 0, description: Seconds. Also sent as the Retry-After header.}
+
+    Time:
+      type: string
+      pattern: '^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$'
+      description: UTC, to the second.
+
+    Status:
+      type: object
+      description: |
+        The snapshot built by `muse/status.py` (the `Snapshot` type in `muse/types.py` is the
+        full definition), unchanged, plus `api_version`. Fields may be added; none are removed in v1.
+      required: [api_version, generated_at, proxy, default_privacy, providers, aliases, recent, totals, apps, paid, queue, paused,
+                 suggestions, resources, subscriptions]
+      properties:
+        api_version: {const: "1"}
+        generated_at: {$ref: "#/components/schemas/Time"}
+        home: {type: string}
+        proxy:
+          type: object
+          properties:
+            url: {type: string}
+            reachable: {type: [boolean, "null"]}
+        default_privacy: {type: string}
+        providers: {type: array, items: {type: object}, description: "Each service: configured, state (ok, cooling, exhausted, no_key, disabled, unknown), usage, limits with remaining and reset_at, deployments."}
+        aliases: {type: array, items: {type: object}}
+        recent: {type: array, items: {type: object}, description: The last calls, newest first, at most 50. Counts and names only.}
+        totals: {type: object}
+        apps: {type: array, items: {type: object}, description: Each app with today's use and what was turned away.}
+        paid: {type: object, description: "Today's paid total: cap_usd, spent_usd, held_usd, calls, resets_at."}
+        queue: {type: object, description: "Job counts by status, waiting, next_due_at."}
+        paused: {type: boolean, description: The one switch. True after POST /v1/pause.}
+        suggestions: {type: array, items: {type: object}, description: Ranked next services to connect.}
+        resources: {type: array, items: {type: object}}
+        subscriptions: {type: array, items: {type: object}}
+
+    Bilingual:
+      type: object
+      description: The same text in each language Muse ships.
+      properties:
+        en: {type: string}
+        zh-TW: {type: string}
+
+    Catalogue:
+      type: object
+      required: [connected, providers, suggestions, resources, subscriptions]
+      properties:
+        connected: {type: array, items: {type: string}, description: Ids of the services whose key is on the home.}
+        providers:
+          type: array
+          items:
+            type: object
+            required: [id, name, kind, tier, local, connected, key_env, also_env, connection]
+            properties:
+              id: {type: string}
+              name: {type: string}
+              kind: {type: string}
+              tier: {type: string}
+              local: {type: boolean}
+              connected: {type: boolean}
+              one_off: {type: boolean}
+              key_env: {type: [string, "null"], description: The name the key is stored under. A name, never a value.}
+              also_env: {type: array, items: {type: string}}
+              kind_of_allowance: {type: array, items: {type: string}}
+              good_for: {type: array, items: {type: string}}
+              gain:
+                type: [object, "null"]
+                properties:
+                  window: {type: string}
+                  limit: {type: integer}
+                  unit: {type: string}
+              gain_text: {$ref: "#/components/schemas/Bilingual"}
+              connection:
+                type: [object, "null"]
+                properties:
+                  method: {type: string, description: "paste_key, oauth_pkce, local or none."}
+                  key_url: {type: [string, "null"]}
+                  minutes_estimate: {type: [integer, "null"]}
+                  card_required: {type: string}
+                  phone_required: {type: string}
+                  usable_on_phone: {type: string}
+                  steps: {type: integer}
+              checked_on: {type: [string, "null"]}
+              confidence: {type: [string, "null"]}
+              source_urls: {type: array, items: {type: string}}
+        suggestions: {type: array, items: {type: object}, description: The same entries as `suggestions` in the status snapshot.}
+        resources: {type: array, items: {type: object}}
+        subscriptions: {type: array, items: {type: object}}
+
+    ConnectionStart:
+      type: object
+      required: [provider, name, connected, method, finish_with, open_url, steps, key, also, next]
+      properties:
+        provider: {type: string}
+        name: {type: string}
+        connected: {type: boolean}
+        method: {type: string, description: The catalogue's method for this service.}
+        finish_with: {const: paste_key}
+        open_url: {type: [string, "null"], description: The service's own page, for the client to open.}
+        minutes_estimate: {type: [integer, "null"]}
+        card_required: {type: string}
+        phone_required: {type: string}
+        steps:
+          type: array
+          items:
+            type: object
+            required: [id, title, detail]
+            properties:
+              id: {type: string}
+              title: {$ref: "#/components/schemas/Bilingual"}
+              detail: {$ref: "#/components/schemas/Bilingual"}
+        key:
+          type: object
+          required: [name, starts_with]
+          properties:
+            name: {type: string}
+            starts_with: {type: [string, "null"], description: What this service's keys are known to start with, for a gentle check before sending.}
+        also:
+          type: array
+          items:
+            type: object
+            required: [name, configured]
+            properties:
+              name: {type: string}
+              configured: {type: boolean}
+        next:
+          type: object
+          required: [method, path]
+          properties:
+            method: {const: POST}
+            path: {type: string}
+
+    KeyStored:
+      type: object
+      required: [provider, stored, backend, warnings, still_needed, restart]
+      properties:
+        provider: {type: string}
+        stored: {type: array, items: {type: string}, description: The names that were stored. Never values.}
+        backend: {type: [string, "null"], description: "keychain or dotenv (fake on a fake home)."}
+        warnings: {type: array, items: {type: string}}
+        still_needed: {type: array, items: {type: string}, description: Extra settings this service needs that are not on the home yet.}
+        restart:
+          type: object
+          required: [needed, proxy_running, command]
+          properties:
+            needed: {type: boolean}
+            proxy_running: {type: boolean}
+            command: {type: string, description: What makes the router read the new key.}
+
+    NewJob:
+      type: object
+      additionalProperties: false
+      properties:
+        kind: {enum: [prompt, batch], default: prompt}
+        prompt: {type: string, minLength: 1, maxLength: 100000, writeOnly: true, description: For kind prompt.}
+        prompts:
+          type: array
+          minItems: 1
+          maxItems: 20
+          writeOnly: true
+          items: {type: string, minLength: 1}
+          description: For kind batch. 100,000 characters in all at most.
+        task: {type: [string, "null"], description: "A routing task such as light or everyday."}
+        alias: {type: [string, "null"], description: A model alias such as cheap. Ignored when task is given.}
+        privacy: {enum: [public, standard, private, local, null]}
+        allow_paid: {type: boolean, default: false}
+        max_tokens: {type: integer, minimum: 1, default: 1024}
+        max_attempts: {type: integer, minimum: 1, default: 5}
+        deadline: {type: [string, "null"], description: "A time with a zone, such as 2026-11-14T08:30:00Z. The job fails if it has not finished by then."}
+
+    Job:
+      type: object
+      description: Metadata only. There is no prompt and no result here, by design.
+      required: [id, created_at, kind, alias, status, attempts, out_path, allow_paid]
+      properties:
+        id: {type: string, pattern: "^[0-9a-f]{12}$"}
+        created_at: {$ref: "#/components/schemas/Time"}
+        kind: {enum: [prompt, file-summary, batch]}
+        alias: {type: string}
+        task: {type: [string, "null"]}
+        privacy: {type: [string, "null"]}
+        out_path: {type: string, description: The file on the home that receives the result.}
+        status: {enum: [queued, running, deferred, done, failed, cancelled]}
+        attempts: {type: integer}
+        deferrals: {type: integer}
+        next_attempt_at: {type: [string, "null"]}
+        last_reason: {type: [string, "null"], description: A code, never content.}
+        started_at: {type: [string, "null"]}
+        finished_at: {type: [string, "null"]}
+        provider: {type: [string, "null"]}
+        deployment: {type: [string, "null"]}
+        cost_usd: {type: [number, "null"]}
+        tokens_in: {type: [integer, "null"]}
+        tokens_out: {type: [integer, "null"]}
+        max_attempts: {type: integer}
+        max_tokens: {type: integer}
+        deadline: {type: [string, "null"]}
+        allow_paid: {type: boolean}
+        progress: {type: integer, description: "Batch: prompts finished."}
+
+    JobReply:
+      type: object
+      required: [job]
+      properties:
+        job: {$ref: "#/components/schemas/Job"}
+
+    Card:
+      $ref: "card.schema.json"
+
+    CardReply:
+      type: object
+      required: [card]
+      properties:
+        card: {$ref: "#/components/schemas/Card"}
+
+    AppName:
+      type: string
+      pattern: "^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$"
+
+    AppSettings:
+      type: object
+      properties:
+        priority: {enum: [interactive, normal, background]}
+        daily_requests: {type: [integer, "null"], minimum: 0}
+        daily_tokens: {type: [integer, "null"], minimum: 0}
+        allow_paid: {type: [boolean, "null"]}
+        default_privacy: {enum: [public, standard, private, local, null]}
+        note: {type: [string, "null"], maxLength: 200}
+
+    App:
+      type: object
+      required: [name, priority, daily_requests, daily_tokens, allow_paid, default_privacy, note, created_at]
+      properties:
+        name: {$ref: "#/components/schemas/AppName"}
+        priority: {enum: [interactive, normal, background]}
+        daily_requests: {type: [integer, "null"]}
+        daily_tokens: {type: [integer, "null"]}
+        allow_paid: {type: boolean}
+        default_privacy: {type: [string, "null"]}
+        note: {type: [string, "null"]}
+        created_at: {type: [string, "null"]}
+
+    AppWithToken:
+      type: object
+      required: [app, token, token_shown_once]
+      properties:
+        app: {$ref: "#/components/schemas/App"}
+        token: {type: string, readOnly: true, description: The app's router token. Shown this once; store it on the device that needs it.}
+        token_shown_once: {const: true}

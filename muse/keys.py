@@ -33,6 +33,9 @@ _EXTRA_KEYS: dict[str, tuple[str | None, str]] = {
     # The queue runner's own app token (muse/queue.py). Stored here so it lives in the keychain, not in a plain file.
     "MUSE_QUEUE_APP_TOKEN": (None, ""),
     "MUSE_QUEUE_PAID_APP_TOKEN": (None, ""),
+    # The skill runner's own app tokens (muse/skills/app.py), kept the same way.
+    "MUSE_SKILLS_APP_TOKEN": (None, ""),
+    "MUSE_SKILLS_PAID_APP_TOKEN": (None, ""),
     "DEEPGRAM_API_KEY": ("deepgram", "https://console.deepgram.com/signup"),
     "ELEVENLABS_API_KEY": ("elevenlabs", "https://elevenlabs.io/app/settings/api-keys"),
     "ASSEMBLYAI_API_KEY": ("assemblyai", "https://www.assemblyai.com/app/account"),
