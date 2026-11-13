@@ -31,7 +31,9 @@ import re
 import unicodedata
 from typing import Any, Iterable
 
-MIN_CJK = 2
+from .textwork import terms
+
+MIN_CJK = 4
 MIN_WORDS = 2
 MAX_CHARS = 300
 MAX_SAYS_CHARS = 400
@@ -44,6 +46,9 @@ TOO_LONG = "quote-too-long"
 NOT_FOUND = "quote-not-in-passage"
 NUMBER = "number-not-in-quote"
 NO_SAYS = "says-nothing"
+UNCITED = "uncited"  # a sentence that states a fact cites no claim
+UNKNOWN_CLAIM = "unknown-claim"  # a sentence cites a claim id that does not exist
+MIN_FACT_TERMS = 3  # a sentence with fewer terms (and no digit) is a heading or a connective, not a statement of fact
 
 _QUOTES = dict.fromkeys("“”„‟«»「」『』〝〞＂", '"') | dict.fromkeys("‘’‚‛`´＇", "'")
 _DASHES = dict.fromkeys("‐‑‒–—―−－﹣", "-")
@@ -238,31 +243,123 @@ def verify(quote: str, n: Any, says: str, passages: dict[int, str], context: str
     return OK, span[0], span[1]
 
 
+def passage_number(value: Any) -> Any:
+    """2, "2", "[2]", 2.0 and [2] -> 2. Anything else is returned as it is (and `verify` refuses it)."""
+    if isinstance(value, list) and len(value) == 1:
+        value = value[0]
+    if isinstance(value, float) and value == int(value):
+        return int(value)
+    if isinstance(value, str):
+        digits = value.strip().strip("[]【】［］").strip()
+        if digits.isdigit() and len(digits) <= 3:
+            return int(digits)
+    return value
+
+
 def keep(raw_claims: list[dict[str, Any]], passages: dict[int, str], context: str = "",
          limit: int | None = None) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """(the claims that stand, why the others were dropped as {code: count}).
 
-    A kept claim: {"says", "quote" (as it is written in the passage), "n", "start", "end"}. A quote that appears
-    in another of the given passages than the one named is refused, not moved: the model said where it read it.
+    A kept claim: {"says", "quote" (as it is written in the passage), "n", "start", "end", "indexes"}: `start` and
+    `end` are character offsets into passage n, `indexes` the 1-based places in `raw_claims` it stands for (a repeat
+    adds its place to the first one). A quote that appears in another of the given passages than the one named is
+    refused, not moved: the model said where it read it.
     """
     kept: list[dict[str, Any]] = []
     dropped: dict[str, int] = {}
-    seen: set[tuple[int, int, str]] = set()
-    for claim in raw_claims:
+    seen: dict[tuple[Any, int, str], dict[str, Any]] = {}
+    for place, claim in enumerate(raw_claims, start=1):
+        if not isinstance(claim, dict):
+            dropped["not-a-claim"] = dropped.get("not-a-claim", 0) + 1
+            continue
         quote = " ".join(str(claim.get("quote") or "").split())
         says = " ".join(str(claim.get("says") or "").split())[:MAX_SAYS_CHARS]
-        n = claim.get("n")
+        n = passage_number(claim.get("n", claim.get("passage")))
         code, start, end = verify(quote, n, says, passages, context)
+        key = (n, start, says.casefold())
+        if not code and key in seen:
+            seen[key]["indexes"].append(place)
+            code = "repeat"
         if not code and limit is not None and len(kept) >= limit:
             code = "over-limit"
-        if not code and (n, start, says.casefold()) in seen:
-            code = "repeat"
         if code:
             dropped[code] = dropped.get(code, 0) + 1
             continue
-        seen.add((n, start, says.casefold()))
-        kept.append({"says": says, "quote": passages[n][start:end], "n": n, "start": start, "end": end})
+        seen[key] = {"says": says, "quote": passages[n][start:end], "n": n, "start": start, "end": end, "indexes": [place]}
+        kept.append(seen[key])
     return kept, dropped
+
+
+# ---------------------------------------------------------------- sentences that cite claims
+
+
+_MARK = re.compile(r"\[\s*(\d{1,3}(?:\s*[,、]\s*\d{1,3})*)\s*\]")
+_BULLET = re.compile(r"^\s*(?:[-*•]\s+|\d{1,2}[.)]\s+)")
+_SENTENCE = re.compile(r"(?<=[。！？!?])|(?<=\.)\s+(?=[^a-z0-9\s])")
+_LEADING = re.compile(r"^(?:\s*\[\s*\d{1,3}(?:\s*[,、]\s*\d{1,3})*\s*\])+\s*[.。]?")
+
+
+def brackets(text: str) -> str:
+    return text.replace("【", "[").replace("】", "]").replace("［", "[").replace("］", "]")
+
+
+def cites_of(text: str) -> list[int]:
+    """The numbers in the [n] markers of a text, in order, once each."""
+    out: list[int] = []
+    for match in _MARK.finditer(brackets(text)):
+        for n in re.findall(r"\d{1,3}", match.group(1)):
+            if int(n) not in out:
+                out.append(int(n))
+    return out
+
+
+def sentences(lines: list[str]) -> list[dict[str, Any]]:
+    """Every sentence of some body lines: {"text" without markers, "cites", "fact": it needs a source}."""
+    out: list[dict[str, Any]] = []
+    for line in lines:
+        line = _BULLET.sub("", brackets(line)).strip()
+        if not line or re.fullmatch(r"\*\*[^*]+\*\*:?", line):
+            continue
+        for piece in _SENTENCE.split(line):
+            if not piece or not piece.strip():
+                continue
+            lead = _LEADING.match(piece)
+            if lead and out:  # "... the 5th. [2] Next ...": the marker belongs to the sentence before it
+                for n in cites_of(lead.group()):
+                    if n not in out[-1]["cites"]:
+                        out[-1]["cites"].append(n)
+                piece = piece[lead.end():]
+            text = " ".join(_MARK.sub(" ", piece).split()).strip("*_ ")
+            if not text:
+                continue
+            ending = text.rstrip("\"'”」)） ")[-1:]
+            fact = (len(terms(text)) >= MIN_FACT_TERMS or bool(numbers(text))) and ending not in ":：?？"
+            out.append({"text": text, "cites": cites_of(piece), "fact": fact})
+    return out
+
+
+def statement_problems(found: list[dict[str, Any]], quotes_by_id: dict[int, str],
+                       context: str = "") -> list[tuple[str, int, int]]:
+    """(code, sentence number, claim id or 0) for every sentence that does not stand on the claims it cites.
+
+    A sentence stating a fact must cite at least one claim id; every id must exist; every number in the sentence
+    must be in one of the cited claims' quotes (or the question, `context`). Nothing else is compared, so the
+    sentence may be in another language than the quotes.
+    """
+    out: list[tuple[str, int, int]] = []
+    for number, sentence in enumerate(found, start=1):
+        cites = sentence.get("cites") or []
+        if not cites:
+            if sentence.get("fact"):
+                out.append((UNCITED, number, 0))
+            continue
+        missing = [c for c in cites if c not in quotes_by_id]
+        if missing:
+            out.append((UNKNOWN_CLAIM, number, missing[0]))
+            continue
+        if unsupported_numbers(sentence.get("text", ""), [quotes_by_id[c] for c in cites], context):
+            out.append((NUMBER, number, 0))
+    return out
 
 
 def paragraph_of(passage: dict[str, Any], start: int) -> int | None:
