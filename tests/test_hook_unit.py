@@ -433,7 +433,7 @@ def test_soonest_provider_wait_wins_across_fallback_groups(h, db):
 
 
 def test_resting_after_a_provider_error_without_a_quota_block_has_no_provider_wait(h, router_with):
-    router_with([G_FAST])
+    router_with(G_FAST)
     data = call()
     with pytest.raises(MuseBlockedError):
         filt(h, [], data)

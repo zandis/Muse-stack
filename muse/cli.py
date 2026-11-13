@@ -747,7 +747,7 @@ def run_checks() -> list[dict[str, str]]:
         exe = shutil.which("docker")
         if not exe:
             native = shutil.which("litellm")
-            checks.append(_check("docker", WARN, "Docker not found", "litellm is on PATH: `muse up --native` works." if native else "", "" if native else "Install Docker, or `pip install litellm[proxy]` for --native."))
+            checks.append(_check("docker", WARN, "Docker not found", "litellm is on PATH: `muse up --native` works." if native else "", "" if native else "Install Docker, or for --native: `pip install --require-hashes -r requirements/proxy.lock`."))
             return
         try:
             proc = subprocess.run([exe, "compose", "version"], capture_output=True, timeout=8)
@@ -880,7 +880,7 @@ def _native_stop(env: Mapping[str, str]) -> bool:
 def _up_native(env: dict[str, str], detach: bool) -> int:
     exe = shutil.which("litellm")
     if not exe:
-        _err("`litellm` is not on PATH. Install it (pip install 'litellm[proxy]') or use Docker: muse up")
+        _err("`litellm` is not on PATH. Install it (pip install --require-hashes -r requirements/proxy.lock) or use Docker: muse up")
         return 1
     rc = _load_renderer()
     config, enabled = rc.render(rc.load_catalog(paths.CATALOG_PATH), env)

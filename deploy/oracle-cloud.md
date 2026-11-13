@@ -6,7 +6,7 @@ The first host can be any small Linux box with Docker. This note is the later mo
 
 - Image: Ubuntu 22.04 or 24.04, **aarch64**. Canonical's Ampere images are the ones that match.
 - Shape: `VM.Standard.A1.Flex`. Always Free quota is up to 4 OCPU and 24 GB RAM, shared by every A1 instance in the tenancy. Capacity in popular regions is often unavailable; 1 OCPU and 6 GB is enough for this proxy and is a reasonable thing to request if a larger shape fails with "out of host capacity".
-- The LiteLLM image in `docker-compose.yml` is `ghcr.io/berriai/litellm:v1.108.5`, which publishes `linux/arm64`. Do not switch it to `docker.io/litellm/litellm`: those tags are amd64-only and the pull fails on this VM with `no matching manifest for linux/arm64`.
+- The LiteLLM image in `docker-compose.yml` is `ghcr.io/berriai/litellm:v1.108.5`, pinned by the digest of its multi-arch index, which includes `linux/arm64` (`sha256:23192ecdb958f1a822947a44333dc4bb8fd5921c40a04e9cc502578e2a21c5bb`). Do not switch it to `docker.io/litellm/litellm`: those tags are amd64-only and the pull fails on this VM with `no matching manifest for linux/arm64`.
 - Postgres in `docker-compose.spend.yml` uses `postgres:16-alpine`, which is also multi-arch. Skip that file until you actually want spend logs. The proxy does not need a database to route.
 
 ## Network
@@ -64,11 +64,15 @@ The container prints the enabled providers on startup. A missing key is a line i
 
 ## Updates
 
-Pin stays on `v1.108.5` until you edit the compose file. Pull and recreate:
+The pin stays on `v1.108.5` and its digest until you edit the compose file, so a pull can only ever fetch that exact image:
 
 ```bash
 docker compose pull
 docker compose up -d
 ```
+
+### Supply chain
+
+What runs on this VM is fixed, because LiteLLM published a malicious release on 21 October 2026 (`litellm==1.107.0` and the tags `latest`, `main-latest`, `main-stable`, validly signed with their old key). The Docker path pulls `ghcr.io/berriai/litellm:v1.108.5@sha256:008a5916c0a0ca6f4f6ad64969f6a4ef6f03ce885a639f3d97fd53665754ce48`; never change it to a floating tag. The `--native` path installs from `requirements/proxy.lock` with `pip install --require-hashes`, so pip refuses any file whose SHA-256 is not in the repo, and the setup script then runs `scripts/verify_litellm.py` and stops if it reports a problem. To check at any time, on the VM: `python3 scripts/verify_litellm.py --image` (Docker; asks ghcr.io whether the tag still points at the pinned digest) or `~/.muse-venv/bin/python scripts/verify_litellm.py` (native, the venv the script created); `docker compose images` shows the digest in use. It reads no key; exit status 0 is clean, 1 a problem, 2 something it could not check. To move to a newer LiteLLM, do it on your own machine first, in the order given in the README under "Supply chain" (new tag, resolve its digest, regenerate the lock files, run the suite), then `git pull` here and run the setup script or `docker compose pull && docker compose up -d` again. Provider keys live only in the proxy's environment on this VM (`.env`, mode 600): not in an application, not in the repository, not in CI.
 
 If you enable `docker-compose.spend.yml`, keep the same `LITELLM_SALT_KEY` across recreates. Changing it makes database-stored credentials unreadable. The routing table itself is the rendered config, not the database.

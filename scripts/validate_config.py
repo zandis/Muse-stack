@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -22,6 +24,8 @@ from render_config import (  # noqa: E402
     paid_fallback_enabled,
     render,
 )
+
+from verify_litellm import COMPOSE_FILES, compose_images, image_pin_problems  # noqa: E402  (standard library only)
 
 CATALOG_PATH = ROOT / "config" / "providers.yaml"
 ENV_EXAMPLE = ROOT / ".env.example"
@@ -524,6 +528,141 @@ def scenario_oneoff_and_also_env() -> None:
             check(f"\n      {extra}:" in (ROOT / "docker-compose.yml").read_text(encoding="utf-8"), f"{extra} is not passed through docker-compose.yml")
 
 
+# ---------------------------------------------------------------- supply chain
+
+# Files that can install or pin a package, by suffix or exact name.
+_INSTALL_SUFFIXES = (".sh", ".bash", ".yml", ".yaml", ".md", ".toml", ".txt", ".in", ".cfg", ".ini", ".py", ".ps1", ".bat")
+_INSTALL_NAMES = ("Dockerfile", "Makefile", "justfile", "Procfile")
+_INSTALL_SKIP = ("tests/", "core/", "muse_stack.egg-info/")  # tests hold counter-examples on purpose
+_INSTALLER = re.compile(r"\b(?:pip3?|pipx|uv\s+pip|uv\s+tool|uv)\s+(?:install|add)\b(.*)", re.IGNORECASE)
+_LITELLM_REQ = re.compile(r"""^litellm(?:\[[^\]]*\])?(?![\w.-])\s*(.*)$""")  # lower case: the package, not the word in prose
+_EXACT = re.compile(r"^==\s*\d+(?:\.\d+)*(?:\.?(?:post|rc|a|b|dev)\d+)?$")
+
+
+def unpinned_litellm(spec: str) -> bool:
+    """True when `spec` is a litellm requirement without an exact `==` version."""
+    token = spec.strip().strip("\"'`,()").strip()
+    match = _LITELLM_REQ.match(token)
+    if match is None:
+        return False
+    rest = match.group(1).split(";")[0].split("#")[0].strip().strip("\"'`,")
+    return _EXACT.match(rest) is None
+
+
+def _command_tail(rest: str) -> str:
+    """What follows `pip install` up to the end of that command (prose and other commands cut off)."""
+    return re.split(r"`|&&|\|\||[;|#]", rest, maxsplit=1)[0]
+
+
+def install_line_problems(text: str, requirement_file: bool = False) -> list[str]:
+    """Lines that install litellm without an exact pin. A `-r <lock file>` install names no package, so it passes."""
+    problems = []
+    for number, line in enumerate(text.splitlines(), 1):
+        if requirement_file:
+            stripped = line.strip()
+            if stripped and not stripped.startswith(("#", "-")) and unpinned_litellm(stripped):
+                problems.append(f"line {number}: {stripped[:80]}")
+            continue
+        for match in _INSTALLER.finditer(line):
+            # A requirement may be quoted and may hold spaces inside the quotes: split on quotes first.
+            for part in re.findall(r"""'[^']*'|"[^"]*"|[^\s'"]+""", _command_tail(match.group(1))):
+                if unpinned_litellm(part):
+                    problems.append(f"line {number}: {line.strip()[:100]}")
+                    break
+    return problems
+
+
+def tracked_files() -> list[Path]:
+    """Files git tracks, plus untracked ones it does not ignore; a plain walk when git is not usable."""
+    try:
+        done = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+                              capture_output=True, timeout=30, check=True)
+        names = [n for n in done.stdout.decode("utf-8", "replace").split("\0") if n]
+        if names:
+            return [ROOT / n for n in names if (ROOT / n).is_file()]
+    except (OSError, subprocess.SubprocessError):
+        pass
+    skip = {".git", ".venv", "venv", "node_modules", "target", "__pycache__", "muse_stack.egg-info"}
+    return [p for p in ROOT.rglob("*") if p.is_file() and not skip & set(p.relative_to(ROOT).parts)]
+
+
+def scenario_supply_chain() -> None:
+    """LiteLLM is only ever obtained by digest (image) or exact version / lock file (pip).
+
+    Background: on 2026-10-21 litellm==1.107.0 and the tags latest, main-latest
+    and main-stable were malicious for about two hours. Anything that follows a
+    floating tag or an open version range would have run it.
+    """
+    # The rules themselves, so a regex slip cannot silently pass everything.
+    bad_images = ("ghcr.io/berriai/litellm:v1.108.5", "ghcr.io/berriai/litellm:main-latest", "litellm/litellm:latest",
+                  "ghcr.io/berriai/litellm", "ghcr.io/berriai/litellm:main-stable@sha256:" + "a" * 64,
+                  "ghcr.io/berriai/litellm:main@sha256:" + "a" * 64, "ghcr.io/berriai/litellm:v1.108.5@sha256:abc",
+                  "ghcr.io/berriai/litellm:v1.107.0@sha256:1bbcb1443bc962e45f5aad53fe3d2c30600e0379715fb6c664cdd3ac126c339e")
+    for raw in bad_images:
+        check(image_pin_problems(compose_images(f"    image: {raw}")[0]), f"the image rule accepted {raw}")
+    good = compose_images("    image: ghcr.io/berriai/litellm:v1.108.5@sha256:" + "a" * 64)[0]
+    check(not image_pin_problems(good), "the image rule refused a version tag with a digest")
+    installer = "pip" + " install "  # split so this file does not match its own rule
+    for line in (installer + "litellm", installer + "'litellm[proxy]'", installer + '"litellm[proxy]>=1.108"',
+                 installer + "-U litellm[proxy]~=1.108.0", "uv " + installer + "litellm==1.*", "python -m " + installer + "-e . litellm[proxy]<2",
+                 "Run `" + installer + "litellm[proxy]` first."):
+        check(install_line_problems(line), f"the install rule accepted: {line}")
+    for line in (installer + '"litellm[proxy]==1.108.5"', installer + "--require-hashes -r requirements/proxy.lock",
+                 installer + "litellm-proxy-extras", installer + "-e '.[dev]'", "# litellm is installed elsewhere",
+                 "`" + installer + "-e .` installs the CLI; litellm comes from the lock file", installer + "pyyaml && echo litellm"):
+        check(not install_line_problems(line), f"the install rule refused: {line}")
+    check(install_line_problems("litellm[proxy]>=1.100\n", requirement_file=True) and
+          not install_line_problems("# c\n-c proxy.lock\nlitellm[proxy]==1.108.5\npytest>=8\n", requirement_file=True),
+          "the requirement-file rule is wrong")
+
+    # The compose files.
+    seen = 0
+    for name in COMPOSE_FILES:
+        path = ROOT / name
+        if not path.is_file():
+            continue
+        for ref in compose_images(path.read_text(encoding="utf-8")):
+            if not ref.is_litellm:
+                continue
+            seen += 1
+            problems = image_pin_problems(ref)
+            check(not problems, f"{name}: " + "; ".join(problems))
+    check(seen >= 1, "no LiteLLM image found in the compose files")
+
+    # Every tracked file that could install it.
+    lock = ROOT / "requirements" / "proxy.lock"
+    check(lock.is_file(), "requirements/proxy.lock is missing")
+    lock_text = lock.read_text(encoding="utf-8")
+    pins = re.findall(r"^litellm==(\S+)", lock_text, re.MULTILINE)
+    check(len(pins) == 1 and "--hash=sha256:" in lock_text, "requirements/proxy.lock must pin exactly one litellm version, with hashes")
+    for block in re.split(r"\n(?=[A-Za-z0-9])", lock_text):
+        first = block.splitlines()[0] if block.strip() else ""
+        if first and not first.startswith("#"):
+            check("--hash=sha256:" in block, f"requirements/proxy.lock: {first.split()[0]} has no hash")
+    for path in tracked_files():
+        rel = path.relative_to(ROOT).as_posix()
+        if rel.startswith(_INSTALL_SKIP) or not (path.suffix in _INSTALL_SUFFIXES or path.name.startswith(_INSTALL_NAMES)):
+            continue
+        if path.suffix == ".lock":
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        is_requirements = path.suffix == ".in" or (path.suffix == ".txt" and "requirements" in rel.lower())
+        problems = install_line_problems(text, requirement_file=is_requirements)
+        check(not problems, f"{rel} installs litellm without an exact == version or a lock file: " + "; ".join(problems[:3]))
+        if path.name == "pyproject.toml":
+            for spec in re.findall(r"""["'](litellm[^"']*)["']""", text):
+                check(not unpinned_litellm(spec), f"{rel}: dependency '{spec}' is not an exact == pin")
+        # One version everywhere: an install line that names a version must name the locked one.
+        for line in text.splitlines():
+            commands = [line] if is_requirements else [_command_tail(m.group(1)) for m in _INSTALLER.finditer(line)]
+            for command in commands:
+                for version in re.findall(r"litellm(?:\[[^\]]*\])?==(\d[\w.]*)", command):
+                    check(version == pins[0], f"{rel} installs litellm=={version}, but requirements/proxy.lock pins {pins[0]}")
+
+
 def main() -> int:
     steps = [
         scenario_hook_callback,
@@ -543,6 +682,7 @@ def main() -> int:
         scenario_catalogue_v2,
         scenario_oneoff_and_also_env,
         scenario_native_retry_after,
+        scenario_supply_chain,
     ]
     for step in steps:
         try:

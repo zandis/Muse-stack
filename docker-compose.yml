@@ -8,10 +8,17 @@
 # The Docker Hub litellm/litellm tags are amd64-only and will not run on an
 # Oracle Cloud Ampere VM. Spend logs are a separate compose file:
 # docker-compose.spend.yml.
+#
+# The image is pinned by the digest of its multi-arch index, so the tag cannot
+# be moved under us (README "Supply chain"). Resolved from ghcr.io on 2026-11-13:
+#   linux/amd64  sha256:4e613e7667a8c3bc2e6f4e55e4ca96a410f050d6d6da29d69c94c0b1b6aaeb0c
+#   linux/arm64  sha256:23192ecdb958f1a822947a44333dc4bb8fd5921c40a04e9cc502578e2a21c5bb
+# Check it again with: python scripts/verify_litellm.py --image
+# Never use latest, main-latest or main-stable here; scripts/validate_config.py refuses them.
 
 services:
   litellm:
-    image: ghcr.io/berriai/litellm:v1.108.5
+    image: ghcr.io/berriai/litellm:v1.108.5@sha256:008a5916c0a0ca6f4f6ad64969f6a4ef6f03ce885a639f3d97fd53665754ce48
     restart: unless-stopped
     env_file:
       - path: .env

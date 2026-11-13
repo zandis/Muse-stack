@@ -54,8 +54,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install
-        run: python -m pip install -e ".[dev]" "litellm[proxy]==1.108.5"
+      - name: Install from the hash-locked lists
+        # proxy.lock: litellm[proxy] and its dependencies (PyYAML and cryptography
+        # included). dev.lock: pytest and setuptools. Then the repo itself, with
+        # nothing fetched: no dependency resolution and no build isolation.
+        run: |
+          python -m pip install --require-hashes -r requirements/proxy.lock -r requirements/dev.lock
+          python -m pip install --no-build-isolation --no-deps -e .
+      - name: The installed LiteLLM is the pinned one
+        run: python scripts/verify_litellm.py
       - name: Hook and proxy tests
         run: python -m pytest tests/test_hook_unit.py tests/integration -q
 

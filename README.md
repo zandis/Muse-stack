@@ -19,6 +19,7 @@ pip install -e .            # add ".[keyring]" to store keys in the OS keychain
 muse keys set GEMINI_API_KEY   # prompts; a key is never taken from the command line
 muse local discover --write    # find Ollama / LM Studio / llama.cpp models, if any
 muse up                        # start the proxy (Docker). `muse up --native` if litellm is installed
+                               # (install it with: pip install --require-hashes -r requirements/proxy.lock)
 muse status                    # providers, quotas, reset countdowns, recent calls
 muse dash                      # the same as a page on http://127.0.0.1:4180
 muse ask "hello" --alias fast --privacy local --show-route
@@ -121,6 +122,7 @@ The rules, in plain words:
 - A per-app daily cap (requests or tokens) ends that app's day at the cap until local midnight.
 - Paid providers are used only by apps allowed to, only while today's paid spend is under `MUSE_DAILY_PAID_CAP_USD` (default 1.00; 0 turns paid use off), and only when the price is known.
 - A request that is turned away gets HTTP 429 with `x-muse-ration: defer:<reason>` (try again later; nothing was sent upstream) or `refuse:<reason>` (not today), plus `Retry-After`. A 429 without that header comes from a provider.
+- A provider's 429 is passed on at once, with the same status, and says when to come back: `x-muse-wait: provider-limit` plus `Retry-After`, the seconds (at least 1) until the quota block that 429 set, or met, ends. The same pair is sent when every allowed deployment was already blocked by a provider quota, with the soonest reset. It is a separate header on purpose: `x-muse-ration` keeps meaning "Muse turned this away". The pair is never sent with a privacy refusal, never when the request ended in some other error, and never on a 200 that a fallback produced. On the plain proxy (`MUSE_DISABLE_HOOK=true`) there is no such header.
 
 The background queue runs non-urgent jobs on allowance that would otherwise be wasted, without getting in the way of what you are doing:
 
@@ -133,7 +135,7 @@ muse queue list ; muse queue show ID --output ; muse queue cancel ID ; muse queu
 muse pause ; muse resume                            # stops and restarts the queue; the proxy keeps working
 ```
 
-Jobs live in `~/.muse/queue.sqlite` (separate from the usage ledger because they hold your prompts; a finished job's prompt is erased). Results are written to `~/.muse/queue-out/` or the path you give, never to the ledger or a log. The runner is a background app named `queue` that Muse creates and keeps (its key is stored in the key store and never printed). It does what the proxy says: a deferral is retried after `Retry-After` plus a little random delay, an app cap holds all queue jobs until midnight, a provider 429 or server error backs off exponentially, a privacy refusal is final, and a job past its `--by` deadline fails instead of paying. The queue is free-only unless a job is added with `--allow-paid`, which uses a second managed app (`queue-paid`) that is still bound by the daily paid cap. `muse status` and the dashboard show the apps, the paid total and the queue.
+Jobs live in `~/.muse/queue.sqlite` (separate from the usage ledger because they hold your prompts; a finished job's prompt is erased). Results are written to `~/.muse/queue-out/` or the path you give, never to the ledger or a log. The runner is a background app named `queue` that Muse creates and keeps (its key is stored in the key store and never printed). It does what the proxy says: a deferral is retried after `Retry-After` plus a little random delay, an app cap holds all queue jobs until midnight, a provider 429 is retried at its `Retry-After` when the proxy marks it `x-muse-wait: provider-limit` and otherwise backs off exponentially like a server error, a privacy refusal is final, and a job past its `--by` deadline fails instead of paying. The queue is free-only unless a job is added with `--allow-paid`, which uses a second managed app (`queue-paid`) that is still bound by the daily paid cap. `muse status` and the dashboard show the apps, the paid total and the queue.
 
 To check the real providers with your own keys, see [docs/real-key-checklist.md](docs/real-key-checklist.md).
 
@@ -200,7 +202,7 @@ Background health checks are off. A check every few seconds would burn the free 
 
 ## Setup
 
-Docker, and a Compose v2 plugin. The proxy image is `ghcr.io/berriai/litellm:v1.108.5` (amd64 and arm64).
+Docker, and a Compose v2 plugin. The proxy image is `ghcr.io/berriai/litellm:v1.108.5` (amd64 and arm64), pinned by digest in `docker-compose.yml`; see "Supply chain" below.
 
 ```bash
 cp .env.example .env
@@ -242,6 +244,47 @@ python3 scripts/render_config.py --env-file .env --stdout
 ```
 
 PyYAML is the only dependency of the renderer (`pip install pyyaml`). The container image already has it.
+
+### Supply chain
+
+LiteLLM is the one large third-party program that sees every provider key, so the repo fixes exactly which LiteLLM runs. The reason is recent: on 21 October 2026 LiteLLM's own release pipeline published a malicious `litellm==1.107.0` to PyPI and pointed the image tags `v1.107.0`, `latest`, `main-latest` and `main-stable` at a malicious image for about two hours ([incident report](https://docs.litellm.ai/blog/security-incident-oct-21-2026), [how it happened](https://docs.litellm.ai/blog/security-incident-oct-21-2026-attack-chain), [what they are changing](https://docs.litellm.ai/blog/security-changes-after-oct-21-2026)). Those artefacts were validly signed with LiteLLM's old image-signing key, so a signature alone did not help; a pinned version or digest did.
+
+What is pinned:
+
+- **The image, by digest.** `docker-compose.yml` uses `ghcr.io/berriai/litellm:v1.108.5@sha256:008a5916c0a0ca6f4f6ad64969f6a4ef6f03ce885a639f3d97fd53665754ce48`. That is the multi-arch index (linux/amd64 `sha256:4e613e76…`, linux/arm64 `sha256:23192ecd…`; both in full in the compose file), read from ghcr.io on 13 November 2026. Docker pulls by the digest, so moving the tag changes nothing here.
+- **The Python install, by hash.** `requirements/proxy.lock` lists `litellm[proxy]==1.108.5` and all 119 packages it pulls in, each with the SHA-256 of every file PyPI holds for that version. `pip install --require-hashes -r requirements/proxy.lock` refuses anything else. `requirements/dev.lock` does the same for pytest and setuptools. The resolution is for CPython 3.12 and 3.13 on any platform, Linux x86_64 and aarch64 included; it was installed and tested on CPython 3.12 and 3.13 on Linux x86_64; for Linux aarch64 every pinned wheel was fetched with hash checking for both Pythons, but not installed or run there. PyPI received the 1.108.5 files on 10 November 2026 at 22:47 UTC, after the incident and after the key change.
+- **The rules.** `scripts/validate_config.py` fails if a compose file names a LiteLLM image without an `@sha256:` digest or with a floating tag (`latest`, `main-latest`, `main-stable`, `main`), or if any tracked file installs `litellm` without an exact `==` version or the lock file.
+
+How to check:
+
+```bash
+python scripts/verify_litellm.py            # the installed package and the incident's indicator files
+python scripts/verify_litellm.py --image    # also asks ghcr.io what the tag points at (the only network use)
+```
+
+It reads no key and changes nothing; exit status 0 is clean, 1 a problem, 2 something it could not check. It compares the installed version with the lock, every installed LiteLLM file with the hash pip recorded at install, looks for `cook.pth`, `cook.py`, an unexpected `sitecustomize.py` and `/tmp/remote_code_loader.lock`, and with `--image` compares the pinned digest with the registry and with the digest LiteLLM listed as compromised. It cannot tell whether the wheel pip installed was the right one (only `--require-hashes` does that, at install time), and finding no indicator file does not prove an environment was never exposed. To inspect an environment you distrust, do not start its own Python: run the script from another interpreter with `--site-packages DIR`.
+
+The image signature can be checked with [cosign](https://docs.sigstore.dev/cosign/). LiteLLM replaced its signing key on 23 October 2026 and says every release since 24 October is signed with the new one. The SHA-256 of the new `cosign.pub` is `e3fe3e08c44b16407fe0b37c43b4f8b603b3a0f4ee74c29e647bc022d762c2c0`:
+
+```bash
+curl -sL https://raw.githubusercontent.com/BerriAI/litellm/e82a3c646908ba0a6ee0beddc4310d7a6cac4065/cosign.pub -o cosign.pub
+shasum -a 256 cosign.pub      # must print e3fe3e08…c2c0
+cosign verify --key cosign.pub ghcr.io/berriai/litellm@sha256:008a5916c0a0ca6f4f6ad64969f6a4ef6f03ce885a639f3d97fd53665754ce48
+```
+
+On 13 November 2026 the key file had that fingerprint and the signature stored next to this digest on ghcr.io was valid under it (checked by hand with the public key, without the cosign program; the transparency-log entry was not checked). Never accept a signature from the old key for anything published on or after 21 October.
+
+Upgrading LiteLLM is a deliberate change, in this order:
+
+1. Pick a release tag (never a floating one) and read its notes. Leave a new release a few days first: the October one was caught within 20 minutes.
+2. Resolve the tag's digest and put tag and digest in `docker-compose.yml`: `docker buildx imagetools inspect ghcr.io/berriai/litellm:vX.Y.Z` prints the index digest and both platform digests. Check it is not a digest from an incident report, and verify the signature as above.
+3. Change the version in `requirements/proxy.in` and regenerate both lock files with the `uv pip compile` commands in their headers. Compare the litellm hashes with `https://pypi.org/pypi/litellm/X.Y.Z/json` and put the header back.
+4. Change the version where prose still names it (this README, `deploy/oracle-cloud.md`, comments in `muse/`). CI and the setup script install from the lock file and need no edit.
+5. Run `python scripts/validate_config.py`, `python scripts/verify_litellm.py --image` and the whole suite (`python -m pytest tests -q`) in an environment installed from the new lock. The hook relies on LiteLLM internals that are noted with the version they were read in.
+
+One rule goes with this: **provider keys live only in the proxy's environment** (`.env` with mode 600, or the OS keychain handed over by `muse up`). Applications get their own `sk-muse-app-…` key and never a provider key; CI, the lock files, the rendered config and the image hold none. If LiteLLM is ever compromised again, the keys to rotate are the ones in that one place.
+
+Not covered: `pip` itself and the `pip install -e .` of the plain CLI (PyYAML, and the optional extras) are not hash-locked outside the native proxy install, and `postgres:16-alpine` in `docker-compose.spend.yml` is pinned by tag only.
 
 ### Spend logs
 
@@ -349,7 +392,7 @@ It reads `LITELLM_MASTER_KEY` from the environment or from `.env`. It does not c
 
 ## CI
 
-`.github/workflows/ci.yml` renders the config with empty and partial environments and does not call a provider. A second job boots the pinned image with a throwaway master key, checks the health endpoint, and checks that a fake Gemini key exposes the chat and embed aliases without sending a completion.
+`.github/workflows/ci.yml` renders the config with empty and partial environments and does not call a provider. The proxy tests install LiteLLM from `requirements/proxy.lock` with `--require-hashes`. A second job boots the pinned image with a throwaway master key, checks the health endpoint, and checks that a fake Gemini key exposes the chat and embed aliases without sending a completion.
 
 ## Layout
 
@@ -360,6 +403,8 @@ It reads `LITELLM_MASTER_KEY` from the environment or from `.env`. It does not c
 | `scripts/render_and_start.py` | Render, then exec `litellm` |
 | `scripts/smoke_test.py` | Health check plus one call per configured alias |
 | `scripts/validate_config.py` | The CI checks |
+| `scripts/verify_litellm.py` | Checks the installed LiteLLM and the pinned image (read-only, no keys) |
+| `requirements/proxy.lock`, `requirements/dev.lock` | Hash-locked installs: LiteLLM with its dependencies, and the test tools |
 | `docker-compose.yml` | Proxy only |
 | `docker-compose.spend.yml` | Optional Postgres |
 | `.env.example` | Every variable and the page that issues the key |

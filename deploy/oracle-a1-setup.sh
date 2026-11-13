@@ -95,7 +95,13 @@ say "muse CLI"
 [ -d "$VENV" ] || python3 -m venv "$VENV"
 "$VENV/bin/pip" install -q --upgrade pip
 if [ "$MODE" = "native" ]; then
-  "$VENV/bin/pip" install -q -e ".[trust]" "litellm[proxy]==1.108.5"
+  # LiteLLM and everything it pulls in, from the hash-locked list only: pip refuses
+  # any file whose SHA-256 is not in requirements/proxy.lock (README "Supply chain").
+  # The lock already holds PyYAML and cryptography (the repo's own needs, trust layer
+  # included); dev.lock adds setuptools, the build backend for the editable install.
+  "$VENV/bin/pip" install -q --require-hashes -r requirements/proxy.lock -r requirements/dev.lock
+  "$VENV/bin/pip" install -q --no-build-isolation --no-deps -e .
+  "$VENV/bin/python" scripts/verify_litellm.py || fail "the installed LiteLLM did not pass scripts/verify_litellm.py"
 else
   "$VENV/bin/pip" install -q -e ".[trust]"
 fi
