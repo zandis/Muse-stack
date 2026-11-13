@@ -59,6 +59,9 @@ DEFAULT_RECEIPTS_PAGE = 50
 MAX_RECORDS_PER_HOUR = 600  # records one device may add with POST /v1/receipts; they are kept for ever
 # Action families only the home itself writes; POST /v1/receipts refuses them (record-format.md section 1.3).
 HOME_ACTIONS = ("home", "card", "app", "key", "job", "skill", "mandate", "records")
+# The one family a device that is not the person's own may report under. So an action that does not start with
+# `host.` was done or witnessed by the home itself (or noted by the person's own device), never merely claimed by a bot.
+HOST_FAMILY = "host"
 # A setting from the key store whose NAME says it is a secret is never copied into the server's working environment.
 _SECRET_NAME = re.compile(r"(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?)(?:$|_)", re.IGNORECASE)
 
@@ -1078,9 +1081,15 @@ def h_receipts_add(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
     body = req.body
     _fields(body, {"action": str, "summary": str, "outcome": str, "cost": (dict, _NONE), "links": dict, "egress": str,
                    "resource": (str, _NONE)}, required=("action", "summary"))
-    if body["action"].split(".")[0] in HOME_ACTIONS:
-        raise ApiError("invalid_request", "That action name is one only the home itself writes. Use a name of your own, "
-                                          "such as files.write or message.send.")
+    family = body["action"].split(".")[0]
+    if req.device.role == "owner":
+        if family in HOME_ACTIONS or family == HOST_FAMILY:
+            raise ApiError("invalid_request", "That action name is one only the home itself writes, or one kept for host "
+                                              "bots. Use a name of your own, such as note.add.")
+    elif family != HOST_FAMILY:
+        # A helper's own report is always filed under `host.`, so it can never pass for something the home did or saw.
+        raise ApiError("invalid_request", "A device that is not the person's own reports under names that start with "
+                                          "host., such as host.files.write or host.message.send.")
     wait = home.allow_record_from(req.device)
     if wait is not None:
         raise ApiError("too_many_requests", "This device has added a great many records in the last hour. Wait before adding more.",

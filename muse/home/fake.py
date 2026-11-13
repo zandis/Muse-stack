@@ -192,7 +192,7 @@ class FakeHome(api.Home):
             (86400 * 2, "key.store", "Stored a key for the service gemini", {"egress": "none"}),
             (86400 + 7200, "card.create", "Asked whether to save a file", {**bot, "egress": "none"}),
             (86400 + 7100, "card.answer", "Approved: save a file (answered on desktop)", {"egress": "none"}),
-            (86400 + 7000, "files.write", "A host bot says it saved a file", bot),  # its own report: it did not say
+            (86400 + 7000, "host.files.write", "A host bot says it saved a file", bot),  # its own report: it did not say
             (7200, "llm.call", "A skill used Gemini: 3 requests", {**bot, "egress": "service:gemini"}),
             (7190, "skill.run", "Ran the skill files-answer for a host bot", {**bot, "egress": "host:openmausbot-tools"}),
             (3600, "home.pause", "Paused the queue", {"egress": "none"}),

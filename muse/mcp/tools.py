@@ -418,20 +418,23 @@ def t_check_permission(ctx: Context, args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-_RECORD_ACTION = re.compile(r"[a-z][a-z0-9_]{0,31}(?:\.[a-z][a-z0-9_]{0,31}){1,3}")
-# Action families only the home writes (muse.home.api.HOME_ACTIONS); a host's report cannot use them.
-HOME_ACTIONS = ("home", "card", "app", "key", "job", "skill", "mandate", "records")
+_RECORD_ACTION = re.compile(r"[a-z][a-z0-9_]{0,31}(?:\.[a-z][a-z0-9_]{0,31}){1,2}")
+# Everything a host reports is filed under this family (muse.home.api.HOST_FAMILY): the home refuses any other name
+# from a host's device, so a host's own report can never pass for something the home did or saw.
+HOST_FAMILY = "host"
 _RECORD_OUTCOMES = {"done": "ok", "failed": "failed", "declined": "declined", "skipped": "declined"}
 RECORD_NOTE = ("This is this host's own report: Muse wrote down what it was told and cannot check it. It is marked as done by "
                "a helper under this host's device, never as done by the person.")
 
 
 def record_action_name(text: str) -> str:
-    """The dotted action name a record carries. A name already in that form is kept (unless it is one of the
-    home's own families); anything else, such as 'sent an email', becomes `host.sent_an_email`."""
+    """The action name a host's record carries: always under `host.`. A dotted name such as `files.write`
+    becomes `host.files.write`; anything else, such as 'sent an email', becomes `host.sent_an_email`."""
     text = text.strip().lower()
-    if _RECORD_ACTION.fullmatch(text) and text.split(".")[0] not in HOME_ACTIONS:
-        return text
+    if text.startswith(HOST_FAMILY + "."):
+        text = text[len(HOST_FAMILY) + 1:]
+    if _RECORD_ACTION.fullmatch(text):
+        return f"{HOST_FAMILY}.{text}"
     slug = re.sub(r"[^a-z0-9]+", "_", text).strip("_")[:32].strip("_")
     if not slug or not slug[0].isalpha():
         slug = ("x_" + slug)[:32].strip("_")
@@ -791,7 +794,7 @@ TOOLS: tuple[Tool, ...] = (
         + SCOPE_NOTE,
         _obj({
             "action": _str(80, "What kind of action: a dotted name such as files.write, message.send or web.search, or a "
-                               "few words (Muse then files it under host.<your words>).", minLength=1),
+                               "few words. Muse files every host report under host., as host.files.write.", minLength=1),
             "summary": _str(200, "What was done, in one plain sentence on one line. Say it in words: no private content, "
                                  "no names of people, no keys or long codes.", minLength=1),
             "outcome": {"type": "string", "maxLength": 12, "enum": ["done", "failed", "declined", "skipped"], "description": "How it ended."},

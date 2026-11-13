@@ -208,8 +208,9 @@ class SkillRuns:
             self._active[run_id] = device.name
         thread = threading.Thread(target=self._work, args=(run_id, device, skill, args, env), name=f"skill-run-{run_id}", daemon=True)
         self._threads[run_id] = thread
+        started = self.public(self.book.get_run(run_id), device)  # read before the run starts: the reply always says `running`
         thread.start()
-        return self.public(self.book.get_run(run_id), device)
+        return started
 
     def wait(self, run_id: str, timeout: float = 30.0) -> None:
         """For tests and for a clean shutdown: block until a run started here has finished."""
@@ -267,6 +268,7 @@ class SkillRuns:
             self.home.record("llm.call", f"The skill {skill.name} used the service {provider}{count}", egress=where, **who)
         for card_id in cards:
             self.home.record("card.create", "Asked whether to save a file a skill proposed", links={"card": card_id}, egress="none", **who)
+        self._threads.pop(run_id, None)  # the last thing: `wait` covers the records too
 
     def _service(self, provider: str) -> str | None:
         """`service:<id>` for a provider outside this computer; None for a local model, the cache, or a name that is not an id."""

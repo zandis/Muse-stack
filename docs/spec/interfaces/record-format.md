@@ -90,7 +90,8 @@ The format fixes the shape of an action name, not the list. These are the names 
 | `llm.call` | the home | A skill run used an outside service; one record per service, with `egress: service:<id>`. |
 | `files.write` | the home | A file a skill proposed was written after its card was approved (`ok`), or could not be (`failed`). `resource` is `file:<path>`, `links.card` the card. |
 | `mandate.issue`, `mandate.revoke`, `pay.spend` | reserved | For the permissions and payment packages. |
-| anything else | a host bot, through `POST /v1/receipts` | A host's own report of what it did. Always `actor: helper` and `mandate: device:<name>`. A host may not use a name whose first segment is `home`, `card`, `app`, `key`, `job`, `skill`, `mandate` or `records`: those are the home's own. |
+| `host.…` (for example `host.files.write`, `host.message.send`) | a host bot, through `POST /v1/receipts` | A host's own report of what it did. Always `actor: helper` and `mandate: device:<name>`, and always under `host.`: the home refuses any other name from a device that is not the person's own. So a record whose action does not start with `host.` was done or witnessed by the home itself, never merely claimed by a bot. |
+| anything else | the person's own device, through `POST /v1/receipts` | A note of something the person's own app did (`actor: person`). Not a name whose first segment is `home`, `card`, `app`, `key`, `job`, `skill`, `mandate`, `records` or `host`. |
 
 ---
 

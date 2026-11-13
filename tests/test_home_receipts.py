@@ -74,7 +74,7 @@ def test_a_home_with_no_records_says_so(home):
 
 def test_records_come_newest_first_in_bounded_pages(home):
     for i in range(7):
-        ok(home, HOST, "POST", "/v1/receipts", {"action": "files.write", "summary": f"Wrote file number {i}"}, status=201)
+        ok(home, HOST, "POST", "/v1/receipts", {"action": "host.files.write", "summary": f"Wrote file number {i}"}, status=201)
     first = ok(home, OWNER, "GET", "/v1/receipts?limit=3")
     assert [r["seq"] for r in first["records"]] == [6, 5, 4] and first["next_before"] == 4 and first["order"] == "newest_first"
     assert first["verify"] == {"ok": True, "size": 7} and first["device"] == HomeRecords().device() and first["sealed"] is None
@@ -90,17 +90,17 @@ def test_records_come_newest_first_in_bounded_pages(home):
 
 def test_filters_since_action_and_left_device(home):
     post = lambda body: ok(home, HOST, "POST", "/v1/receipts", body, status=201)["record"]  # noqa: E731
-    post({"action": "files.write", "summary": "Wrote a file", "egress": "none"})
-    sent = post({"action": "message.send", "summary": "Sent a message", "egress": "service:gmail"})
-    post({"action": "files.read", "summary": "Read a file"})  # does not say where it went
+    post({"action": "host.files.write", "summary": "Wrote a file", "egress": "none"})
+    sent = post({"action": "host.message.send", "summary": "Sent a message", "egress": "service:gmail"})
+    post({"action": "host.files.read", "summary": "Read a file"})  # does not say where it went
     ok(home, OWNER, "POST", "/v1/pause")
     seqs = lambda query: [r["seq"] for r in ok(home, VIEWER, "GET", "/v1/receipts" + query)["records"]]  # noqa: E731
     assert seqs("") == [3, 2, 1, 0]
-    assert seqs("?action=files") == [2, 0] and seqs("?action=files.write") == [0] and seqs("?action=home") == [3]
+    assert seqs("?action=host.files") == [2, 0] and seqs("?action=host.files.write") == [0] and seqs("?action=host") == [2, 1, 0] and seqs("?action=home") == [3]
     assert seqs("?left_device=true") == [1] and seqs("?left_device=false") == [3, 2, 1, 0]
     when = api._iso_ms(sent["time"])
     assert seqs(f"?since={when}") == [3, 2, 1] and seqs("?since=2100-01-01T00:00:00Z") == []
-    assert seqs(f"?since={when}&action=files&limit=1") == [2]
+    assert seqs(f"?since={when}&action=host.files&limit=1") == [2]
 
 
 @pytest.mark.parametrize("query", ["?limit=0", "?limit=201", "?limit=ten", "?limit=-1", "?before=x", "?before=-3", "?since=yesterday",
@@ -262,7 +262,7 @@ def test_a_records_failure_never_breaks_the_action(home, monkeypatch, caplog):
         job = ok(home, HOST, "POST", "/v1/jobs", {"prompt": "x", "alias": "cheap"}, status=201)
         assert job["recorded"] is False and ok(home, HOST, "DELETE", f"/v1/jobs/{job['job']['id']}")["recorded"] is False
         # The two calls that are about records say plainly that they could not.
-        assert_error(*call(home, HOST, "POST", "/v1/receipts", {"action": "files.write", "summary": "Wrote a file"}), 503, "unavailable")
+        assert_error(*call(home, HOST, "POST", "/v1/receipts", {"action": "host.files.write", "summary": "Wrote a file"}), 503, "unavailable")
         assert_error(*call(home, OWNER, "GET", "/v1/receipts"), 503, "unavailable")
     assert "no record was written for home.pause (OSError)" in caplog.text  # the type only
     for leak in ("CANARY", "/secret/path", "disk full", KEY_CANARY):
@@ -277,7 +277,7 @@ def test_without_the_cryptography_package_the_home_works_and_says_how_to_get_rec
     assert ok(home, OWNER, "POST", "/v1/pause") == {"paused": True, "recorded": False}
     err = assert_error(*call(home, OWNER, "GET", "/v1/receipts"), 503, "unavailable")
     assert "pip install 'muse-stack[records]'" in err["message"]
-    err = assert_error(*call(home, HOST, "POST", "/v1/receipts", {"action": "files.write", "summary": "Wrote a file"}), 503, "unavailable")
+    err = assert_error(*call(home, HOST, "POST", "/v1/receipts", {"action": "host.files.write", "summary": "Wrote a file"}), 503, "unavailable")
     assert "cryptography" in err["message"]
 
 
@@ -292,11 +292,11 @@ def test_a_name_shaped_like_a_key_is_not_copied_into_a_summary(home):
 
 
 def test_the_home_decides_who_did_it(home):
-    by_host = ok(home, HOST, "POST", "/v1/receipts", {"action": "files.write", "summary": "Wrote the weekly digest",
+    by_host = ok(home, HOST, "POST", "/v1/receipts", {"action": "host.files.write", "summary": "Wrote the weekly digest",
                                                        "outcome": "ok", "egress": "none"}, status=201)
     by_owner = ok(home, OWNER, "POST", "/v1/receipts", {"action": "note.add", "summary": "Noted something by hand"}, status=201)
     assert by_host["recorded"] is True and by_host["hash"] == fmt.record_hash(by_host["record"])
-    assert brief(by_host["record"]) == ("files.write", "helper", "device:bot-tools", "ok", "none", "Wrote the weekly digest")
+    assert brief(by_host["record"]) == ("host.files.write", "helper", "device:bot-tools", "ok", "none", "Wrote the weekly digest")
     assert brief(by_owner["record"]) == ("note.add", "person", None, "ok", None, "Noted something by hand")
     assert by_host["record"]["device"] == by_owner["record"]["device"] == HomeRecords().device()  # the home's key, always
     assert by_owner["record"]["prev"] == by_host["hash"] and fmt.verify_chain(chain()) == 2
@@ -306,7 +306,7 @@ def test_the_home_decides_who_did_it(home):
 @pytest.mark.parametrize("extra", [{"actor": "person"}, {"device": "00" * 32}, {"mandate": None}, {"mandate": "m-1"}, {"time": 1},
                                    {"seq": 0}, {"prev": "00" * 32}, {"sig": "00" * 64}, {"v": 1}, {"summary_hash": "00" * 32}])
 def test_a_caller_cannot_choose_its_actor_device_or_time(home, extra):
-    body = {"action": "files.write", "summary": "Wrote a file", **extra}
+    body = {"action": "host.files.write", "summary": "Wrote a file", **extra}
     assert_error(*call(home, HOST, "POST", "/v1/receipts", body), 400, "invalid_request")
     assert chain() == []
 
@@ -314,33 +314,47 @@ def test_a_caller_cannot_choose_its_actor_device_or_time(home, extra):
 @pytest.mark.parametrize("action", ["home.pause", "home.resume", "card.answer", "card.create", "app.create", "key.store", "job.queue",
                                     "skill.run", "mandate.issue", "records.seal"])
 def test_a_device_cannot_write_the_homes_own_actions(home, action):
-    for who in (HOST, OWNER):
-        err = assert_error(*call(home, who, "POST", "/v1/receipts", {"action": action, "summary": "Pretending"}), 400, "invalid_request")
-        assert "only the home itself writes" in err["message"]
+    err = assert_error(*call(home, OWNER, "POST", "/v1/receipts", {"action": action, "summary": "Pretending"}), 400, "invalid_request")
+    assert "only the home itself writes" in err["message"]
+    err = assert_error(*call(home, HOST, "POST", "/v1/receipts", {"action": action, "summary": "Pretending"}), 400, "invalid_request")
+    assert "start with host." in err["message"]
     assert chain() == [] and home.is_paused() is False
 
 
+@pytest.mark.parametrize("action", ["files.write", "llm.call", "pay.spend", "message.send", "note.add", "hosts.files.write", "hostile.act"])
+def test_a_hosts_own_report_is_always_filed_under_host_so_it_cannot_pass_for_what_the_home_did(home, action):
+    """`files.write` and `llm.call` are written by the home itself when it writes an approved file or a skill
+    calls a service. A host bot may claim it wrote a file, but only as `host.files.write`."""
+    err = assert_error(*call(home, HOST, "POST", "/v1/receipts", {"action": action, "summary": "Wrote a file a skill proposed"}), 400, "invalid_request")
+    assert "start with host." in err["message"] and chain() == []
+    got = ok(home, HOST, "POST", "/v1/receipts", {"action": f"host.{action.split('.', 1)[1]}", "summary": "Did something"}, status=201)
+    assert got["record"]["action"].startswith("host.") and got["record"]["actor"] == "helper"
+    # And the family is the host bots' alone: the person's own device does not write under it.
+    assert_error(*call(home, OWNER, "POST", "/v1/receipts", {"action": "host.files.write", "summary": "x"}), 400, "invalid_request")
+    assert [r["action"].split(".")[0] for r in chain()] == ["host"] and api.HOST_FAMILY == "host"
+
+
 @pytest.mark.parametrize("body", [
-    {"action": "files.write"},  # no summary
+    {"action": "host.files.write"},  # no summary
     {"summary": "Wrote a file"},  # no action
-    {"action": "files.write", "summary": ""},
-    {"action": "files.write", "summary": "a" * 201},
-    {"action": "files.write", "summary": "one line\nand another"},
-    {"action": "files.write", "summary": "hidden ‮ override"},
+    {"action": "host.files.write", "summary": ""},
+    {"action": "host.files.write", "summary": "a" * 201},
+    {"action": "host.files.write", "summary": "one line\nand another"},
+    {"action": "host.files.write", "summary": "hidden ‮ override"},
     {"action": "write", "summary": "Not dotted"},
     {"action": "Files.Write", "summary": "Upper case"},
-    {"action": "files.write", "summary": "x", "outcome": "done"},
-    {"action": "files.write", "summary": "x", "cost": {"amount": "30", "currency": "TWD"}},
-    {"action": "files.write", "summary": "x", "cost": {"currency": "TWD", "minor": 1.5}},
-    {"action": "files.write", "summary": "x", "cost": {"currency": "twd", "minor": 1}},
-    {"action": "files.write", "summary": "x", "links": {"note": "y"}},
-    {"action": "files.write", "summary": "x", "links": {"undo_of": "record-3"}},
-    {"action": "files.write", "summary": "x", "egress": "cloud"},
-    {"action": "files.write", "summary": "x", "egress": "service:Gmail"},
-    {"action": "files.write", "summary": "x", "resource": ""},
-    {"action": "files.write", "summary": "x", "resource": "r" * 1025},
-    {"action": "files.write", "summary": 7},
-    {"action": ["files.write"], "summary": "x"},
+    {"action": "host.files.write", "summary": "x", "outcome": "done"},
+    {"action": "host.files.write", "summary": "x", "cost": {"amount": "30", "currency": "TWD"}},
+    {"action": "host.files.write", "summary": "x", "cost": {"currency": "TWD", "minor": 1.5}},
+    {"action": "host.files.write", "summary": "x", "cost": {"currency": "twd", "minor": 1}},
+    {"action": "host.files.write", "summary": "x", "links": {"note": "y"}},
+    {"action": "host.files.write", "summary": "x", "links": {"undo_of": "record-3"}},
+    {"action": "host.files.write", "summary": "x", "egress": "cloud"},
+    {"action": "host.files.write", "summary": "x", "egress": "service:Gmail"},
+    {"action": "host.files.write", "summary": "x", "resource": ""},
+    {"action": "host.files.write", "summary": "x", "resource": "r" * 1025},
+    {"action": "host.files.write", "summary": 7},
+    {"action": ["host.files.write"], "summary": "x"},
 ])
 def test_the_records_module_checks_every_field(home, body):
     err = assert_error(*call(home, HOST, "POST", "/v1/receipts", body), 400, "invalid_request")
@@ -351,16 +365,16 @@ def test_the_records_module_checks_every_field(home, body):
 def test_a_summary_shaped_like_a_key_is_refused_and_never_repeated(home, caplog):
     with caplog.at_level(logging.DEBUG):
         for summary in (f"used {KEY_CANARY}", "token 0123456789abcdef0123456789abcdef0123456789abcdef", "-----BEGIN PRIVATE KEY-----"):
-            status, payload = call(home, HOST, "POST", "/v1/receipts", {"action": "files.write", "summary": summary})
+            status, payload = call(home, HOST, "POST", "/v1/receipts", {"action": "host.files.write", "summary": summary})
             assert_error(status, payload, 400, "invalid_request")
             assert summary not in json.dumps(payload)
     assert chain() == [] and KEY_CANARY not in caplog.text
 
 
 def test_cost_links_resource_and_egress_are_kept_as_the_format_says(home):
-    earlier = ok(home, HOST, "POST", "/v1/receipts", {"action": "files.write", "summary": "Wrote a file"}, status=201)
+    earlier = ok(home, HOST, "POST", "/v1/receipts", {"action": "host.files.write", "summary": "Wrote a file"}, status=201)
     got = ok(home, HOST, "POST", "/v1/receipts", {
-        "action": "pay.spend", "summary": "Paid NT$30 for a lookup", "outcome": "ok", "cost": {"currency": "TWD", "minor": 3000},
+        "action": "host.pay.spend", "summary": "Paid NT$30 for a lookup", "outcome": "ok", "cost": {"currency": "TWD", "minor": 3000},
         "links": {"job": "job-17", "payment_ref": "0x5f2c9a", "undo_of": earlier["hash"]}, "egress": "service:api.example.com",
         "resource": "payee:api.example.com"}, status=201)["record"]
     assert got["cost"] == {"currency": "TWD", "minor": 3000} and got["egress"] == "service:api.example.com"
@@ -372,20 +386,21 @@ def test_cost_links_resource_and_egress_are_kept_as_the_format_says(home):
 
 def test_a_device_cannot_flood_the_records(home, monkeypatch):
     monkeypatch.setattr(api, "MAX_RECORDS_PER_HOUR", 3)
-    body = {"action": "files.write", "summary": "Wrote a file"}
+    body = {"action": "host.files.write", "summary": "Wrote a file"}
     for _ in range(3):
         ok(home, HOST, "POST", "/v1/receipts", body, status=201)
     status, payload = call(home, HOST, "POST", "/v1/receipts", body)
     err = assert_error(status, payload, 429, "too_many_requests")
     assert 1 <= err["retry_after"] <= 3600
-    assert ok(home, OWNER, "POST", "/v1/receipts", body, status=201)["record"]["seq"] == 3  # counted per device
+    mine = {"action": "note.add", "summary": "Noted something"}
+    assert ok(home, OWNER, "POST", "/v1/receipts", mine, status=201)["record"]["seq"] == 3  # counted per device
     home.clock.now += 3600
     assert ok(home, HOST, "POST", "/v1/receipts", body, status=201)["record"]["seq"] == 4
     assert api.MAX_RECORDS_PER_HOUR == 3
 
 
 def test_who_may_read_and_who_may_add(home):
-    body = {"action": "files.write", "summary": "Wrote a file"}
+    body = {"action": "host.files.write", "summary": "Wrote a file"}
     assert call(home, HOST, "POST", "/v1/receipts", body)[0] == 201
     assert_error(*call(home, HOST, "GET", "/v1/receipts"), 403, "forbidden")  # a host bot cannot read the person's records
     assert_error(*call(home, VIEWER, "POST", "/v1/receipts", body), 403, "forbidden")
@@ -395,8 +410,9 @@ def test_who_may_read_and_who_may_add(home):
 
 def test_the_home_actions_table_is_the_one_the_format_document_lists():
     doc = (Path(__file__).resolve().parents[1] / "docs" / "spec" / "interfaces" / "record-format.md").read_text(encoding="utf-8")
-    for family in api.HOME_ACTIONS:
+    for family in (*api.HOME_ACTIONS, api.HOST_FAMILY):
         assert f"`{family}`" in doc, family
+    assert "`host.…`" in doc and "never merely claimed by a bot" in doc
     from muse.mcp import tools
 
-    assert tools.HOME_ACTIONS == api.HOME_ACTIONS
+    assert tools.HOST_FAMILY == api.HOST_FAMILY

@@ -1034,8 +1034,11 @@ components:
         action:
           type: string
           description: |
-            A dotted lower-case name, two to four segments, such as `files.write` or `message.send`.
-            Not one of the home's own families: `home`, `card`, `app`, `key`, `job`, `skill`, `mandate`, `records`.
+            A dotted lower-case name, two to four segments. From a `host` device it must start with
+            `host.` (`host.files.write`, `host.message.send`), so a host's own report can never pass
+            for something the home did. From an `owner` device it is a name of its own (`note.add`),
+            not one of the home's families (`home`, `card`, `app`, `key`, `job`, `skill`, `mandate`,
+            `records`) and not `host`.
         summary: {type: string, minLength: 1, maxLength: 200, description: "What was done, in words, on one line. No content, no names of people, nothing shaped like a key."}
         outcome: {enum: [ok, declined, failed, undone], default: ok}
         cost:

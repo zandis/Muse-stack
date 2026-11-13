@@ -409,7 +409,7 @@ def test_record_action_writes_a_signed_record_on_the_home_and_returns_its_number
     assert not list(Path(os.environ["MUSE_HOME"]).iterdir())  # written by the home, in the home's folder: no copy here
     sent = rig.call("record_action", {"action": "message.send", "summary": "Sent a message", "outcome": "skipped", "sent_to": "service:gmail"})
     last = HomeRecords(rig.home.environ).records()[-1]
-    assert sent["seq"] == before + 1 and (last["action"], last["outcome"], last["egress"]) == ("message.send", "declined", "service:gmail")
+    assert sent["seq"] == before + 1 and (last["action"], last["outcome"], last["egress"]) == ("host.message.send", "declined", "service:gmail")
     for bad in ({}, {"action": "a", "summary": "s", "outcome": "great"}, {"action": "a", "summary": "s" * 201, "outcome": "done"},
                 {"action": "a", "summary": "two\nlines", "outcome": "done"}, {"action": "a", "summary": "s", "outcome": "done", "sent_to": "host:me"},
                 {"action": "a", "summary": "s", "outcome": "done", "sent_to": "home"}, {"action": "a", "summary": "s", "outcome": "done", "actor": "person"},
@@ -420,15 +420,17 @@ def test_record_action_writes_a_signed_record_on_the_home_and_returns_its_number
 
 
 @pytest.mark.parametrize("given,stored", [
-    ("files.write", "files.write"), ("Message.Send", "message.send"), ("saved a file", "host.saved_a_file"), ("web search!", "host.web_search"),
-    ("home.pause", "host.home_pause"), ("card.answer", "host.card_answer"), ("key.store", "host.key_store"), ("skill.run", "host.skill_run"),
-    ("3d print", "host.x_3d_print"), ("\u5beb\u5165\u6a94\u6848", "host.x"), ("a" * 80, "host." + "a" * 32), ("a.b.c.d.e", "host.a_b_c_d_e"),
+    ("files.write", "host.files.write"), ("Message.Send", "host.message.send"), ("saved a file", "host.saved_a_file"),
+    ("web search!", "host.web_search"), ("home.pause", "host.home.pause"), ("card.answer", "host.card.answer"), ("key.store", "host.key.store"),
+    ("skill.run", "host.skill.run"), ("llm.call", "host.llm.call"), ("host.files.write", "host.files.write"), ("a.b.c", "host.a.b.c"),
+    ("a.b.c.d", "host.a_b_c_d"), ("3d print", "host.x_3d_print"), ("\u5beb\u5165\u6a94\u6848", "host.x"), ("a" * 80, "host." + "a" * 32),
+    ("a.b.c.d.e", "host.a_b_c_d_e"), ("host", "host.host"), ("host.", "host.x"),
 ])
-def test_a_hosts_action_name_becomes_a_dotted_name_that_is_never_one_of_the_homes(given, stored):
+def test_a_hosts_action_name_is_always_filed_under_host(given, stored):
     from muse.records import format as fmt
 
     assert tools.record_action_name(given) == stored
-    assert fmt._ACTION.match(stored) and stored.split(".")[0] not in tools.HOME_ACTIONS
+    assert fmt._ACTION.match(stored) and stored.split(".")[0] == tools.HOST_FAMILY == "host"
 
 
 def test_record_action_says_plainly_when_nothing_was_recorded(rig, monkeypatch):

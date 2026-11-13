@@ -67,7 +67,7 @@ All names are fixed. Every result is a small JSON object; no result ever holds a
 | `ask_approval` | Puts a card in front of you and waits: `approved`, `declined`, `expired`, or `pending` if the wait (at most 10 minutes) runs out | Built |
 | `check_approval` | Looks up a card's answer without waiting | Built |
 | `check_permission` | Whether an action may go ahead without asking. It is advisory only: Muse permissions are not built, so this is an interim rule and nothing is enforced on it. It says `allow` only for reading something you listed with `--allow-read`, and `ask` for everything else | Interim |
-| `record_action` | Adds a signed entry to your records saying what the bot did, and returns the entry's number and hash. It is the bot's own report: marked as done by a helper under this host, never as done by you, and Muse cannot check it. A summary is one line with no key or long code in it | Built |
+| `record_action` | Adds a signed entry to your records saying what the bot did, and returns the entry's number and hash. It is the bot's own report: filed under `host.` (a bot's `files.write` is recorded as `host.files.write`), marked as done by a helper under this host, never as done by you, and Muse cannot check it. A summary is one line with no key or long code in it | Built |
 | `queue_job` | Hands Muse a prompt to run later on free allowance. May use paid services only with an approved spend card | Built |
 | `job_status` | How a queued job is doing. Never returns a prompt or an answer | Built |
 | `list_skills` | The skills on your home, what each does, and the names of the folders a skill may be given | Built |
