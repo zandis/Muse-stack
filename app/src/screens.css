@@ -403,3 +403,27 @@ details.card summary {
     flex-direction: column;
   }
 }
+
+/* A line that is a button: the same look as a line that is a link. */
+button.ln {
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  color: inherit;
+  font: inherit;
+  font-size: 1rem;
+}
+button.ln:hover {
+  background: var(--surface2);
+}
+/* The three choices and the over-limit card stand on their own, not inside a second box. */
+.turn .a:has(> .cardx:only-child) {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+.turn .a > .cardx {
+  margin-top: 0;
+}

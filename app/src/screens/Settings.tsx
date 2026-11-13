@@ -42,6 +42,7 @@ function LimitForm({ s, onSaved }: { s: SettingsData; onSaved: (s: SettingsData,
     try {
       const r = await client.saveSettings({ daily_limit_local: value.trim() });
       onSaved(r.settings, r.restart);
+      setValue(r.settings.daily_limit.local);
       setMsg('st_saved');
       retry();
     } catch (err) {
@@ -129,7 +130,7 @@ function About() {
 }
 
 export function Settings() {
-  const { t, choice, setChoice } = useI18n();
+  const { t, lang, choice, setChoice } = useI18n();
   const client = useAppClient();
   const settings = useLoad(useCallback(() => client.settings(), [client]));
   const memory = useLoad(useCallback(() => client.memory(), [client]));
@@ -171,7 +172,6 @@ export function Settings() {
       ) : null}
       {s ? (
         <LimitForm
-          key={s.daily_limit.local}
           s={s}
           onSaved={(next, r) => {
             settings.set(next);
@@ -228,7 +228,7 @@ export function Settings() {
               ))}
             </select>
           </label>
-          <p className="small muted">{t('st_rate', fmtMoney(s.rate, s.currency, 'en'), s.rate_date ?? '')}</p>
+          <p className="small muted">{t('st_rate', fmtMoney(s.rate, s.currency, lang), s.rate_date ?? '')}</p>
         </div>
       ) : null}
       <p className="small okline" role="status" data-testid="settings-note">
@@ -237,7 +237,7 @@ export function Settings() {
       <section className="card stack" aria-labelledby="mem-h" data-testid="memory">
         <h2 id="mem-h">{t('st_memory')}</h2>
         <p className="small">{t('st_memory_none')}</p>
-        {memory.data && memory.data.conversations > 0 ? <p className="small muted">{t('st_memory_convs', fmtNumber(memory.data.conversations, 'en'))}</p> : null}
+        {memory.data && memory.data.conversations > 0 ? <p className="small muted">{t('st_memory_convs', fmtNumber(memory.data.conversations, lang))}</p> : null}
         <button type="button" className="btn sec" onClick={() => forgetDialog.current?.showModal()} data-testid="forget">
           {t('st_forget')}
         </button>

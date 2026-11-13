@@ -31,30 +31,32 @@ function isAmount(v: unknown): v is LocalAmount {
 export function greyLine(line: GreyLine, cost: LocalAmount | null, o: { currency: string; lang: Lang; t: T; now: number }): string {
   const { t, lang } = o;
   const p = line.params ?? {};
+  // Chinese sentences are joined without a space.
+  const j = (a: string, b: string) => (lang === 'zh-TW' ? `${a}${b}` : `${a} ${b}`);
   const service = str(p.service);
   const money = cost ?? (isAmount(p.cost) ? p.cost : null);
   const spent = money ? spentText(money, o.currency, lang, t) : t('gl_nothing');
   switch (line.key) {
     case 'cache':
-      return `${t('gl_cache')} ${t('gl_nothing')}`;
+      return j(t('gl_cache'), t('gl_nothing'));
     case 'local':
-      return `${t('gl_local')} ${spent}`;
+      return j(t('gl_local'), spent);
     case 'skill_local':
-      return `${t('gl_skill_local')} ${t('gl_nothing')}`;
+      return j(t('gl_skill_local'), t('gl_nothing'));
     case 'paid':
-      return `${t('gl_by', service)} ${spent}`;
+      return j(t('gl_by', service), spent);
     case 'free_refill': {
       const at = Date.parse(str(p.refill_at));
       if (Number.isFinite(at) && at > o.now) {
         const left = fmtDuration(at - o.now, lang);
-        return `${left ? t('gl_allowance_in', service, left) : t('gl_allowance_at', service, fmtTime(at, lang))} ${spent}`;
+        return j(left ? t('gl_allowance_in', service, left) : t('gl_allowance_at', service, fmtTime(at, lang)), spent);
       }
-      return `${t('gl_allowance', service)} ${spent}`;
+      return j(t('gl_allowance', service), spent);
     }
     case 'free':
-      return `${t('gl_by', service)} ${spent}`;
+      return j(t('gl_by', service), spent);
     case 'free_many':
-      return `${t('gl_many', str(p.count))} ${spent}`;
+      return j(t('gl_many', str(p.count)), spent);
     default:
       return spent;
   }
