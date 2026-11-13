@@ -23,7 +23,7 @@ info:
       and the catalogue, ask the person a question and read its own cards, queue, read and
       cancel its own jobs, add records, and list and run skills; it may not pause or resume,
       connect services, store keys, manage apps, answer a card or read the records. `viewer`
-      may only read status, the catalogue, cards, jobs and records. A `host` sees only the
+      may only read status, the catalogue, cards, jobs, records, the chore list and the settings. A `host` sees only the
       jobs, cards and skill runs it made itself: anyone else's answer `not_found` (404),
       exactly as if they did not exist. Devices created before roles existed are `owner`.
     * A peer that sends a wrong token more than 10 times in 60 seconds gets
@@ -33,10 +33,12 @@ info:
     * Bodies are JSON objects of at most 512 KiB, sent with a `Content-Length`.
     * A reply never holds a provider key, a prompt, a queued job's result, or internal error
       text. The only secret that ever leaves is a new app token, once, when it is created or
-      rotated. One reply holds the person's content on purpose: a skill run's answer
-      (`GET /v1/skills/runs/{id}`), given to the device that started the run.
+      rotated. Replies that hold the person's content on purpose: a skill run's answer
+      (`GET /v1/skills/runs/{id}`), given to the device that started the run, and the person's own
+      questions and answers (`/v1/ask`, `/v1/conversations`), given only to an `owner` device.
     * A request that holds anything shaped like a key or token is refused with a generic 400
-      (`invalid_request`), everywhere except `POST /v1/keys/{provider}`.
+      (`invalid_request`), everywhere except `POST /v1/keys/{provider}` and
+      `POST /v1/connect/flows/{state_id}/code` (the one-time code of a one-tap connection).
     * The home writes a signed record (`docs/spec/interfaces/record-format.md`) of what it does
       through this API: a card asked or answered, pause and resume, an app added, changed,
       removed or given a new token, a key stored (the service's id only), a job queued or
@@ -78,10 +80,10 @@ x-error-codes:
 x-role-scopes:
   owner: [status.read, catalogue.read, connect.write, keys.write, jobs.read, jobs.write, cards.read, cards.ask,
           cards.answer, pause.write, apps.read, apps.write, receipts.read, receipts.write, skills.read, skills.run,
-          mandates.read]
+          mandates.read, ask.write, chores.read, chores.write, settings.read, settings.write, home.admin]
   host: [status.read, catalogue.read, jobs.read, jobs.write, cards.read, cards.ask, receipts.write, skills.read,
          skills.run]
-  viewer: [status.read, catalogue.read, jobs.read, cards.read, receipts.read]
+  viewer: [status.read, catalogue.read, jobs.read, cards.read, receipts.read, chores.read, settings.read]
 
 paths:
   /v1/status:
@@ -777,6 +779,578 @@ paths:
         "501": {$ref: "#/components/responses/NotBuilt"}
         default: {$ref: "#/components/responses/Error"}
 
+  /v1/ask:
+    post:
+      operationId: ask
+      x-scope: ask.write
+      x-roles: [owner]
+      summary: "Ask a question; get an answer, or the choices when it cannot be answered now."
+      description: |
+        The home sends the question through the router as its own interactive app, or, when
+        `attachments` names folders from the person's approved list, runs the `files-answer` skill over
+        them. The reply is always 200 with an `answer` whose `status` says what happened:
+        `answered` (text, `route` with the grey line as a key and values for the client to format, `details`,
+        `sources` when the skill answered), `choices` (exactly the options the router's refusal named, in the
+        fixed order wait, handoff, pay), `pending` (the files skill is still running: poll `GET /v1/ask/{id}`),
+        or `failed` with a `reason`. The question and the answer are kept on the home in a private file
+        (`conversations.sqlite`, mode 0600; the vault replaces it), bounded, never logged, never in a
+        record or the usage ledger. No streaming: the reply comes when the whole answer is there.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/AskRequest"}
+      responses:
+        "200":
+          description: "What happened to the question."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AskReply"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/ask/{id}:
+    get:
+      operationId: getAsk
+      x-scope: ask.write
+      x-roles: [owner]
+      summary: "One question and its answer as it stands now."
+      description: |
+        Looks again at an answer that was on its way: a files run that finished, or a question queued by `wait` that has since been answered.
+      parameters:
+        - {$ref: "#/components/parameters/turnId"}
+      responses:
+        "200":
+          description: "The question and its answer."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AskReply"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/ask/{id}/choose:
+    post:
+      operationId: chooseAsk
+      x-scope: ask.write
+      x-roles: [owner]
+      summary: "Take one of the choices offered for a question."
+      description: |
+        `wait` queues the question (the answer carries `job_id`; its title in status is the fixed key
+        `question_for_later`). `handoff` records that the person opened it in their own app (`app`: one of the
+        offered ids); nothing is sent anywhere by Muse. `pay` sends it again with `x-muse-allow-paid: true`; when
+        that would pass today's limit the answer is `over_limit` with the amount over and `raise_today`, and
+        nothing is spent until a second call repeats `pay` with `raise_today: true`. A limit raised this way
+        holds for the home's own requests today; if the router's own cap still refuses, the answer is
+        `failed` with reason `router_limit`.
+      parameters:
+        - {$ref: "#/components/parameters/turnId"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/AskChoice"}
+      responses:
+        "200":
+          description: "The answer after the choice."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AskReply"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/conversations:
+    get:
+      operationId: listConversations
+      x-scope: ask.write
+      x-roles: [owner]
+      summary: "The kept conversations, newest first."
+      description: |
+        Each with the first words of its first question. Only the person's own device may read them.
+      responses:
+        "200":
+          description: "The conversations."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ConversationList"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/conversations/{id}:
+    get:
+      operationId: getConversation
+      x-scope: ask.write
+      x-roles: [owner]
+      summary: "One conversation: its questions and answers, oldest first."
+      parameters:
+        - {$ref: "#/components/parameters/conversationId"}
+      responses:
+        "200":
+          description: "The turns."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Conversation"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+    delete:
+      operationId: deleteConversation
+      x-scope: ask.write
+      x-roles: [owner]
+      summary: "Erase a conversation from the home."
+      parameters:
+        - {$ref: "#/components/parameters/conversationId"}
+      responses:
+        "200":
+          description: "Erased."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: {type: boolean}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/chores:
+    get:
+      operationId: listChores
+      x-scope: chores.read
+      x-roles: [owner, viewer]
+      summary: "The chores, as the sentences they were added with."
+      description: |
+        Each with its last result, next run, budget, the five lines it was confirmed with, and whether it runs only when there is allowance to spare.
+      responses:
+        "200":
+          description: "The chores."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ChoreList"}
+        default: {$ref: "#/components/responses/Error"}
+    post:
+      operationId: addChore
+      x-scope: chores.write
+      x-roles: [owner]
+      summary: "Save a chore from an understood object."
+      description: |
+        Send back the `understood` object of `POST /v1/chores/understand` (with `ok: true`). It is checked again on the home; a chore made this way never spends money.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/NewChore"}
+      responses:
+        "201":
+          description: "The new chore."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ChoreReply"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/chores/understand:
+    post:
+      operationId: understandChore
+      x-scope: chores.write
+      x-roles: [owner]
+      summary: "What the home understands from a sentence. Nothing is saved."
+      description: |
+        Rules only: no model is asked. `ok` is true when nothing is left to ask; otherwise `questions` says what is missing. `folders` and `out` are names from the person's approved folder list.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ChoreSentence"}
+      responses:
+        "200":
+          description: "What was understood."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UnderstoodReply"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/chores/{id}:
+    patch:
+      operationId: updateChore
+      x-scope: chores.write
+      x-roles: [owner]
+      summary: "Pause, resume, or change a chore by sentence."
+      description: |
+        `enabled: false` pauses and `true` resumes. `understood` (from `POST /v1/chores/understand`) replaces the sentence and keeps the history.
+      parameters:
+        - {$ref: "#/components/parameters/choreId"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ChoreChange"}
+      responses:
+        "200":
+          description: "The chore after the change."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ChoreReply"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+    delete:
+      operationId: deleteChore
+      x-scope: chores.write
+      x-roles: [owner]
+      summary: "Delete a chore and its history. Files it already wrote are untouched."
+      parameters:
+        - {$ref: "#/components/parameters/choreId"}
+      responses:
+        "200":
+          description: "Deleted."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: {type: boolean}
+                  recorded: {type: boolean}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/chores/{id}/run:
+    post:
+      operationId: runChore
+      x-scope: chores.write
+      x-roles: [owner]
+      summary: "Run a chore now."
+      description: |
+        Answers at once. The history says how it went; a result waits as a "Save a file" card. Refused with `conflict` while everything is paused. No request body.
+      parameters:
+        - {$ref: "#/components/parameters/choreId"}
+      responses:
+        "202":
+          description: "Started."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ChoreRunReply"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/chores/{id}/history:
+    get:
+      operationId: getChoreHistory
+      x-scope: chores.read
+      x-roles: [owner, viewer]
+      summary: "The runs of a chore, newest first, at most 50."
+      parameters:
+        - {$ref: "#/components/parameters/choreId"}
+      responses:
+        "200":
+          description: "The runs."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ChoreHistory"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/services:
+    get:
+      operationId: listServices
+      x-scope: catalogue.read
+      x-roles: [owner, host, viewer]
+      summary: "What is connected and how much is left, what to add, other allowances and subscriptions."
+      description: |
+        One entry per connected service: what is left today (`estimated` when it is not a figure the service reported), when it refills, what it is good for, its privacy badge, when the catalogue was last checked. `add` is the ranked list with minutes and whether a card or phone number is needed (`unknown` when not confirmed).
+      responses:
+        "200":
+          description: "The Services screen as data."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Services"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/services/{id}/test:
+    post:
+      operationId: testService
+      x-scope: keys.write
+      x-roles: [owner]
+      summary: "One small request that checks the stored key. No prompt is sent."
+      description: |
+        The catalogue's own key check (`muse connect --test`). `result` is `ok`, `refused`, `limited`, `failed`, `no_test` or `no_key`. No request body.
+      parameters:
+        - {$ref: "#/components/parameters/serviceId"}
+      responses:
+        "200":
+          description: "How the check went."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ServiceTest"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/services/{id}:
+    delete:
+      operationId: disconnectService
+      x-scope: keys.write
+      x-roles: [owner]
+      summary: "Disconnect: remove the service's key from this home."
+      description: |
+        The router keeps using the key it started with until it is restarted; `restart` says so.
+      parameters:
+        - {$ref: "#/components/parameters/serviceId"}
+      responses:
+        "200":
+          description: "Removed."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ServiceRemoved"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/connect/{provider}/start:
+    post:
+      operationId: startOneTap
+      x-scope: connect.write
+      x-roles: [owner]
+      summary: "Start the one-tap connection (OAuth PKCE) and get the address to open."
+      description: |
+        For services whose catalogue method is `oauth_pkce` (OpenRouter). The home makes the PKCE pair and
+        keeps the verifier; the client opens `url` in the person's browser and polls
+        `GET /v1/connect/flows/{state_id}`. With `same_device: true` the browser is on the home's own computer:
+        the home listens on 127.0.0.1 for the service's redirect, exactly as `muse connect` does (`mode:
+        loopback`). Otherwise (a phone, a remote client) a redirect to localhost would not reach the home, so
+        `mode` is `paste_code`: the service shows a code, and the client sends it with
+        `POST /v1/connect/flows/{state_id}/code`. A flow ends after 5 minutes.
+      parameters:
+        - {$ref: "#/components/parameters/provider"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/OneTapStart"}
+      responses:
+        "201":
+          description: "The flow and the address to open."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Flow"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/connect/flows/{state_id}:
+    get:
+      operationId: getOneTap
+      x-scope: connect.write
+      x-roles: [owner]
+      summary: "Where a one-tap connection stands: pending, connected or failed."
+      description: |
+        When `connected`, `gained` says what was added and `restart` whether the router must start again to use it.
+      parameters:
+        - {$ref: "#/components/parameters/flowId"}
+      responses:
+        "200":
+          description: "The flow."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Flow"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+    delete:
+      operationId: cancelOneTap
+      x-scope: connect.write
+      x-roles: [owner]
+      summary: "Cancel a one-tap connection and stop listening."
+      parameters:
+        - {$ref: "#/components/parameters/flowId"}
+      responses:
+        "200":
+          description: "Cancelled."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cancelled: {type: boolean}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/connect/flows/{state_id}/code:
+    post:
+      operationId: finishOneTapWithCode
+      x-scope: connect.write
+      x-roles: [owner]
+      summary: "paste_code mode: send the code the service showed."
+      description: |
+        The one other call whose body may hold something key-shaped. The code is traded for the key at once over verified https and kept nowhere.
+      parameters:
+        - {$ref: "#/components/parameters/flowId"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/OneTapCode"}
+      responses:
+        "200":
+          description: "The flow after the exchange."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Flow"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/home/restart-proxy:
+    post:
+      operationId: restartProxy
+      x-scope: home.admin
+      x-roles: [owner]
+      summary: "Restart the router so it reads the current keys and settings."
+      description: |
+        Uses `muse restart`. Answers `conflict` when this home does not manage the router (it was not started by Muse here and Docker was not found). No request body.
+      responses:
+        "200":
+          description: "Restarted."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restarted: {type: boolean}
+                  command: {type: string}
+                  recorded: {type: boolean}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/apps/presets:
+    get:
+      operationId: listAppPresets
+      x-scope: apps.read
+      x-roles: [owner]
+      summary: "Ready-made settings for the programs people point at Muse, and the address to paste."
+      description: |
+        From `muse/presets.py`. `steps` are the exact fields to paste where, with the address filled in and `{key}` left for the app to fill with the new key, once, on the person's screen. `verified_on` is null when the steps were not confirmed against the program's own documentation.
+      responses:
+        "200":
+          description: "The address and the presets."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AppPresets"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/settings:
+    get:
+      operationId: getSettings
+      x-scope: settings.read
+      x-roles: [owner, viewer]
+      summary: "The settings the app shows: daily limit, default privacy, language, currency and rate."
+      responses:
+        "200":
+          description: "The settings."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SettingsReply"}
+        default: {$ref: "#/components/responses/Error"}
+    patch:
+      operationId: changeSettings
+      x-scope: settings.write
+      x-roles: [owner]
+      summary: "Change settings."
+      description: |
+        Written to the home's settings file, the one `MUSE_*` settings are read from. A provider key is never written here. `restart.needed` is true when the router must start again to see the change (the daily limit, the default privacy).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SettingsChange"}
+      responses:
+        "200":
+          description: "The settings after the change."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SettingsReply"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/memory:
+    get:
+      operationId: getMemory
+      x-scope: settings.read
+      x-roles: [owner, viewer]
+      summary: "What the helper remembers about the person. Not built: says so."
+      description: |
+        Helper memory does not exist yet. `built` is false and `items` is empty; `note` is `nothing_remembered`.
+      responses:
+        "200":
+          description: "Nothing is remembered yet."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Memory"}
+        default: {$ref: "#/components/responses/Error"}
+    delete:
+      operationId: forgetEverything
+      x-scope: settings.write
+      x-roles: [owner]
+      summary: "Forget everything the helper keeps about the person."
+      description: |
+        There is no helper memory yet, so this erases the kept conversations, which is all there is.
+      responses:
+        "200":
+          description: "What was erased."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  built: {type: boolean}
+                  items_removed: {type: integer}
+                  conversations_removed: {type: integer}
+                  recorded: {type: boolean}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/verify:
+    post:
+      operationId: verifyInstallation
+      x-scope: home.admin
+      x-roles: [owner]
+      summary: "Check that this installation is genuine."
+      description: |
+        Runs the checks of `scripts/verify_litellm.py` (the installed router against its pinned version and file record, and the known signs of the March 2026 malware). Read-only, no network. No request body.
+      responses:
+        "200":
+          description: "The result and its lines."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Verify"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/about:
+    get:
+      operationId: getAbout
+      x-scope: settings.read
+      x-roles: [owner, viewer]
+      summary: "Versions, the catalogue's date, and which parts of the app are built."
+      description: |
+        `features.recovery` is false until the vault is wired into the home: the app then shows the recovery-key step as coming, never made-up words.
+      responses:
+        "200":
+          description: "About this home."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/About"}
+        default: {$ref: "#/components/responses/Error"}
+
 components:
   securitySchemes:
     deviceToken:
@@ -819,6 +1393,35 @@ components:
       name: id
       in: path
       required: true
+      schema: {type: string, pattern: "^[0-9a-f]{16}$"}
+
+    turnId:
+      name: id
+      in: path
+      required: true
+      description: The id of a question, from `POST /v1/ask`.
+      schema: {type: string, pattern: "^[0-9a-f]{16}$"}
+    conversationId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, pattern: "^[0-9a-f]{16}$"}
+    choreId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, pattern: "^[0-9a-f]{8}$"}
+    serviceId:
+      name: id
+      in: path
+      required: true
+      description: A service id from the catalogue, such as `gemini`.
+      schema: {type: string, pattern: "^[a-z][a-z0-9_]{0,23}$"}
+    flowId:
+      name: state_id
+      in: path
+      required: true
+      description: The `state_id` of a one-tap connection in progress.
       schema: {type: string, pattern: "^[0-9a-f]{16}$"}
 
   responses:
@@ -1068,9 +1671,12 @@ components:
       type: object
       description: |
         The snapshot built by `muse/status.py` (the `Snapshot` type in `muse/types.py` is the
-        full definition), unchanged, plus `api_version`. Fields may be added; none are removed in v1.
+        full definition), unchanged, plus `api_version` and four fields for the app: `money` (the paid
+        total and the daily limit in the person's currency), `activity` (what is running and what
+        finished today, each with a short title), `local_runtime` and `restart_pending`.
+        Fields may be added; none are removed in v1.
       required: [api_version, generated_at, proxy, default_privacy, providers, aliases, recent, totals, apps, paid, queue, paused,
-                 suggestions, resources, subscriptions]
+                 suggestions, resources, subscriptions, money, activity, local_runtime, restart_pending]
       properties:
         api_version: {const: "1"}
         generated_at: {$ref: "#/components/schemas/Time"}
@@ -1092,6 +1698,10 @@ components:
         suggestions: {type: array, items: {type: object}, description: Ranked next services to connect.}
         resources: {type: array, items: {type: object}}
         subscriptions: {type: array, items: {type: object}}
+        money: {$ref: "#/components/schemas/Money"}
+        activity: {$ref: "#/components/schemas/Activity"}
+        local_runtime: {type: boolean, description: An AI on this computer is found and answering.}
+        restart_pending: {type: boolean, description: "A key or setting changed through this API since the router was last restarted through it."}
 
     Bilingual:
       type: object
@@ -1331,3 +1941,561 @@ components:
         recorded: {$ref: "#/components/schemas/Recorded"}
         token: {type: string, readOnly: true, description: The app's router token. Shown this once; store it on the device that needs it.}
         token_shown_once: {const: true}
+
+    # ---- the app's routes (muse/home/app_api.py)
+
+    Amount:
+      type: object
+      description: |
+        Money in US dollars and in the person's currency, as decimal strings. `approx` is true
+        when the local figure was rounded from a conversion.
+      required: [usd, local, approx]
+      properties:
+        usd: {type: string, pattern: '^\d+\.\d{2,4}$'}
+        local: {type: string, pattern: '^\d+(\.\d{2})?$'}
+        approx: {type: boolean}
+
+    Money:
+      type: object
+      description: |
+        The paid total in the person's currency. The rate is a setting, not a lookup:
+        `rate_source` is always `fixed setting`. `daily_limit.source` is `default` until a limit
+        is saved; the default is NT$30 (US$0.9375 at 32). `daily_limit.router_usd` is the cap the
+        router enforces for the same settings, and `in_step` says whether the two agree: they
+        differ on a home that has never stored a key or saved a limit, where the router's own
+        default of US$1.00 still applies to other programs.
+      required: [currency, rate, rate_source, rate_date, spent_today, daily_limit]
+      properties:
+        currency: {type: string, enum: [TWD, USD, JPY, KRW]}
+        rate: {type: string, description: Units of the currency per US dollar.}
+        rate_source: {const: fixed setting}
+        rate_date: {type: string, format: date}
+        spent_today: {$ref: "#/components/schemas/Amount"}
+        daily_limit:
+          allOf:
+            - {$ref: "#/components/schemas/Amount"}
+            - type: object
+              required: [source, router_usd, in_step]
+              properties:
+                source: {type: string, enum: [default, setting]}
+                router_usd: {type: string}
+                in_step: {type: boolean}
+
+    Title:
+      type: object
+      description: |
+        A short human title. `key` names a sentence the app has in every language
+        (`question_for_later`, `questions_for_later`, `file_summary`, `chore`); `text` is set only for
+        a chore, and is the sentence the person wrote for it. Never the words of a plain question.
+      required: [key, params, text]
+      properties:
+        key: {type: string}
+        params: {type: object}
+        text: {type: [string, "null"]}
+
+    Activity:
+      type: object
+      required: [running, done_today]
+      properties:
+        running:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              kind: {type: string, enum: [job, chore]}
+              title: {$ref: "#/components/schemas/Title"}
+              status: {type: string}
+              at: {type: [string, "null"]}
+        done_today:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              kind: {type: string, enum: [job, chore]}
+              title: {$ref: "#/components/schemas/Title"}
+              status: {type: string}
+              at: {type: [string, "null"]}
+              ok: {type: boolean}
+
+    AskRequest:
+      type: object
+      additionalProperties: false
+      required: [text]
+      properties:
+        text: {type: string, minLength: 1, maxLength: 20000}
+        conversation_id: {type: [string, "null"], pattern: "^[0-9a-f]{16}$"}
+        privacy: {type: [string, "null"], enum: [public, standard, private, local, null], description: Default from Settings.}
+        task: {type: [string, "null"], enum: [light, everyday, heavy, frontier, null], default: everyday}
+        attachments:
+          type: array
+          maxItems: 8
+          items: {$ref: "#/components/schemas/FolderName"}
+          description: Folder names from the person's approved list. With any, the `files-answer` skill answers from those folders.
+
+    HandoffApp:
+      type: object
+      description: One of the person's own apps. Links only; the client opens them. `url_app` is present when the app documents a link that opens it.
+      required: [id, name, url_web]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        url_web: {type: [string, "null"]}
+        url_app: {type: string}
+
+    AskAnswer:
+      type: object
+      description: A question and what became of it.
+      required: [id, conversation_id, created_at, question, status]
+      properties:
+        id: {type: string, pattern: "^[0-9a-f]{16}$"}
+        conversation_id: {type: string}
+        created_at: {$ref: "#/components/schemas/Time"}
+        question: {type: string}
+        privacy: {type: [string, "null"]}
+        task: {type: [string, "null"]}
+        attachments: {type: array, items: {type: string}}
+        status: {type: string, enum: [answered, choices, pending, queued, handed_off, over_limit, failed]}
+        text: {type: string, description: The answer. Plain text; render it as text.}
+        route:
+          type: object
+          description: |
+            Which service answered and what it cost. `line` is the grey line as data, for the client to
+            format: `key` is one of `free`, `free_refill`, `paid`, `local`, `cache`, `free_many`,
+            `skill_local`, `unknown`; `params` may hold `service`, `refill_at`, `cost`, `count`.
+          properties:
+            provider: {type: [string, "null"]}
+            name: {type: [string, "null"]}
+            local: {type: boolean}
+            cost: {$ref: "#/components/schemas/Amount"}
+            cache: {type: boolean}
+            refill_hint: {type: [string, "null"], description: When that service's daily allowance next refills, if known.}
+            line:
+              type: object
+              required: [key, params]
+              properties:
+                key: {type: string}
+                params: {type: object}
+        details:
+          type: object
+          description: "Behind Details: the deployment, the task tier, tokens, and the flags `min_output` and `empty_reasoning`."
+        sources:
+          type: array
+          description: "When the files skill answered: the passages it cites."
+          items:
+            type: object
+            properties:
+              n: {type: integer}
+              label: {type: string}
+        handoff:
+          type: object
+          properties:
+            apps: {type: array, items: {$ref: "#/components/schemas/HandoffApp"}}
+        reason:
+          type: string
+          description: "Why there is no answer: used_up, busy, yielding, paid_needed, paid_limit, app_limit, private_no_service, paused, router_unreachable, refused_key, router_limit, empty, skill_failed, skill_busy, failed."
+        choices:
+          type: object
+          description: Exactly the options the router named, in this order. A missing one was not offered.
+          properties:
+            wait:
+              type: object
+              properties:
+                until: {$ref: "#/components/schemas/Time"}
+            handoff:
+              type: object
+              properties:
+                apps: {type: array, items: {$ref: "#/components/schemas/HandoffApp"}}
+            pay: {$ref: "#/components/schemas/Amount"}
+        over_limit:
+          type: object
+          description: Paying would pass today's limit. Nothing was spent.
+          properties:
+            over: {$ref: "#/components/schemas/Amount"}
+            limit: {$ref: "#/components/schemas/Amount"}
+            spent: {$ref: "#/components/schemas/Amount"}
+            pay: {$ref: "#/components/schemas/Amount"}
+            raise_today:
+              type: object
+              properties:
+                to: {$ref: "#/components/schemas/Amount"}
+        job_id: {type: string, description: "After `wait`: the queued job."}
+        run_id: {type: string, description: The files skill's run.}
+        until: {type: string}
+        app:
+          type: object
+          description: "After `handoff`: the app it was opened in."
+
+    AskReply:
+      type: object
+      required: [conversation_id, answer]
+      properties:
+        conversation_id: {type: string}
+        answer: {$ref: "#/components/schemas/AskAnswer"}
+        recorded: {type: boolean}
+        streaming: {const: false}
+
+    AskChoice:
+      type: object
+      additionalProperties: false
+      required: [choice]
+      properties:
+        choice: {type: string, enum: [wait, handoff, pay]}
+        app: {type: [string, "null"], description: "With `handoff`: the id of the app that was opened."}
+        raise_today: {type: boolean, description: "With `pay`, after an `over_limit` answer: raise the limit for today only and pay."}
+
+    ConversationList:
+      type: object
+      required: [conversations]
+      properties:
+        conversations:
+          type: array
+          items:
+            type: object
+            required: [id, created_at, updated_at, turns, preview]
+            properties:
+              id: {type: string}
+              created_at: {$ref: "#/components/schemas/Time"}
+              updated_at: {$ref: "#/components/schemas/Time"}
+              turns: {type: integer}
+              preview: {type: string, description: The first words of the first question.}
+        kept: {type: string}
+        limits: {type: object}
+
+    Conversation:
+      type: object
+      required: [id, turns]
+      properties:
+        id: {type: string}
+        turns: {type: array, items: {$ref: "#/components/schemas/AskAnswer"}}
+
+    Chore:
+      type: object
+      description: A chore as `muse chores list --json` gives it, plus `lines`, `title`, `typical_time` and `paid`.
+      required: [id, sentence, enabled, spare_only, when, budget_text, lines, title]
+      properties:
+        id: {type: string, pattern: "^[0-9a-f]{8}$"}
+        sentence: {type: string}
+        enabled: {type: boolean}
+        spare_only: {type: boolean, description: Runs when there is allowance to spare.}
+        typical_time: {type: [string, "null"], description: "For a spare-allowance chore: when it usually runs, HH:MM."}
+        next_run: {type: [string, "null"]}
+        when: {type: string}
+        budget: {type: object}
+        budget_text: {type: string}
+        paid: {type: boolean}
+        last_run_at: {type: [string, "null"]}
+        last_status: {type: [string, "null"]}
+        last_summary: {type: [string, "null"]}
+        lines: {type: object, description: "what, when, where, budget, permission: the lines it was confirmed with, in the sentence's language."}
+        title: {$ref: "#/components/schemas/Title"}
+
+    ChoreList:
+      type: object
+      required: [chores, can_run, paused]
+      properties:
+        chores: {type: array, items: {$ref: "#/components/schemas/Chore"}}
+        can_run: {type: boolean, description: This home can run chores.}
+        paused: {type: boolean}
+
+    ChoreReply:
+      type: object
+      required: [chore]
+      properties:
+        chore: {$ref: "#/components/schemas/Chore"}
+        recorded: {type: boolean}
+
+    ChoreSentence:
+      type: object
+      additionalProperties: false
+      required: [sentence]
+      properties:
+        sentence: {type: string, minLength: 1, maxLength: 500}
+        folders: {type: array, maxItems: 8, items: {$ref: "#/components/schemas/FolderName"}}
+        out: {type: [string, "null"]}
+
+    Understood:
+      type: object
+      description: What was understood from a sentence (`muse/skills/schedule.py::understand`).
+      required: [ok, sentence, lang, questions]
+      properties:
+        ok: {type: boolean, description: Nothing is left to ask.}
+        sentence: {type: string}
+        lang: {type: string}
+        spec: {type: [object, "null"]}
+        what: {type: string}
+        when: {type: string}
+        where: {type: string}
+        budget: {type: string}
+        permission: {type: string}
+        budget_values: {type: [object, "null"]}
+        questions:
+          type: array
+          items:
+            type: object
+            properties:
+              code: {type: string}
+              text: {type: string}
+        notes: {type: array, items: {type: string}}
+
+    UnderstoodReply:
+      type: object
+      required: [understood, saved]
+      properties:
+        understood: {$ref: "#/components/schemas/Understood"}
+        saved: {const: false}
+
+    NewChore:
+      type: object
+      additionalProperties: false
+      required: [understood]
+      properties:
+        understood: {$ref: "#/components/schemas/Understood"}
+        privacy: {type: [string, "null"]}
+
+    ChoreChange:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        enabled: {type: boolean}
+        understood: {$ref: "#/components/schemas/Understood"}
+
+    ChoreRun:
+      type: object
+      properties:
+        id: {type: string}
+        chore_id: {type: string}
+        status: {type: string, enum: [queued, running, waiting_card, done, partial, failed, needs_choice, skipped, declined, expired]}
+        trigger: {type: string}
+        started_at: {type: [string, "null"]}
+        finished_at: {type: [string, "null"]}
+        summary: {type: [string, "null"], description: Counts and status words; never file contents.}
+        card_id: {type: [string, "null"]}
+        requests: {type: [integer, "null"]}
+        cost_usd: {type: [number, "null"]}
+
+    ChoreRunReply:
+      type: object
+      required: [run]
+      properties:
+        run: {$ref: "#/components/schemas/ChoreRun"}
+        title: {$ref: "#/components/schemas/Title"}
+
+    ChoreHistory:
+      type: object
+      required: [chore_id, runs]
+      properties:
+        chore_id: {type: string}
+        runs: {type: array, items: {$ref: "#/components/schemas/ChoreRun"}}
+
+    Services:
+      type: object
+      required: [connected, add, resources, subscriptions, local_runtime]
+      properties:
+        connected:
+          type: array
+          items:
+            type: object
+            required: [id, name, badge, state]
+            properties:
+              id: {type: string}
+              name: {type: string}
+              badge: {type: string, enum: [local, private, standard]}
+              local: {type: boolean}
+              left:
+                type: [object, "null"]
+                description: The tightest daily limit. `estimated` is false only for a figure the service itself reported.
+              unlimited: {type: boolean}
+              refill_at: {type: [string, "null"]}
+              estimated: {type: boolean}
+              good_for: {type: array, items: {type: string}}
+              checked_on: {type: [string, "null"]}
+              state: {type: string, enum: [ok, busy, used_up, key_refused, "off", unknown]}
+              retry_at: {type: [string, "null"]}
+              can_test: {type: boolean}
+              can_disconnect: {type: boolean}
+        add:
+          type: array
+          description: Ranked by allowance gained per minute.
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              name: {type: string}
+              method: {type: string, enum: [one_tap, guided]}
+              minutes: {type: [integer, "null"]}
+              steps: {type: integer}
+              card: {type: string, enum: ["yes", "no", unknown]}
+              phone: {type: string, enum: ["yes", "no", unknown]}
+              gain: {type: [object, "null"]}
+              key_host: {type: [string, "null"], description: The https host of the service's own key page.}
+              facts: {type: object, description: "`free_per_day` and `may_train`, for the two plain facts shown before connecting."}
+        resources: {type: array, items: {type: object}, description: "Storage, computing and chain allowances: shown, not managed."}
+        subscriptions: {type: array, items: {type: object}, description: The person's own ChatGPT, Claude and Gemini apps. Links only.}
+        local_runtime: {type: boolean}
+        restart_pending: {type: boolean}
+
+    Restart:
+      type: object
+      description: Whether the router must start again to see a change, and whether this home can do that itself (`POST /v1/home/restart-proxy`).
+      properties:
+        needed: {type: boolean}
+        proxy_running: {type: boolean}
+        command: {type: string}
+        managed: {type: boolean}
+
+    ServiceTest:
+      type: object
+      required: [provider, result]
+      properties:
+        provider: {type: string}
+        name: {type: string}
+        result: {type: string, enum: [ok, refused, limited, failed, no_test, no_key]}
+        status: {type: [integer, "null"]}
+        sent_a_prompt: {const: false}
+
+    ServiceRemoved:
+      type: object
+      required: [provider, removed]
+      properties:
+        provider: {type: string}
+        removed: {type: boolean}
+        still_set_elsewhere: {type: boolean, description: The key is also in this process's environment, which the home cannot change.}
+        restart: {$ref: "#/components/schemas/Restart"}
+        recorded: {type: boolean}
+
+    OneTapStart:
+      type: object
+      additionalProperties: false
+      properties:
+        same_device: {type: boolean, default: false, description: The browser that will open `url` is on the home's own computer.}
+
+    OneTapCode:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code: {type: string, maxLength: 512}
+
+    Flow:
+      type: object
+      required: [state_id, provider, mode, status]
+      properties:
+        state_id: {type: string, pattern: "^[0-9a-f]{16}$"}
+        provider: {type: string}
+        mode: {type: string, enum: [loopback, paste_code]}
+        status: {type: string, enum: [pending, connected, failed]}
+        reason: {type: [string, "null"], enum: [timeout, denied, bad_callback, exchange_failed, store_failed, cancelled, bad_code, null]}
+        expires_at: {$ref: "#/components/schemas/Time"}
+        url: {type: string, description: "On start only: the service's own page to open."}
+        name: {type: string}
+        facts: {type: object}
+        gained: {type: object, description: "When connected: the service's name and what it adds, in each language."}
+        restart: {$ref: "#/components/schemas/Restart"}
+
+    AppPresets:
+      type: object
+      required: [endpoint, presets]
+      properties:
+        endpoint: {type: string, description: "The address to paste, such as http://127.0.0.1:4000/v1."}
+        presets:
+          type: array
+          items:
+            type: object
+            properties:
+              kind: {type: string}
+              title: {type: string}
+              priority: {type: string, enum: [interactive, normal, background]}
+              daily_requests: {type: [integer, "null"]}
+              daily_tokens: {type: [integer, "null"]}
+              alias: {type: string}
+              why: {type: string}
+              steps: {type: array, items: {type: string}}
+              key_placeholder: {const: "{key}"}
+              verified: {type: boolean}
+              verified_on: {type: [string, "null"]}
+              checked_on: {type: string}
+              source: {type: string}
+              caveat: {type: [string, "null"]}
+
+    Settings:
+      type: object
+      properties:
+        daily_limit: {$ref: "#/components/schemas/Amount"}
+        default_privacy: {type: string, enum: [standard, private, local]}
+        language: {type: string, enum: [en, zh-TW]}
+        language_set: {type: boolean}
+        currency: {type: string}
+        rate: {type: string}
+        rate_source: {const: fixed setting}
+        rate_date: {type: string}
+        currencies: {type: array, items: {type: string}}
+        languages: {type: array, items: {type: string}}
+        privacy_choices: {type: array, items: {type: string}}
+        restart_pending: {type: boolean}
+
+    SettingsReply:
+      type: object
+      required: [settings]
+      properties:
+        settings: {$ref: "#/components/schemas/Settings"}
+        changed: {type: array, items: {type: string}}
+        restart: {$ref: "#/components/schemas/Restart"}
+        recorded: {type: boolean}
+
+    SettingsChange:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        daily_limit_local: {type: [number, string], description: The daily spending limit in the person's currency. Zero means never spend.}
+        default_privacy: {type: string, enum: [standard, private, local]}
+        language: {type: string, enum: [en, zh-TW]}
+        currency: {type: string, enum: [TWD, USD, JPY, KRW]}
+        usd_rate: {type: [number, string], description: Units of the currency per US dollar.}
+
+    Memory:
+      type: object
+      required: [built, items, note]
+      properties:
+        built: {const: false}
+        items: {type: array, maxItems: 0}
+        note: {const: nothing_remembered}
+        conversations: {type: integer, description: How many conversations are kept on the home.}
+
+    Verify:
+      type: object
+      required: [result, lines]
+      properties:
+        result: {type: string, enum: [ok, problem, unknown]}
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              level: {type: string}
+              text: {type: string}
+
+    About:
+      type: object
+      required: [versions, catalogue, features]
+      properties:
+        versions: {type: object, description: "muse, api, python, router."}
+        catalogue:
+          type: object
+          properties:
+            checked_on: {type: [string, "null"]}
+            services: {type: integer}
+        features:
+          type: object
+          description: What is built. All false today.
+          properties:
+            recovery: {type: boolean}
+            memory: {type: boolean}
+            streaming: {type: boolean}
+            wallet: {type: boolean}
+            export: {type: boolean}
+        endpoint: {type: string}
+        local_runtime: {type: boolean}

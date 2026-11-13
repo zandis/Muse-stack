@@ -64,7 +64,8 @@ def test_every_get_answers_in_every_state_with_the_real_shapes(start, state):
 
     f = start(state)
     snap = f.get("/v1/status")
-    assert set(snap) == set(Snapshot.__annotations__) | {"api_version"} and snap["api_version"] == "1"
+    assert set(snap) == set(Snapshot.__annotations__) | {"api_version", "money", "activity", "local_runtime", "restart_pending"}
+    assert snap["api_version"] == "1"
     assert snap["home"] == "(fake home)"
     cat = f.get("/v1/catalogue")
     assert {"connected", "providers", "suggestions", "resources", "subscriptions"} == set(cat)

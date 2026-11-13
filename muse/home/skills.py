@@ -298,7 +298,7 @@ class SkillRuns:
                 card_id = self.home.cards.create(
                     kind="save_file", title="Save a file", thing=path.name, where=where if len(where) <= 200 else "…" + where[-199:],
                     under=f"The skill {skill} proposed this file", extra={"size_bytes": len(write.data)},
-                    job_ref=f"{RUN_REF}{run_id}")
+                    job_ref=f"{RUN_REF}{run_id}", title_key="save_file_skill", params={"skill": skill})
             except CardError:
                 notes.append("A proposed file could not be put to the person as a question (its name was not accepted, or too many "
                              "questions are waiting), so it will not be written.")

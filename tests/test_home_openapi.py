@@ -11,6 +11,7 @@ from home_fakes import CARD_SCHEMA_PATH, OPENAPI_PATH, card_schema
 from muse.home import API_VERSION, api, cards, server
 
 METHODS = ("get", "post", "put", "patch", "delete", "head", "options", "trace")
+APP_STATUS_FIELDS = {"money", "activity", "local_runtime", "restart_pending"}  # added to the snapshot by muse/home/app_api.py
 
 
 @pytest.fixture(scope="module")
@@ -27,14 +28,14 @@ def test_every_route_is_in_the_file_and_every_listed_route_is_served(spec):
     listed = documented(spec)
     assert served - listed == set(), "served but missing from home-api.v1.yaml"
     assert listed - served == set(), "in home-api.v1.yaml but not served"
-    assert len(api.route_table()) == len(served) == 25  # no route is declared twice
+    assert len(api.route_table()) == len(served) == 53  # no route is declared twice
 
 
 def test_a_route_added_to_the_table_would_fail_this_test(spec, monkeypatch):
     extra = api.Route("GET", "/v1/surprise", api.h_not_built)
     monkeypatch.setattr(api, "ROUTES", api.ROUTES + (extra,))
     assert set(api.route_table()) - documented(spec) == {("GET", "/v1/surprise")}
-    monkeypatch.setattr(api, "ROUTES", api.ROUTES[:-2])
+    monkeypatch.setattr(api, "ROUTES", tuple(r for r in api.ROUTES if r.path not in ("/v1/surprise", "/v1/mandates/artifacts")))
     assert documented(spec) - set(api.route_table()) == {("GET", "/v1/mandates/artifacts")}
 
 
@@ -48,6 +49,16 @@ def test_the_table_is_exactly_the_architecture_list_plus_today(spec):
         ("POST", "/v1/apps/{name}/rotate"), ("GET", "/v1/receipts"), ("POST", "/v1/receipts"),
         ("GET", "/v1/skills"), ("POST", "/v1/skills/{name}/run"), ("GET", "/v1/skills/runs/{id}"),
         ("GET", "/v1/mandates/artifacts"),
+        # The app's screens (muse/home/app_api.py).
+        ("POST", "/v1/ask"), ("GET", "/v1/ask/{id}"), ("POST", "/v1/ask/{id}/choose"),
+        ("GET", "/v1/conversations"), ("GET", "/v1/conversations/{id}"), ("DELETE", "/v1/conversations/{id}"),
+        ("GET", "/v1/chores"), ("POST", "/v1/chores"), ("POST", "/v1/chores/understand"), ("PATCH", "/v1/chores/{id}"),
+        ("DELETE", "/v1/chores/{id}"), ("POST", "/v1/chores/{id}/run"), ("GET", "/v1/chores/{id}/history"),
+        ("GET", "/v1/services"), ("POST", "/v1/services/{id}/test"), ("DELETE", "/v1/services/{id}"),
+        ("POST", "/v1/connect/{provider}/start"), ("GET", "/v1/connect/flows/{state_id}"),
+        ("POST", "/v1/connect/flows/{state_id}/code"), ("DELETE", "/v1/connect/flows/{state_id}"),
+        ("POST", "/v1/home/restart-proxy"), ("GET", "/v1/apps/presets"), ("GET", "/v1/settings"), ("PATCH", "/v1/settings"),
+        ("GET", "/v1/memory"), ("DELETE", "/v1/memory"), ("POST", "/v1/verify"), ("GET", "/v1/about"),
     ])
     assert all(path.startswith(f"/v{API_VERSION}/") for _, path in api.route_table())
     assert spec["info"]["version"] == API_VERSION and spec["openapi"].startswith("3.1")
@@ -64,7 +75,9 @@ def test_planned_routes_are_marked_planned_in_both_places(spec):
 
 
 def test_only_the_keys_route_may_take_a_key():
-    assert [(r.method, r.path) for r in api.ROUTES if r.takes_key] == [("POST", "/v1/keys/{provider}")]
+    # A provider's key, and the one-time code of a one-tap connection (it is traded for the key at once).
+    assert [(r.method, r.path) for r in api.ROUTES if r.takes_key] == [
+        ("POST", "/v1/keys/{provider}"), ("POST", "/v1/connect/flows/{state_id}/code")]
 
 
 def test_path_parameters_are_declared(spec):
@@ -83,7 +96,10 @@ def test_path_parameters_are_declared(spec):
 
 def test_bodies_are_documented_where_the_server_takes_one(spec):
     takes_body = {("POST", "/v1/keys/{provider}"), ("POST", "/v1/jobs"), ("POST", "/v1/cards"), ("POST", "/v1/cards/{id}/answer"), ("POST", "/v1/apps"),
-                  ("PATCH", "/v1/apps/{name}"), ("POST", "/v1/receipts"), ("POST", "/v1/skills/{name}/run")}
+                  ("PATCH", "/v1/apps/{name}"), ("POST", "/v1/receipts"), ("POST", "/v1/skills/{name}/run"),
+                  ("POST", "/v1/ask"), ("POST", "/v1/ask/{id}/choose"), ("POST", "/v1/chores"), ("POST", "/v1/chores/understand"),
+                  ("PATCH", "/v1/chores/{id}"), ("POST", "/v1/connect/{provider}/start"),
+                  ("POST", "/v1/connect/flows/{state_id}/code"), ("PATCH", "/v1/settings")}
     for path, item in spec["paths"].items():
         for method, op in item.items():
             assert ("requestBody" in op) == ((method.upper(), path) in takes_body), (method, path)
@@ -152,7 +168,7 @@ def test_app_and_status_shapes_match_what_is_served(spec):
     from muse.types import Snapshot
 
     status = spec["components"]["schemas"]["Status"]
-    assert set(status["properties"]) == set(Snapshot.__annotations__) | {"api_version"}
+    assert set(status["properties"]) == set(Snapshot.__annotations__) | {"api_version"} | APP_STATUS_FIELDS
     assert set(status["required"]) == set(status["properties"]) - {"home"}
     app = spec["components"]["schemas"]["App"]
     assert set(app["required"]) == set(app["properties"]) == {"name", "priority", "daily_requests", "daily_tokens", "allow_paid",

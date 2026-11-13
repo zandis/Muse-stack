@@ -52,6 +52,9 @@ def _snapshot_for(state: str) -> dict[str, Any]:
 
     snap = demo_snapshot()
     snap["home"] = "(fake home)"
+    from muse.home.app_fake import PRIVATE_DEMO_SERVICE
+
+    snap["providers"].append(json.loads(json.dumps(PRIVATE_DEMO_SERVICE)))  # so the Private badge can be shown working
     if state == "used":
         for p in snap["providers"]:
             if not p.get("configured") or p.get("kind") == "local":
@@ -116,15 +119,24 @@ class FakeHome(api.Home):
         super().__init__(environ, clock=clock)
         self._fake_keys: set[str] = set()
         self._fake_connected: set[str] = set()
+        self._fake_removed: set[str] = set()
+        from muse.home.app_fake import FakeApp
+
+        self.app = FakeApp(self)  # canned behaviour for the app's routes (muse/home/app_api.py)
         self.skills.runner = _fake_skill_run  # a fake home reaches no router: a run "finishes" with a canned answer
         self._seed()
 
     def close(self) -> None:
+        self.app.flows.close()
         if self._own_root:
             shutil.rmtree(self.root, ignore_errors=True)
 
     def settings_env(self) -> dict[str, str]:
-        return dict(self.environ or {})  # a fake home reads no real .env and no real keychain
+        # A fake home reads no real .env and no real keychain: only its own throw-away settings file, which
+        # `PATCH /v1/settings` writes (a limit, a language). Nothing in it is a key.
+        from muse import keys
+
+        return {**keys._dotenv_items(self.environ), **dict(self.environ or {})}  # noqa: SLF001
 
     def run_env(self) -> dict[str, str]:
         return dict(self.environ or {})
@@ -138,6 +150,8 @@ class FakeHome(api.Home):
     def snapshot(self) -> dict[str, Any]:
         snap = _snapshot_for(self.state)
         for p in snap["providers"]:
+            if p["id"] in self._fake_removed:
+                p.update(configured=False, state="no_key", blocked_until=None, block_reason=None, limits=[])
             if p["id"] in self._fake_connected:
                 p["configured"] = True
                 if p.get("state") == "no_key":
@@ -147,7 +161,7 @@ class FakeHome(api.Home):
     def connected_ids(self, cat: Any) -> set[str]:
         real = {p.id for p in cat.providers if not p.local}
         canned = {p["id"] for p in _snapshot_for(self.state)["providers"] if p.get("configured")}
-        return (canned | self._fake_connected) & real
+        return ((canned | self._fake_connected) - self._fake_removed) & real
 
     def save_key(self, name: str, value: str) -> tuple[str, list[str]]:
         self._fake_keys.add(name)  # the value is dropped here: a fake home stores no key
@@ -155,10 +169,20 @@ class FakeHome(api.Home):
         for p in cat.providers:
             if p.env and all(n in self._fake_keys for n in (p.env, *p.also_env)):
                 self._fake_connected.add(p.id)
+                self._fake_removed.discard(p.id)
         return "fake", []
 
     def key_configured(self, name: str) -> bool:
-        return name in self._fake_keys
+        if name in self._fake_keys:
+            return True
+        connected = self.connected_ids(self.load_catalogue())  # a canned connected service "has" its key
+        return any(p.env == name and p.id in connected for p in self.load_catalogue().providers)
+
+    def forget_service(self, provider: Any) -> None:
+        """Disconnect on a fake home: the service is no longer connected for as long as this fake runs."""
+        self._fake_keys.discard(str(provider.env))
+        self._fake_connected.discard(provider.id)
+        self._fake_removed.add(provider.id)
 
     def proxy_running(self) -> bool:
         return self.state != "empty"
@@ -180,6 +204,49 @@ class FakeHome(api.Home):
             wanted = [c for c in wanted if c["state"] != "pending"] + [c for c in wanted if c["state"] == "pending"][:1]
         seed_cards(self.cards, wanted, self.clock())
         self._seed_records()
+        self._seed_app()
+
+    def _seed_app(self) -> None:
+        """Demo data for the app's screens: two folders the person "allowed", three chores, one conversation."""
+        from muse.home import folders
+        from muse.skills import schedule
+
+        feeds, documents = self.root / "demo" / "feeds", self.root / "demo" / "documents"
+        for folder in (feeds, documents):
+            folder.mkdir(parents=True, exist_ok=True)
+        (feeds / "example.xml").write_text("<rss><channel><title>Demo feed</title></channel></rss>\n", encoding="utf-8")
+        try:
+            folders.add("feeds", feeds, environ=self.environ)
+            folders.add("documents", documents, output=True, environ=self.environ)
+        except folders.FolderError:
+            pass
+        store = self.app.chore_store()
+        now = self.clock()
+        demo = (
+            (f"Every Monday 08:00, summarise the feeds in {feeds} into {documents}", True, "done", "3 source(s) summarised, 0 not read; saved"),
+            ("Every day at 07:30, write me a daily brief", True, "waiting_card", "nothing to report this time; waiting for your approval"),
+            (f"每週五，有多餘額度的時候，整理 {feeds} 裡的訂閱摘要", False, None, None),
+        )
+        for sentence, enabled, last, summary in demo:
+            understood = schedule.understand(sentence, tz_name="Asia/Taipei", environ=self.environ)
+            if not understood["ok"]:
+                continue
+            chore = store.add(understood["sentence"], schedule.Spec.from_dict(understood["spec"]), budget=understood["budget_values"],
+                              tz="Asia/Taipei")
+            if last:
+                run = store.add_manual_run(chore.id, now - 3 * 3600)
+                store.settle(run.id, status=last, summary=summary, started_at=now - 3 * 3600, finished_at=now - 3 * 3600 + 42,
+                             requests=3, tokens=5200, cost_usd=0.0)
+                store.mark_ran(chore.id, last, summary, now - 3 * 3600 + 42)
+            if not enabled:
+                store.set_enabled(chore.id, False)
+        if self.state != "used":
+            from muse.home import app_api, app_ask
+
+            question = "What can you do?"
+            reply = self.app.router_send([{"role": "user", "content": question}], privacy="standard", task="everyday", allow_paid=False)
+            self.app.conversations.add_turn(None, question, {"privacy": "standard", "task": "everyday", "attachments": []},
+                                            app_api._answer_from(self, app_ask.classify(reply, now), question, "standard"))  # noqa: SLF001
 
     def _seed_records(self) -> None:
         """A few signed demo records, oldest first, so the Records screen and its filters have something to show:

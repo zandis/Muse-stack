@@ -48,9 +48,21 @@ EXPECTED: dict[tuple[str, str], set[str]] = {
     ("POST", "/v1/skills/{name}/run"): {O, H},
     ("GET", "/v1/skills/runs/{id}"): {O, H},
     ("GET", "/v1/mandates/artifacts"): {O},
+    # The app's screens (muse/home/app_api.py). Asking, the kept conversations, and every change are the person's only.
+    ("POST", "/v1/ask"): {O}, ("GET", "/v1/ask/{id}"): {O}, ("POST", "/v1/ask/{id}/choose"): {O},
+    ("GET", "/v1/conversations"): {O}, ("GET", "/v1/conversations/{id}"): {O}, ("DELETE", "/v1/conversations/{id}"): {O},
+    ("GET", "/v1/chores"): {O, V}, ("POST", "/v1/chores"): {O}, ("POST", "/v1/chores/understand"): {O},
+    ("PATCH", "/v1/chores/{id}"): {O}, ("DELETE", "/v1/chores/{id}"): {O}, ("POST", "/v1/chores/{id}/run"): {O},
+    ("GET", "/v1/chores/{id}/history"): {O, V},
+    ("GET", "/v1/services"): {O, H, V}, ("POST", "/v1/services/{id}/test"): {O}, ("DELETE", "/v1/services/{id}"): {O},
+    ("POST", "/v1/connect/{provider}/start"): {O}, ("GET", "/v1/connect/flows/{state_id}"): {O},
+    ("POST", "/v1/connect/flows/{state_id}/code"): {O}, ("DELETE", "/v1/connect/flows/{state_id}"): {O},
+    ("POST", "/v1/home/restart-proxy"): {O}, ("GET", "/v1/apps/presets"): {O},
+    ("GET", "/v1/settings"): {O, V}, ("PATCH", "/v1/settings"): {O}, ("GET", "/v1/memory"): {O, V}, ("DELETE", "/v1/memory"): {O},
+    ("POST", "/v1/verify"): {O}, ("GET", "/v1/about"): {O, V},
 }
 
-PARAMS = {"provider": "groq", "id": "0123456789ab", "name": "some-name"}  # nothing by these names exists
+PARAMS = {"provider": "groq", "id": "0123456789ab", "name": "some-name", "state_id": "0123456789abcdef"}  # nothing by these names exists
 KEY_CANARY = "gsk_CANARYkey0123456789abcdefABCDEF"
 
 
