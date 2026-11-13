@@ -35,9 +35,25 @@ Said once more, because it matters:
 Under a host bot:
 
 - A bot that asks through `ask_approval` and waits is held by your answer. A bot that does not ask is not held by Muse at all. The host's own Allow and Deny cards are still the only thing between its shell and your files.
-- Muse's records show what went through Muse, and nothing else.
+- Muse's records show what went through Muse, and nothing else. What a bot reports with `record_action` is written down as that bot's own report ("done by a helper under this host"), never as something you did; Muse cannot check it.
 - The tools server holds a device token for your home. It is kept in a file only you can read, but a host that runs commands as you can read your files too. Give a host you would not trust with your account neither door.
-- A device token is not narrowed yet: it can do whatever the home control API allows any device. The tools server uses only the calls listed below. Narrow tokens come with Muse permissions.
+
+### What the host's token can and cannot do
+
+The token `muse hosts setup` makes has the role `host`. The home checks the role on every call, before anything else, so this holds even if a bot takes the token out of its file and calls the home directly. It is enforced by the home, not left to the bot.
+
+| A host token can | A host token cannot |
+|---|---|
+| Read status and the catalogue (what is left, what is connected, whether everything is paused) | Pause or resume |
+| Ask you a question (create a card), and read the cards it asked for | Answer a card: not its own, not anyone's |
+| Queue a job, and read or cancel the jobs it queued | See or cancel a job you or another device queued |
+| Add a record of something it did | Read your records |
+| List skills, run one, and read the runs it started | Give a skill a folder by path, a budget above the skill's own, or money to spend |
+| | Store a key, start connecting a service, see or change apps, or make, change or remove device tokens |
+
+Anything on the right is answered `403`; another device's job, card or run is answered `404`, the same as one that does not exist. `muse home token list` shows each device's role. A token made before roles existed (by an earlier `muse hosts setup`) has no role written down and is treated as `owner`, which can do everything: remove it and run setup again (`muse home token rm <name>-tools`, delete the token file, `muse hosts setup <name>`).
+
+The role limits what the token can do **to the home**. It does not limit the bot's own shell and file tools, as said above.
 
 ## The tools
 
@@ -51,10 +67,12 @@ All names are fixed. Every result is a small JSON object; no result ever holds a
 | `ask_approval` | Puts a card in front of you and waits: `approved`, `declined`, `expired`, or `pending` if the wait (at most 10 minutes) runs out | Built |
 | `check_approval` | Looks up a card's answer without waiting | Built |
 | `check_permission` | Whether an action may go ahead without asking. It is advisory only: Muse permissions are not built, so this is an interim rule and nothing is enforced on it. It says `allow` only for reading something you listed with `--allow-read`, and `ask` for everything else | Interim |
-| `record_action` | Would add an entry to your records. Records are not built: it returns `recorded: false` and writes nothing anywhere | Not built yet |
+| `record_action` | Adds a signed entry to your records saying what the bot did, and returns the entry's number and hash. It is the bot's own report: marked as done by a helper under this host, never as done by you, and Muse cannot check it. A summary is one line with no key or long code in it | Built |
 | `queue_job` | Hands Muse a prompt to run later on free allowance. May use paid services only with an approved spend card | Built |
 | `job_status` | How a queued job is doing. Never returns a prompt or an answer | Built |
-| `list_skills`, `run_skill` | Muse skills. Not connected to host bots yet: they say so and run nothing | Not built yet |
+| `list_skills` | The skills on your home, what each does, and the names of the folders a skill may be given | Built |
+| `run_skill` | Runs one skill on your home and waits for its answer (at most 10 minutes; then `skill_status`). The skill reads only folders you put on a list, given by name (`muse skills folders add`); the bot cannot name a path. It never spends money through this tool. A file the skill proposes becomes a question to you, and Muse writes it only if you approve | Built |
+| `skill_status` | How a run went, and what became of each file it proposed | Built |
 
 Planned and deliberately absent:
 
@@ -65,7 +83,7 @@ Planned and deliberately absent:
 About approvals:
 
 - A host may ask about four kinds of action: saving a file, sending a message in your name, spending, and sending something private to an outside service.
-- The card says it was asked by a host bot. The device that asked cannot answer its own card; you answer from another device or the Muse app.
+- The card says it was asked by a host bot. A host's token cannot answer any card; you answer from your own device or the Muse app.
 - A host may have at most 20 questions waiting at once.
 - If you choose "always allow", Muse records it but does not act on it yet. The bot is told to ask again next time.
 
@@ -86,6 +104,8 @@ muse hosts setup openmausbot                 # the host's own app key (shown onc
 muse hosts show openmausbot                  # print what to paste again; creates nothing, shows no secret
 muse hosts check openmausbot ~/.openmausbot/config.json   # read-only: does an engine point at Muse; which engines do not
 muse home serve                              # the tools server needs the home running
+muse home token list                         # every device and its role (the host's is `host`)
+muse skills folders add notes ~/Notes        # a folder skills may read when a host runs them; add --output to allow new files
 python -m muse.mcp --token-file PATH         # what the host starts; also `muse mcp serve`
 ```
 

@@ -421,6 +421,32 @@ def test_the_guides_say_what_is_and_is_not_protected():
     for tool in ("allowance_status", "suggest_service", "ask_approval", "check_approval", "check_permission", "record_action",
                  "queue_job", "job_status", "list_skills", "run_skill", "pause_status"):
         assert f"`{tool}`" in readme, tool
+    from muse.mcp import tools
+
+    for tool in tools.TOOLS:  # every tool the server has is in the guide's table
+        assert f"`{tool.name}`" in readme, tool.name
+    assert "Not built yet" not in readme
+
+
+def test_the_guides_say_what_a_host_token_can_and_cannot_do_and_it_is_what_the_home_enforces():
+    from muse.home import api, auth
+
+    readme, mausbot = guide("README.md"), guide("openmausbot.md")
+    for text in (readme, mausbot):
+        for want in ("`host`", "muse home token list", "muse skills folders add"):
+            assert want in text, want
+    assert "enforced by the home, not left to the bot" in readme and "The home refuses those calls itself" in mausbot
+    assert "not narrowed yet" not in readme and "otherwise a full device token" not in mausbot
+    # The table in the guide, against the server: each thing it says a host cannot do needs a scope a host does not hold.
+    cannot = {"Pause or resume": "pause.write", "Answer a card": "cards.answer", "Read your records": "receipts.read",
+              "Store a key": "keys.write", "start connecting a service": "connect.write", "see or change apps": "apps.read"}
+    for words, scope in cannot.items():
+        assert words in readme, words
+        assert not auth.allows(auth.HOST, scope) and auth.allows(auth.OWNER, scope), scope
+    assert not auth.allows(auth.HOST, "apps.write")
+    for scope in ("status.read", "catalogue.read", "cards.ask", "cards.read", "jobs.read", "jobs.write", "receipts.write", "skills.read", "skills.run"):
+        assert auth.allows(auth.HOST, scope), scope
+    assert {r.scope for r in api.ROUTES if auth.allows(auth.HOST, r.scope)} == auth.ROLE_SCOPES[auth.HOST]
 
 
 def test_the_openmausbot_guide_marks_every_step_it_could_not_run():

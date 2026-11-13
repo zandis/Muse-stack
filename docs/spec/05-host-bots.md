@@ -78,6 +78,8 @@ With the adapter, a person can choose:
 
 That last line must be said plainly in the app and the docs. Under a host bot, Muse's permissions cover Muse's doors only. The records will show what went through Muse and nothing else.
 
+The tools door is itself limited (built 13 November 2026). The tools server's device token has the role `host`, and the home control API checks a role on every call (part 1 §4.1): a host token can read status and the catalogue, ask the person a question and read its own cards, queue, read and cancel its own jobs, add records, and list and run skills. It cannot pause or resume, store keys, connect services, manage apps, answer a card, read the records, or see another device's jobs, cards or runs. The tools built so far are `allowance_status`, `pause_status`, `suggest_service`, `ask_approval`, `check_approval`, `check_permission` (advisory), `record_action`, `queue_job`, `job_status`, `list_skills`, `run_skill` and `skill_status`; `pay` waits for the payment package.
+
 Amendments to earlier parts:
 
 - **Part 1 §2.3 (helper runtime).** Stays thin on purpose: a runner for Muse's own skills, schedules and cards. It does not grow into a general agent framework. General agent work is delegated to a host bot through the adapter when the person has one.

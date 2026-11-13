@@ -31,8 +31,10 @@ info:
       token is always served. At most 64 connections are served at once; one more gets
       `unavailable` (503) with `retry_after`.
     * Bodies are JSON objects of at most 512 KiB, sent with a `Content-Length`.
-    * A reply never holds a provider key, a prompt, a job's result, or internal error text.
-      The only secret that ever leaves is a new app token, once, when it is created or rotated.
+    * A reply never holds a provider key, a prompt, a queued job's result, or internal error
+      text. The only secret that ever leaves is a new app token, once, when it is created or
+      rotated. One reply holds the person's content on purpose: a skill run's answer
+      (`GET /v1/skills/runs/{id}`), given to the device that started the run.
     * A request that holds anything shaped like a key or token is refused with a generic 400
       (`invalid_request`), everywhere except `POST /v1/keys/{provider}`.
     * The home writes a signed record (`docs/spec/interfaces/record-format.md`) of what it does
