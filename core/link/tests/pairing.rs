@@ -150,7 +150,6 @@ async fn happy_path_new_device_opens_the_vault_with_its_own_slot_and_no_key_cros
     );
     let inv = inv.unwrap();
     let joi = joi.unwrap();
-    drop(install);
     assert_eq!(opened.as_deref(), Some(&b"CANARY-the-person's-private-note"[..]));
     assert!(inv.acknowledged && inv.recorded && joi.recorded);
     assert_eq!(inviter.state(), PairingState::Done);
@@ -189,7 +188,7 @@ async fn happy_path_new_device_opens_the_vault_with_its_own_slot_and_no_key_cros
         canaries.push(vec![n; 32]); // signing seed
         canaries.push(vec![n.wrapping_add(100); 32]); // link secret key
     }
-    let log = log.lock().unwrap();
+    let log = log.lock().unwrap().clone();
     assert!(log.len() >= 10, "{}", log.len());
     for plain in log.iter() {
         for canary in &canaries {
@@ -238,7 +237,6 @@ async fn lost_device_is_removed_cut_off_rotated_out_and_recorded() {
     );
     let paired = inv.unwrap().device;
     joi.unwrap();
-    drop(install);
     // B opens the vault as it was when paired.
     assert!(Vault::open_with_device(b_store.clone(), &b.keystore).is_ok());
 
