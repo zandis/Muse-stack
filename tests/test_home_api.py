@@ -472,10 +472,14 @@ def test_a_malformed_registry_is_reported_and_never_overwritten(rig):
 # ---------------------------------------------------------------- planned, and the error shape
 
 
-@pytest.mark.parametrize("path", ["/v1/mandates/artifacts"])
-def test_planned_calls_answer_not_built(rig, path):
-    err = rig.fails("GET", path, None, 501, "not_built")
-    assert set(err) == {"code", "message"}
+def test_the_permissions_list_answers_or_says_the_library_is_missing(rig):
+    from muse import permissions as P
+
+    if P.available():
+        assert rig.ok("GET", "/v1/mandates/artifacts")["mandates"] == []
+    else:
+        err = rig.fails("GET", "/v1/mandates/artifacts", None, 503, "unavailable")
+        assert set(err) == {"code", "message"}
 
 
 def test_requests_that_cannot_be_understood(rig):
@@ -619,7 +623,12 @@ def test_no_secret_or_prompt_in_any_reply_or_log_line(rig, caplog, capfd):
         rig.ok("POST", "/v1/receipts", {"action": "files.write", "summary": "Wrote a file"}, status=201)
         rig.fails("POST", "/v1/receipts", {"action": "files.write", "summary": PROMPT_CANARY + "\nsecond line"}, 400, "invalid_request")
         rig.ok("GET", "/v1/receipts")
-        rig.fails("GET", "/v1/mandates/artifacts", None, 501, "not_built")
+        from muse import permissions as P
+
+        if P.available():
+            rig.ok("GET", "/v1/mandates")
+        else:
+            rig.fails("GET", "/v1/mandates", None, 503, "unavailable")
         rig.fails("GET", f"/v1/cards/{ERR_CANARY}", None, 404, "not_found")
         rig.ok("DELETE", "/v1/apps/one")
         assert client_for(rig.srv, "wrong-" + ERR_CANARY).call("GET", "/v1/status")[0] == 401

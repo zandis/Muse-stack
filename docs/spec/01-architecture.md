@@ -174,6 +174,15 @@ Each module has one job, a small interface, and a named owner in the code. "Exis
 
 - **Interface.** `compile(mandate) -> [artifact]`, `status(mandate_id) -> per-target state`, `revoke(mandate_id)` which undoes each artifact and writes a revocation receipt.
 - **Invariant.** No artifact exists without a mandate, and every artifact names its mandate id. A nightly check on the home lists artifacts whose mandate is revoked or expired and removes them.
+- **Built (13 November 2026, `muse/compiler/`).** `plan(mandate) -> [ArtifactSpec]` (pure), `apply`, `status`, `revoke`, `sweep(now)`. Three targets are built:
+
+  | Target | What is made | Enforced by | Setting |
+  |---|---|---|---|
+  | Router | For a holder `app:` or `device:` granted `llm.call` / `llm.paid`: an entry in `apps.yaml` carrying `mandate`, `valid_from`, `valid_until`; daily request cap from the `requests` limit, `allow_paid` only with `llm.paid`, default privacy = the mandate's class. The app key is returned once and never stored | `muse/auth.py`: refused (403, "permission stopped" / "has ended") the moment the mandate is stopped or expires, and for a looser `x-muse-privacy`. Reads `MUSE_HOME/permissions/stopped.json`, re-read only when the file changes; no Biscuit library in the proxy | always |
+  | Skills | For holder `helper:<id>`: one stored narrowed token per skill (`job: skill.<name>`), and each named folder on `MUSE_HOME/skill-folders.json` tagged with the mandate id | `muse/compiler/guard.py` in the runner, the home's skill runs and the sandbox's `Policy.authorize`: folder reads, proposed and applied writes, model calls (privacy class), paid calls (estimated amount, usage so far) | `MUSE_PERMISSIONS=off\|advise\|enforce`, default `advise`; a skill not shipped with Muse is always `enforce` |
+  | Records | `mandate.issue` on issue, `mandate.revoke` on stop or expiry | the record chain | always |
+
+  Payments, connectors and the health add-on appear in the plan as `not_built` with a plain reason, never as a green mark. The artifact table is `MUSE_HOME/compiler.sqlite` (0600): a row is written before its artifact and removed after it, so a crash leaves work for the sweep and never an artifact nobody knows about. `muse permissions sweep` (safe every minute) removes artifacts of stopped, expired or missing mandates and remakes missing ones of live mandates (except an app key, which cannot be shown again). The tools server's `check_permission` answers from the host device's own mandate when there is one (`muse hosts setup --permission`), else by the labelled interim rule. Not built: payments, connectors, health, approval with a passkey (v1: an `owner` device), syncing the revocation list to other devices, a usage figure from the router's own ledger (the guard counts a mandate's usage in `compiler.sqlite`).
 
 ### 2.9 Receipts (new in the core; a Python version is parked)
 
@@ -367,7 +376,12 @@ The home writes a record (section 2.9, `docs/spec/interfaces/record-format.md`) 
 | `POST /v1/receipts` | owner, host | A device reports something it did. The home sets who did it (`helper` under `device:<name>` for a host, `person` for an owner), the time and the signing key; a caller cannot |
 | `GET /v1/skills` | owner, host | The skills on the home, what each asks for in plain words, and the folder names a run may be given |
 | `POST /v1/skills/{name}/run`, `GET /v1/skills/runs/{id}` | owner, host (its own) | Run a skill through the ordinary runner and read how it went. Folders are given by name from the person's list (`muse skills folders`), never by path; budget, privacy and task never beyond the skill's own. Proposed files become `save_file` cards and are written only when approved |
-| `GET /v1/mandates/artifacts` | owner | Per-target state from the compiler (answers 501 until the compiler exists) |
+| `GET /v1/mandates` (also under its first name, `GET /v1/mandates/artifacts`) | owner, viewer | Every permission as its sentence and limit lines (`en`, `zh-TW`), holder, validity, state, and per target `active`, `pending`, `failed`, `not_built` or `revoked` with a reason; and what is enforced under which setting. Built 13 November 2026 (C7) |
+| `POST /v1/mandates/draft` | owner, host (for itself only) | Structured fields in; the sentence, limit lines and planned targets back. Nothing is signed; kept an hour |
+| `POST /v1/mandates` | owner issues; host only asks | From the person (`owner`, decided by one function, `person_confirmed`, that a passkey check replaces later): signed, stored, compiled, recorded; a new router app key is returned once. From a host: a `grant_permission` card; approving it issues the permission. The same request is refused while it waits and for a week after it was declined |
+| `POST /v1/mandates/{id}/stop` | owner | Revocation list first, then every artifact removed; recorded; idempotent |
+| `GET /v1/mandates/declined` | owner, host (its own) | Requests declined in the last week |
+| `POST /v1/mandates/check` | owner, host | What the calling device's own permission says about an action (behind the tools server's `check_permission`) |
 
 Approvals are answered on the card, not on the job (`POST /v1/cards/{id}/answer` replaces the earlier `POST /jobs/{id}/answer`): one job can ask several questions, and a card can come from something that is not a job, such as a permission request. A card's shape is `docs/spec/interfaces/card.schema.json`; cards wait in `MUSE_HOME/cards.sqlite`.
 

@@ -22,6 +22,12 @@ Rules:
 - no master key configured -> local-dev mode: an app token still selects its
   app; anything else is app `anonymous` (normal, no paid). No security
   boundary exists in this mode; render_and_start.py warns at startup.
+- an app made from a permission (muse/compiler: its entry carries `mandate`,
+  `valid_from`, `valid_until`) is refused with a 403 that says so once that
+  permission is stopped or has ended (muse/compiler/gate.py; the stopped list
+  is re-read only when its file changes). The same holds when the master key
+  selects such an app with `x-muse-app`. Such an app also may not ask, with
+  `x-muse-privacy`, for a less protective class than the permission allows.
 - master key configured and the token is neither -> 401, unless a LiteLLM
   database is configured and the token is one of its virtual keys (admin UI
   keys): then LiteLLM's key object is used with the `owner` policy.
@@ -87,8 +93,12 @@ def authenticate(
     *,
     master_key: str | None,
     environ: Mapping[str, str] | None = None,
+    privacy: str | None = None,
+    now: float | None = None,
 ) -> Identity:
-    """Pure decision (no LiteLLM import). Raises AuthError(status, message)."""
+    """Pure decision (no LiteLLM import). Raises AuthError(status, message).
+
+    `privacy` is the request's `x-muse-privacy` header, looked at only for an app made from a permission."""
     token = _strip_bearer(token)
     wanted = (header_app or "").strip() or None
     master = master_key or None
@@ -99,19 +109,51 @@ def authenticate(
         app = apps_mod.resolve(wanted, environ)
         if app is None:
             raise AuthError(400, f"{MARK} unknown app '{_safe(wanted)}' in {APP_HEADER}; register it with `muse apps add`.")
+        _permission_gate(app, privacy, environ, now)
         return Identity(app, "master")
 
     app = apps_mod.find_by_token(token, environ) if token else None
     if app is not None:
         if wanted is not None and wanted != app.name:
             raise AuthError(403, f"{MARK} an app token cannot switch app with {APP_HEADER}; only the master key can.")
+        _permission_gate(app, privacy, environ, now)
         return Identity(app, "app")
+    if token and token.startswith(apps_mod.TOKEN_PREFIX):
+        _removed_with_permission(token, environ)
 
     if not master:
         return Identity(ANONYMOUS, "anonymous")
     if not token:
         raise AuthError(401, f"{MARK} missing API key. Send the master key or an app token from `muse apps add`.")
     raise AuthError(401, f"{MARK} unknown API key. Send the master key or an app token from `muse apps add`.")
+
+
+def _permission_gate(app: App, privacy: str | None, environ: Mapping[str, str] | None, now: float | None) -> None:
+    """Refuse an app made from a permission once that permission is stopped, has ended, or allows less than is asked."""
+    if not app.mandate:
+        return
+    from muse.compiler import gate
+
+    why = gate.refusal(app, environ, now)
+    if why is not None:
+        raise AuthError(403, f"{MARK} permission {why.replace('_', ' ')}: {gate.SENTENCES[why]}")
+    asked = (privacy or "").strip().lower()
+    order = apps_mod.PRIVACY_CLASSES  # least protective first
+    if asked in order and app.default_privacy in order and order.index(asked) < order.index(app.default_privacy):
+        raise AuthError(403, f"{MARK} permission privacy: this app's permission allows the '{app.default_privacy}' class at most; "
+                             f"'{asked}' would send data to more services than the person allowed.")
+
+
+def _removed_with_permission(token: str, environ: Mapping[str, str] | None) -> None:
+    """An app key whose entry the compiler removed when its permission stopped or ended gets that answer, not
+    "unknown key" (muse/compiler/gate.py keeps the key's hash, never the key)."""
+    from muse.compiler import gate
+
+    mandate = gate.stopped_key(apps_mod.hash_token(token), environ)
+    if mandate is not None:
+        ids = gate.stopped_ids(environ)
+        why = gate.STOPPED if ids is None or mandate in ids else gate.EXPIRED
+        raise AuthError(403, f"{MARK} permission {why}: {gate.SENTENCES[why]}")
 
 
 def _safe(name: str) -> str:
@@ -200,7 +242,7 @@ async def user_api_key_auth(request: Any, api_key: str) -> Any:
     master = _master_key()
     token = _strip_bearer(api_key)
     try:
-        ident = authenticate(token, headers.get(APP_HEADER), master_key=master)
+        ident = authenticate(token, headers.get(APP_HEADER), master_key=master, privacy=headers.get("x-muse-privacy"))
     except AuthError as exc:
         if exc.status == 401 and token:
             vk = await _virtual_key(token)
