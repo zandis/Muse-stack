@@ -24,7 +24,23 @@ Rules that stay in force on this VM: no real patient data; test network only; ev
 
 ## Stage 0: make real runs routine (do once, about 30 minutes)
 
-**0.1 Check what the VM costs.** It was reported as 4 cores and 48 GB. Oracle's free allowance is 2 cores and 12 GB. In the Oracle console open Billing, then Cost Analysis, and look at the last 7 days for this instance. Decide: keep it as a paid test bench, or resize to 2 cores and 12 GB (Instance, Edit, Edit shape). If it is free-only and over the allowance, it can be stopped without notice.
+**0.1 Check the account type and what the VM costs.** The VM has been described as 4 cores with 24 GB and as 4 cores with 48 GB; the console decides. Do not press Upgrade during this check.
+
+1. In the Oracle console, open the profile menu, then Tenancy. Note whether the account is "Always Free" or "Pay As You Go", and the home region.
+2. Open Compute, Instances, the instance. Note the shape, the OCPU count and the memory.
+3. Open Billing, Cost Analysis, last 7 days, filtered to this instance. Note the amount.
+4. Take a boot-volume backup (Block Storage, Boot Volumes, the volume, Create Backup). Five backups are free.
+
+What the answers mean:
+
+| Account | Size | Meaning |
+|---|---|---|
+| Always Free | 2 cores, 12 GB or less | Inside the free allowance. It can still be stopped after 7 quiet days (see below) |
+| Always Free | more than 2 cores or 12 GB | Over the documented allowance. It can be stopped, and the larger size may not be available again. Ask Oracle Support in writing before resizing or upgrading |
+| Pay As You Go | up to 4 cores, 24 GB | Reported to be free inside the paid-account allowance of 3,000 core-hours and 18,000 GB-hours a month. A card is on file, so set a budget alert first. This figure comes from the review of 14 November and has not been re-read by me on Oracle's price list |
+| either | 48 GB | Above every free allowance. Cost Analysis will show what it costs |
+
+Oracle may stop an Always Free instance when, over 7 days, processor use (95th percentile), network use and, on ARM, memory use are all under 20%. All three must be low, so keeping one of them above 20% is enough. The repository's idle guard does this with the processor (`MUSE_IDLE_GUARD`, target 25%); it is off until you decide. See `docs/reviews/vm-options-2026-11-14.md`.
 
 **0.2 Let Claude work on the VM.** This removes the relay through you.
 
