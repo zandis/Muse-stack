@@ -67,3 +67,29 @@ What it is: a static chat page with no server of its own. The browser talks stra
 | Markdown, tables and code are rendered from a parsed tree | **Adopt** for Ask, without ever inserting HTML |
 | Message branching, edit and regenerate, automatic titles, voice input and read-aloud | Later. Voice matters for non-technical users; it is outside the first release |
 | The key is pasted and stored in the browser's storage; Simplified Chinese and English only | Where Muse differs: the app's web view never holds a key, the first sign-in needs no pasting, and Traditional Chinese comes first |
+
+## How AWS's agents built its emulator
+
+Read on 2026-11-13: the article on aboutamazon.com (11 November 2026, by a senior principal engineer; the first of a series) and the READMEs of `aws/aws-emulator` and `aws/aws-emulator-evaluation-suite`. Not installed or run. The emulator itself is of no use here, since this project does not use AWS. The method is.
+
+What they did, as stated:
+
+- **A specification and a reference.** The specification is AWS's published API models; the reference is real AWS.
+- **Tests are checked against the real thing first.** Every fidelity test was verified against at least two real AWS accounts before it counted. The tests can then be replayed without calling AWS.
+- **Three bounded roles.** Test writers; issue finders, who replay the tests and file failures; fixers, one agent per issue.
+- **A merge gate.** Build, review against coding standards, security, and no drop in fidelity. A change that fails goes back.
+- **Known gaps are files in the repository**: "things that do not work" and "things that now work".
+- **A lesson they report**: reuse existing libraries. An early version wrote its own Python interpreter.
+
+Caveats: the article gives no fidelity figures; the team says nobody wrote or reviewed the code; the emulator is stated to be unfit for production or security testing. That is acceptable for a test tool and would not be for this project's vault, permissions or pairing.
+
+What this project takes from it:
+
+| Their practice | Here |
+|---|---|
+| Tests verified against the real system, then replayed offline | The weakest point today: every test uses scripted replies, and real runs twice found what they missed. **Record real provider replies on the VM (shapes, headers, error bodies, timings; never content) and replay those in the test upstream**, so offline tests stand on observed behaviour |
+| A fixed set of fidelity tests as the unambiguous goal | The 133 expected-fact tasks play this role for skills. Gate 1 is now judged on them |
+| No change merges if fidelity drops | Add to the merge rule: the nightly real-run score on a fixed sample must not fall |
+| Known gaps tracked as files | Started: `docs/known-gaps.md`, seeded from the real runs |
+| Small bounded tasks for agents, one issue each | Matches how work packages are run here; the lesson is to keep them small and tied to a failing check |
+| Humans do not review | **Not adopted** for security code, which stays unwired until an outside review |
