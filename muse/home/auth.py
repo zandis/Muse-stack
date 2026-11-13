@@ -21,10 +21,12 @@ is made in one place before any handler runs:
   host     the tools server a host bot runs (`muse hosts setup`). Only what that
            server needs: read status and the catalogue, ask the person (create
            cards) and read ITS OWN cards, queue / read / cancel ITS OWN jobs,
-           add records, list and run skills and read ITS OWN runs. It cannot
+           add records, list and run skills and read ITS OWN runs, ASK for a
+           permission for itself (a card the person answers) and ask what its
+           own permission says. It cannot issue or stop a permission,
            pause or resume, store keys, connect services, manage apps, answer a
            card, read the records, or see another device's jobs, cards or runs.
-  viewer   read-only: status, catalogue, cards, jobs, records.
+  viewer   read-only: status, catalogue, cards, jobs, records, permissions.
 
 A token file written before roles existed has no `role` field; such a device is
 an `owner`, which is what every token was until then.
@@ -78,14 +80,14 @@ SCOPES = (
     "apps.read", "apps.write",
     "receipts.read", "receipts.write",
     "skills.read", "skills.run",
-    "mandates.read",
+    "mandates.read", "mandates.request", "mandates.write",
 )
 
 ROLE_SCOPES: dict[str, frozenset[str]] = {
     OWNER: frozenset(SCOPES),
     HOST: frozenset({"status.read", "catalogue.read", "cards.read", "cards.ask", "jobs.read", "jobs.write",
-                     "receipts.write", "skills.read", "skills.run"}),
-    VIEWER: frozenset({"status.read", "catalogue.read", "cards.read", "jobs.read", "receipts.read"}),
+                     "receipts.write", "skills.read", "skills.run", "mandates.request"}),
+    VIEWER: frozenset({"status.read", "catalogue.read", "cards.read", "jobs.read", "receipts.read", "mandates.read"}),
 }
 
 # Roles that see every device's jobs, cards and skill runs. Any other role sees only what it made itself.

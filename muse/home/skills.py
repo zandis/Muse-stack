@@ -59,6 +59,10 @@ RUN_REF = "skill-run:"
 INTERRUPTED = "The home stopped while this skill was running. Nothing it proposed was written."
 
 
+class _Stopped(Exception):
+    """Inside `settle_card`: the write was already refused; skip to the bookkeeping."""
+
+
 class SkillRefused(Exception):
     """Why a run was not started. `code` is an API error code; `message` a fixed plain sentence."""
 
@@ -231,8 +235,11 @@ class SkillRuns:
                 from muse.skills import runner as runner_mod
 
                 run = runner_mod.run
+            extra: dict[str, Any] = {}
+            if self.runner is None:  # the real runner: how it asks the person and records a refusal (muse/compiler/guard.py)
+                extra = {"permission_confirm": self._confirmer(run_id, skill.name, device), "permission_record": self.home.record}
             result = run(skill, args["inputs"], budget=args["budget"], privacy=args["privacy"], folders=args["folders"],
-                         out_dir=args["out_dir"], task=args["task"], environ=env, apply_writes=False)
+                         out_dir=args["out_dir"], task=args["task"], environ=env, apply_writes=False, **extra)
             status = result.status
             public = {k: v for k, v in result.public().items() if k not in ("events", "writes", "skill")}
             used = dict(result.used or {})
@@ -269,6 +276,34 @@ class SkillRuns:
         for card_id in cards:
             self.home.record("card.create", "Asked whether to save a file a skill proposed", links={"card": card_id}, egress="none", **who)
         self._threads.pop(run_id, None)  # the last thing: `wait` covers the records too
+
+    def _confirmer(self, run_id: str, skill: str, device: "Device") -> Callable[[str, Mapping[str, Any]], str | None]:
+        """How a run asks when its permission says "ask first" about something that is not a file (a file gets its
+        `save_file` card after the run). Today that is paying for a model: a `spend` card, waited on for as long as
+        the card lives. Returns the id of the card when it was approved, None otherwise."""
+        from muse.home.api import actor_of, mandate_of
+
+        def ask(action: str, facts: Mapping[str, Any]) -> str | None:
+            if action != "llm.paid":
+                return None
+            amount = f"{max(float(facts.get('paid_usd') or 0.0), 0.0):.2f}"
+            short = str(facts.get("mandate") or "")[:15] or None
+            try:
+                card_id = self.home.cards.create(
+                    kind="spend", title="Use a paid model", thing=f"The skill {skill} wants to use a paid model",
+                    under={"text": "Your permission asks before every payment", **({"mandate_id": short} if short else {})},
+                    cost={"amount": amount, "currency": "USD"},
+                    extra={"payee": "A paid model service, through Muse", "limit_left": {"amount": amount, "currency": "USD"}},
+                    job_ref=f"{RUN_REF}{run_id}")
+            except CardError:
+                return None
+            self.home.record("card.create", "Asked whether a skill may use a paid model", links={"card": card_id}, egress="none",
+                             actor=actor_of(device), mandate=mandate_of(device))
+            from muse.home.cards import SPEND_TTL_S
+
+            return card_id if self.home.cards.wait(card_id, SPEND_TTL_S + 1.0) == "approved" else None
+
+        return ask
 
     def _service(self, provider: str) -> str | None:
         """`service:<id>` for a provider outside this computer; None for a local model, the cache, or a name that is not an id."""
@@ -309,6 +344,12 @@ class SkillRuns:
                 log.error("skills: a proposed file could not be kept (%s)", type(exc).__name__)
                 notes.append("A proposed file could not be kept on the home, so it will not be written.")
                 continue
+            guard = getattr(result, "guard", None)
+            if guard is not None:  # which permission token asked: approving the card mints the single-use token from it
+                try:
+                    guard.pending_write(card_id, str(path), result.privacy or "standard")
+                except Exception as exc:
+                    log.error("skills: a proposed file's permission could not be noted (%s)", type(exc).__name__)
             made += 1
             cards.append(card_id)
         dropped = len(result.writes) - made
@@ -358,6 +399,10 @@ class SkillRuns:
         from muse.skills.workspace import ProposedWrite, Workspace
 
         status = card.get("status")
+        if status != "pending" and card.get("kind") == "grant_permission":
+            from muse.home import mandates_api  # a device asked for a permission: approving the card issues it
+
+            return mandates_api.settle_card(self.home, card)
         if status == "pending" or not str(card.get("job_ref") or "").startswith(RUN_REF):
             return None
         claimed = self.book.claim_write(card["id"])
@@ -371,7 +416,18 @@ class SkillRuns:
         run = self.book.get_run(claimed["run_id"]) or {}
         who = {"actor": "helper", "mandate": None if run.get("role") in (None, "owner") else f"device:{run.get('device')}"}
         reason = ""
+        # The approval becomes a single-use permission token for exactly this write (architecture 3.6): narrowed
+        # from the token that asked, bound to this card, good for five minutes, spent here. A second use is refused.
+        permit = self._permit(card["id"])
+        if permit["known"]:
+            who["mandate"] = permit["mandate"]
+            if not permit["allowed"] and permit["mode"] == "enforce":
+                from muse.compiler.guard import reason_words
+
+                reason = f"your permissions no longer allow it: {reason_words(permit['reason'])}"
         try:
+            if reason:
+                raise _Stopped()
             root = claimed["root"]
             default_root = os.path.realpath(str(Path(self.home.muse_home()) / "skills-out" / claimed["skill"]))
             if not (folder_list.allowed_output_root(root, self.home.environ) or os.path.realpath(root) == default_root):
@@ -382,6 +438,8 @@ class SkillRuns:
                 write = ProposedWrite(claimed["path"], bytes(claimed["data"]))
                 if not Workspace((), root, may_write=True).apply(write):  # new files only, inside the folder, re-checked now
                     reason = write.refused or "the file could not be written"
+        except _Stopped:
+            pass
         except Exception as exc:
             log.error("skills: an approved file could not be written (%s)", type(exc).__name__)
             reason = f"the home hit a problem writing it ({type(exc).__name__})"
@@ -390,9 +448,27 @@ class SkillRuns:
             self.home.record("files.write", "Could not write a file a skill proposed, although it was approved", outcome="failed",
                              links={"card": card["id"]}, egress="none", **who)
             return {"state": "refused", "file": name, "reason": reason}
-        self.home.record("files.write", "Wrote a file a skill proposed, after it was approved", resource=f"file:{claimed['path']}"[:1024],
+        by = str(card.get("answered_by") or "")
+        words = "Wrote a file a skill proposed, after it was approved"
+        if permit["known"]:  # the record names the permission (above) and the device the approval came from
+            from muse.home.api import _word
+
+            words += f" on {_word(by)}" if by else ""
+            if not permit["allowed"]:
+                words += "; advice only: the permission would have refused it"
+        self.home.record("files.write", words[:200], resource=f"file:{claimed['path']}"[:1024],
                          links={"card": card["id"]}, egress="none", **who)
         return {"state": "written", "file": name, "reason": None}
+
+    def _permit(self, card_id: str) -> dict[str, Any]:
+        """The single-use permission for an approved card's write. `known: False` when no permission was involved."""
+        try:
+            from muse.compiler.guard import settle_write
+
+            return settle_write(self.home.environ, card_id, clock=self.home.clock, record=self.home.record)
+        except Exception as exc:
+            log.error("skills: an approval could not be turned into a permission (%s)", type(exc).__name__)
+            return {"known": False, "allowed": True, "reason": "", "mandate": None, "mode": ""}
 
     def sweep(self) -> int:
         """Settle every waiting file whose card has ended some other way than an answer through this API:

@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from muse import paths, policy
+from muse.compiler import guard as guard_mod
 from muse.sandbox import policy as sandbox_policy
 from muse.skills import app as app_mod
 from muse.skills import loader
@@ -61,6 +62,8 @@ class Result:
     privacy: str = ""
     workspace: Workspace | None = field(default=None, repr=False)
     sandbox: dict[str, Any] | None = None  # how isolated the run was (muse.sandbox.Report.public()); None = the sandbox was not involved
+    permissions: dict[str, Any] | None = None  # what the permission check decided (muse/compiler/guard.py); None = nothing to say
+    guard: Any = field(default=None, repr=False)  # the run's permission guard, for the caller that turns proposals into cards
 
     @property
     def exit_code(self) -> int:
@@ -73,6 +76,8 @@ class Result:
                "privacy": self.privacy, "writes": [w.public() for w in self.writes], "events": self.events}
         if self.sandbox is not None:
             out["sandbox"] = self.sandbox
+        if self.permissions is not None:
+            out["permissions"] = self.permissions
         return out
 
 
@@ -188,6 +193,8 @@ def run(
     sandbox: str | None = None,
     sandbox_limits: Any = None,
     permission_token: str | None = None,
+    permission_confirm: Callable[..., Any] | None = None,
+    permission_record: Callable[..., Any] | None = None,
     _executor: Any = None,
     _sandbox_decided: bool = False,
 ) -> Result:
@@ -204,7 +211,15 @@ def run(
     sandbox     `off`, `auto` or `require` (default: MUSE_SANDBOX, else `off`). Anything but `off` runs the skill's
                 code in a separate locked-down process (muse/sandbox, docs/sandbox.md). A skill that does not ship
                 with Muse always runs with `require`, whatever is asked for here.
-    sandbox_limits, permission_token   passed on to muse.sandbox.run_skill (a `Policy`; an optional permission token)
+    sandbox_limits      passed on to muse.sandbox.run_skill (a `Policy`)
+    permission_token    a permission token this run presents; default: the helper's own permissions that cover the skill
+    permission_confirm  how to ask the person when a permission says "ask first": called (action, facts), returns the id
+                        of an APPROVED card, or None. Without it, such an action is refused under `enforce`
+    permission_record   how to write a record of a refusal (default: the home's records)
+
+    Permissions (muse/compiler/guard.py, MUSE_PERMISSIONS=off|advise|enforce, default advise): each folder the run is
+    given, each model call and each proposed file is checked against the skill's narrowed permission token. `advise`
+    computes and records; `enforce` stops the run. A skill that does not ship with Muse is always `enforce`.
     """
     env = os.environ if environ is None else environ
     events: list[dict[str, Any]] = []
@@ -239,7 +254,8 @@ def run(
                     found, inputs, roots=folders, budget=budget, privacy=privacy, token=permission_token,
                     policy=sandbox_limits, mode=mode, on_event=on_event, apply_writes=apply_writes, out_dir=out_dir,
                     task=task, environ=environ, wait_up_to=wait_up_to, clock=clock, sleep=sleep, post=post,
-                    background=background)[0]
+                    background=background, permission_token=permission_token, permission_confirm=permission_confirm,
+                    permission_record=permission_record)[0]
         entry, check = loader.entry_points(found) if _executor is None else (None, None)
     except (loader.LoaderError, ValueError) as exc:
         return failed(str(exc), skill if isinstance(skill, str) else skill.name)
@@ -257,6 +273,24 @@ def run(
 
     meter = Meter(job_budget, clock=clock, started=started)
     paid = job_budget.paid_usd > 0
+
+    # ---- 1b. permissions: the folders this run was given (model calls and proposed files are checked as they happen)
+    try:
+        guard = guard_mod.Guard(name, found.source, env, token=permission_token, clock=clock, confirm=permission_confirm,
+                                record=permission_record, emit=emit)
+        for root in workspace.read_roots:
+            guard.read_root(root, cls)
+    except guard_mod.Denied as exc:
+        emit("end", status="failed")
+        return Result("failed", notes=[f"Stopped before it started: {exc}. Nothing was read or sent."], events=events,
+                      skill=name, privacy=cls, permissions=guard.summary(), guard=guard)
+    except ValueError as exc:  # MUSE_PERMISSIONS is not one of its three values
+        return failed(str(exc), name)
+    post = guard.wrap_post(post, lambda: meter.remaining()["paid_usd"])
+    if _executor is not None and guard.active and getattr(_executor.policy, "authorize", None) is None:
+        import dataclasses as _dc
+
+        _executor.policy = _dc.replace(_executor.policy, authorize=guard.sandbox_authorize(cls))
     try:
         token = app_mod.ensure_app(app_mod.app_for(paid, background), env)
     except Exception as exc:
@@ -302,12 +336,20 @@ def run(
             status, output=output, notes=notes, check=check_state, used=meter.used(), events=events,
             options=options.as_list() if options is not None else [], refusal=refusal, skill=name, privacy=cls,
             writes=list(workspace.proposed) if ctx is not None and check_state["status"] == "passed" else [],
-            workspace=workspace,
+            workspace=workspace, guard=guard,
         )
+        try:
+            for write in result.writes:
+                guard.propose(write.path, cls)
+        except guard_mod.Denied as exc:  # under `enforce`: no file is proposed, and the run says why
+            result.writes = []
+            result.notes.append(f"No file was proposed: {exc}.")
+            result.status = status = "partial" if output is not None and status in ("done", "partial") else status
         for write in result.writes:
             emit("write_proposed", size=len(write.data))
         if apply_writes and status in ("done", "partial"):
-            _apply(result, emit)
+            _apply(result, emit, guard, cls)
+        result.permissions = guard.summary()
         emit("end", status=status, requests=meter.requests, tokens=meter.tokens, cost_usd=round(meter.cost_usd, 6))
         return result
 
@@ -345,6 +387,9 @@ def run(
             detail = f" {exc.detail}" if exc.detail else ""
             hint = " Start it with: muse up" if exc.status == 0 else ""
             notes.append(f"The router could not answer: {exc.kind}" + (f" (HTTP {exc.status})" if exc.status else "") + f".{detail}{hint}")
+            return finish("partial" if output is not None else "failed", ctx, output, check_state, notes)
+        if isinstance(exc, guard_mod.Denied):
+            notes.append(f"Stopped: {exc}. Nothing more was sent.")
             return finish("partial" if output is not None else "failed", ctx, output, check_state, notes)
         if isinstance(exc, SkillStop):
             notes.append(str(exc))
@@ -433,11 +478,17 @@ def _workspace(skill: Skill, folders: Sequence[str | os.PathLike[str]], out_dir:
     return Workspace(roots, write_root, may_write=skill.writes)
 
 
-def _apply(result: Result, emit: Callable[..., None]) -> None:
+def _apply(result: Result, emit: Callable[..., None], guard: Any = None, privacy: str = "standard") -> None:
     if result.workspace is None:
         return
+    guard = guard if guard is not None else result.guard
     for write in result.writes:
         if write.applied:
+            continue
+        if guard is not None and not guard.write_now(write.path, result.privacy or privacy):
+            write.refused = "your permissions do not allow this file to be written without your approval"
+            emit("write_refused", size=len(write.data))
+            result.notes.append(f"Not written: {write.path} ({write.refused}).")
             continue
         ok = result.workspace.apply(write)
         emit("write_applied" if ok else "write_refused", size=len(write.data))

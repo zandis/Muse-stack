@@ -18,6 +18,9 @@ The registry is `MUSE_HOME/apps.yaml`:
         default_privacy: private     # optional; replaces MUSE_DEFAULT_PRIVACY for this app
         created_at: "2026-11-12T07:00:00Z"
         note: nightly summaries      # optional
+        mandate: m1_3fa9...          # optional; set by the permission compiler (muse/compiler), never by hand:
+        valid_from: 1794528000       #   the permission this entry was made from and the seconds it is valid
+        valid_until: 1797120000      #   between. muse/auth.py refuses the token outside them or once it is stopped
 
 File safety: written 0600 through a temp file and os.replace (a reader never
 sees half a file), under an advisory lock so two `muse apps` commands cannot
@@ -61,6 +64,7 @@ OWNER_NAME = "owner"
 ANONYMOUS_NAME = "anonymous"
 RESERVED_NAMES = frozenset({OWNER_NAME, ANONYMOUS_NAME, "all", "none", "default", "muse"})
 FILE_VERSION = 1
+MANDATE_RE = re.compile(r"^m1_[0-9a-f]{64}$")
 
 
 class AppError(ValueError):
@@ -80,6 +84,9 @@ class App:
     default_privacy: str | None = None
     created_at: str = ""
     note: str | None = None
+    mandate: str | None = None  # the permission this entry was compiled from (muse/compiler); None for a hand-made app
+    valid_from: int | None = None  # seconds since 1970; only with `mandate`
+    valid_until: int | None = None
     builtin: bool = field(default=False, compare=False)
 
     def to_record(self) -> dict[str, Any]:
@@ -89,7 +96,7 @@ class App:
 
     def policy(self) -> dict[str, Any]:
         """What the proxy carries with each request (no hash: it is not needed downstream)."""
-        return {
+        out = {
             "muse_app": self.name,
             "muse_priority": self.priority,
             "muse_allow_paid": bool(self.allow_paid),
@@ -97,6 +104,9 @@ class App:
             "muse_daily_tokens": self.daily_tokens,
             "muse_default_privacy": self.default_privacy,
         }
+        if self.mandate:
+            out["muse_mandate"] = self.mandate
+        return out
 
 
 OWNER = App(name=OWNER_NAME, priority="interactive", allow_paid=True, builtin=True)
@@ -171,6 +181,16 @@ def _validate(raw: Mapping[str, Any], *, new: bool = False) -> App:
         note = str(note)
         if len(note) > 200 or "\n" in note:
             raise AppError("note must be one line of at most 200 characters")
+    mandate = raw.get("mandate")
+    valid_from = valid_until = None
+    if mandate is not None:
+        if not isinstance(mandate, str) or not MANDATE_RE.fullmatch(mandate):
+            raise AppError(f"app '{name}' names a permission that is not a permission id")
+        valid_from, valid_until = raw.get("valid_from"), raw.get("valid_until")
+        for value in (valid_from, valid_until):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                # An entry made from a permission must say when it ends; without that it would never expire.
+                raise AppError(f"app '{name}' was made from a permission but does not say when it is valid")
     return App(
         name=name,
         priority=str(priority),
@@ -181,6 +201,9 @@ def _validate(raw: Mapping[str, Any], *, new: bool = False) -> App:
         default_privacy=privacy,
         created_at=str(raw.get("created_at") or ""),
         note=note,
+        mandate=mandate,
+        valid_from=valid_from,
+        valid_until=valid_until,
     )
 
 
@@ -337,8 +360,13 @@ def add_app(
     note: str | None = None,
     environ: Mapping[str, str] | None = None,
     now: float | None = None,
+    mandate: str | None = None,
+    valid_from: int | None = None,
+    valid_until: int | None = None,
 ) -> tuple[App, str]:
-    """Register an app. Returns (app, token); the token is not stored and cannot be shown again."""
+    """Register an app. Returns (app, token); the token is not stored and cannot be shown again.
+
+    `mandate`, `valid_from` and `valid_until` are for the permission compiler (muse/compiler) only."""
     path = apps_path(environ)
     token = new_token()
     with _locked(path):
@@ -350,6 +378,7 @@ def add_app(
                 "name": name, "priority": priority, "token_sha256": hash_token(token),
                 "daily_requests": daily_requests, "daily_tokens": daily_tokens, "allow_paid": allow_paid,
                 "default_privacy": default_privacy, "created_at": _utc_now(now), "note": note,
+                **({"mandate": mandate, "valid_from": valid_from, "valid_until": valid_until} if mandate is not None else {}),
             },
             new=True,
         )
@@ -379,16 +408,43 @@ def update_app(name: str, environ: Mapping[str, str] | None = None, **changes: A
     return app
 
 
-def remove_app(name: str, environ: Mapping[str, str] | None = None) -> bool:
-    """Delete an app. Its token stops working at the next request. False if it did not exist."""
+def remove_app(name: str, environ: Mapping[str, str] | None = None, *, only_mandate: str | None = None) -> bool:
+    """Delete an app. Its token stops working at the next request. False if it did not exist.
+
+    `only_mandate` (the permission compiler): delete it only if it was made from that permission."""
     path = apps_path(environ)
     with _locked(path):
         apps = _read_for_update(path)
-        if name not in apps:
+        if name not in apps or (only_mandate is not None and apps[name].mandate != only_mandate):
             return False
         del apps[name]
         _write(path, apps)
     return True
+
+
+def bind_mandate(name: str, mandate: str, valid_from: int, valid_until: int, environ: Mapping[str, str] | None = None,
+                 **changes: Any) -> App:
+    """Tie an existing hand-made app to a permission (the compiler, for a host set up before it had one).
+
+    Its token keeps working, now only while the permission does. Refused when the app already belongs
+    to another permission. `changes` may set daily_requests, daily_tokens, allow_paid, default_privacy."""
+    unknown = set(changes) - {"daily_requests", "daily_tokens", "allow_paid", "default_privacy"}
+    if unknown:
+        raise AppError(f"cannot change {', '.join(sorted(unknown))}")
+    path = apps_path(environ)
+    with _locked(path):
+        apps = _read_for_update(path)
+        if name not in apps:
+            raise AppError(f"no app named '{name}'")
+        if apps[name].mandate not in (None, mandate):
+            raise AppError(f"app '{name}' already belongs to another permission")
+        record = apps[name].to_record()
+        record.update(changes)
+        record.update({"mandate": mandate, "valid_from": valid_from, "valid_until": valid_until})
+        app = _validate(record)
+        apps[name] = app
+        _write(path, apps)
+    return app
 
 
 def rotate_token(name: str, environ: Mapping[str, str] | None = None) -> tuple[App, str]:

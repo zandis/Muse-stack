@@ -409,11 +409,23 @@ def t_check_approval(ctx: Context, args: dict[str, Any]) -> dict[str, Any]:
 
 
 def t_check_permission(ctx: Context, args: dict[str, Any]) -> dict[str, Any]:
+    # First: this host's own permission, if the person gave it one (the home checks the signed token).
+    held = permission.from_home(ctx.home, args["action"], args.get("resource"), args.get("amount"))
+    if held is not None:
+        return {
+            "decision": held["decision"], "reason": held["reason"], "enforced": False, "basis": permission.BASIS_PERMISSION,
+            "what_to_do": {"allow": "Go ahead.", "ask": "Call ask_approval and wait for the person before doing this.",
+                           "deny": "Do not do this. The person's permission for this host does not allow it."}[held["decision"]],
+            "advisory": "This answer comes from the permission the person gave this host. Muse enforces it for model use and "
+                        "skills; for this host's own shell and file tools it is advice only, and Muse cannot block them.",
+            "scope_note": SCOPE_NOTE,
+        }
     verdict = permission.decide(args["action"], args.get("resource"), args.get("amount"), allowed_read=ctx.allowed_read)
     return {
-        "decision": verdict["decision"], "reason": verdict["reason"], "enforced": False,
+        "decision": verdict["decision"], "reason": verdict["reason"], "enforced": False, "basis": permission.BASIS_INTERIM,
         "what_to_do": "Go ahead." if verdict["decision"] == "allow" else "Call ask_approval and wait for the person before doing this.",
-        "advisory": "This answer is advice only until Muse permissions are built. Muse does not block anything on the strength of it.",
+        "advisory": "This answer is advice only: this host has no permission from the person yet, so an interim rule answered. "
+                    "Muse does not block anything on the strength of it.",
         "scope_note": SCOPE_NOTE,
     }
 
@@ -773,10 +785,12 @@ TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         "check_permission", "May I do this without asking",
-        "Whether an action may go ahead without asking the person. ADVISORY ONLY: Muse permissions are not built yet, so "
-        "this is an interim rule and Muse enforces nothing on the strength of it. It answers 'allow' only for a read-only "
-        "action (read, list, search) on something the person listed for this host, and 'ask' for everything else, "
-        "including anything that writes, sends, runs or spends. On 'ask', call ask_approval. " + SCOPE_NOTE + " Read-only.",
+        "Whether an action may go ahead without asking the person. ADVISORY for this host's own tools: Muse cannot block "
+        "them. If the person gave this host a permission, the answer comes from it (basis = 'permission') and may be "
+        "'allow', 'ask' or 'deny'; on 'deny', do not do it. If this host has no permission, an interim rule answers "
+        "(basis = 'interim rule'): 'allow' only for a read-only action (read, list, search) on something the person "
+        "listed for this host, and 'ask' for everything else, including anything that writes, sends, runs or spends. "
+        "On 'ask', call ask_approval. " + SCOPE_NOTE + " Read-only.",
         _obj({
             "action": {"type": "string", "maxLength": 20, "enum": list(permission.ACTIONS), "description": "What you are about to do."},
             "resource": _str(400, "What it acts on: a path, an address, a name."),

@@ -85,12 +85,58 @@ def _hosts_setup(args: argparse.Namespace) -> int:
     print()
     print(hosts.snippet(host, base, done.token_file))
     print()
+    _offer_permission(args, host, done)
     print("Muse did not touch the host's files. The tools server needs the home running: `muse home serve`.")
     if host.engine:
         print(f"Afterwards, `muse hosts check {host.kind} <path to its config file>` says what goes through Muse.")
     print(f"What is and is not protected under a host bot: docs/hosts/README.md. To undo: `muse apps rm {done.app_name or '<app>'}`"
           f"{'' if done.app_name else ' (no app was made)'}, `muse home token rm {done.device}`, and delete the token file.")
     return 0
+
+
+def _offer_permission(args: argparse.Namespace, host: Any, done: Any) -> None:
+    """Offer the host a signed permission with sensible defaults (muse/compiler/hosts.py). Never fails the setup."""
+    how = (f"`muse hosts setup {host.kind} --permission` on a fresh setup, or `muse permissions grant --holder device:{done.device} "
+           "--action llm.call --action skills.run --resource provider:router --resource home:skills`")
+    want = getattr(args, "permission", None)
+    if want is None and sys.stdin.isatty() and sys.stdout.isatty():
+        print("Give this host a permission now? It says, signed by you: models through Muse (no paid ones), skills only when you")
+        print("agree each time, your files only through folders you list for skills, for 90 days. With it, stopping the")
+        want = input("permission stops the host's key at once. [y/N] ").strip().lower() in ("y", "yes")
+        print()
+    if not want:
+        print("This host has NO permission yet: its app key works until you remove the app, and `check_permission` answers by")
+        print(f"an interim rule. To give it one later: {how}.")
+        print()
+        return
+    try:
+        from muse import apps
+        from muse import permissions as P
+        from muse.compiler import hosts as host_permission
+        from muse.compiler.cli import marks
+        from muse.compiler.core import Compiler
+
+        if not P.available():
+            print("No permission was given: permissions need the `biscuit-python` package (pip install 'muse-stack[permissions]').")
+            print()
+            return
+        env = args.env_fn()
+        compiler = Compiler(env)
+        app = apps.load_apps(env).get(done.app_name) if done.app_name else None
+        privacy = str(env.get("MUSE_DEFAULT_PRIVACY", "") or "").strip().lower()
+        draft = host_permission.default_draft(
+            compiler.ensure_root(), done.device, now=compiler.now(), with_models=bool(done.app_name),
+            daily_requests=app.daily_requests if app is not None else None,
+            privacy=privacy if privacy in P.PRIVACY else "private", zone=str(env.get("MUSE_TZ", "") or "").strip() or "UTC")
+        mandate, applied = compiler.issue(draft, adopt_app=done.app_name)
+        print(f"Gave this host the permission {mandate.id[3:15]}:")
+        print(f"  {P.describe(mandate).sentence}")
+        for line in marks(applied.targets):
+            print(line)
+        print(f"  `muse permissions stop {mandate.id[3:15]}` stops it, and the host's key with it.")
+    except Exception as exc:  # the host is set up either way; say only what kind of problem it was
+        print(f"No permission was given ({type(exc).__name__}). The host is set up without one; to give it one later: {how}.")
+    print()
 
 
 def _hosts_check(args: argparse.Namespace) -> int:
@@ -148,6 +194,8 @@ def register(sub: Any, env_fn: Callable[[], Mapping[str, str]], base_fn: Callabl
     hs.add_argument("name", choices=names)
     hs.add_argument("--app-name", metavar="NAME", help="name the app something other than the host's name")
     hs.add_argument("--show-token", action="store_true", help="print the app key even when stdout is not a terminal")
+    hs.add_argument("--permission", action=argparse.BooleanOptionalAction, default=None,
+                    help="also give the host a signed permission with sensible defaults (asked in a terminal when left out)")
     hs.set_defaults(hosts_func=_hosts_setup)
 
     hw = hsub.add_parser("show", help="print what to paste again; creates nothing and shows no secret")

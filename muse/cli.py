@@ -2093,9 +2093,11 @@ def register_records_commands(sub: Any) -> None:
 
 
 # ===== END records =====
-# ===== BEGIN permissions: `muse permissions list|show|issue|narrow|check|revoke` (own block; logic lives in muse/permissions/) =====
-# Signed permission tokens (docs/spec/interfaces/permission-token.md). This block only
-# exercises them by hand: nothing else in Muse enforces these tokens yet.
+# ===== BEGIN permissions: `muse permissions list|show|issue|narrow|check|revoke` and `grant|stop|status|sweep`
+# (own block; logic lives in muse/permissions/ and muse/compiler/) =====
+# Signed permission tokens (docs/spec/interfaces/permission-token.md). `grant`, `stop`, `status` and `sweep` go
+# through the compiler (muse/compiler), which makes and removes what enforces a permission; `issue` and `revoke`
+# only sign and store, and the next `sweep` brings the artifacts in line.
 
 
 class _PermUsage(Exception):
@@ -2209,6 +2211,15 @@ def _cmd_permissions(args: argparse.Namespace, P: Any, pstore: Any) -> int:
     lang = getattr(args, "lang", "en")
     cmd = args.permissions_cmd
 
+    if cmd in ("grant", "stop", "status", "sweep"):
+        from types import SimpleNamespace
+
+        from muse.compiler import cli as compiler_cli
+
+        helpers = SimpleNamespace(time=_perm_time, resource=_perm_resource, fields=_perm_fields, confirm=_perm_confirm,
+                                  yes=_perm_yes, show=_perm_print)
+        return compiler_cli.run(args, _env(), helpers)
+
     if cmd == "issue":
         if not keys_.exists():
             if not args.new_key:
@@ -2307,7 +2318,7 @@ def _cmd_permissions(args: argparse.Namespace, P: Any, pstore: Any) -> int:
 
 
 def add_permissions_parser(sub: Any) -> None:
-    p = sub.add_parser("permissions", help="signed permissions: issue, narrow, check, stop (not yet enforced by the router or skills)")
+    p = sub.add_parser("permissions", help="signed permissions: grant, stop, status, sweep (and issue, narrow, check by hand)")
     psub = p.add_subparsers(dest="permissions_cmd", required=True)
     lang = dict(choices=["en", "zh-TW"], default="en", help="zh-TW: Traditional Chinese")
 
@@ -2369,6 +2380,9 @@ def add_permissions_parser(sub: Any) -> None:
     r.add_argument("name")
     r.add_argument("--only-this-copy", action="store_true", help="stop only this narrowed copy (and anything narrowed from it)")
     r.add_argument("--yes", action="store_true", help="do not ask for confirmation")
+    from muse.compiler import cli as compiler_cli
+
+    compiler_cli.add_parsers(add)
 
 
 # ===== END permissions =====

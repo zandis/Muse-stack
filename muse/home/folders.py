@@ -82,6 +82,8 @@ def _parse(text: str) -> dict[str, dict[str, Any]]:
         if not isinstance(path, str) or not path or len(path) > MAX_PATH_CHARS or not os.path.isabs(path):
             continue
         out[name] = {"name": name, "path": path, "output": item.get("output") is True, "added_at": str(item.get("added_at") or "")}
+        if isinstance(item.get("mandate"), str) and item["mandate"]:
+            out[name]["mandate"] = item["mandate"]  # put on the list by the permission compiler (muse/compiler), for that permission
     return out
 
 
@@ -119,8 +121,10 @@ def _write(folders: Mapping[str, Mapping[str, Any]], environ: Mapping[str, str] 
 
 
 def add(name: str, path: str | os.PathLike[str], *, output: bool = False, environ: Mapping[str, str] | None = None,
-        now: float | None = None) -> dict[str, Any]:
-    """Put a folder on the list under a name. Replaces nothing: an existing name is an error."""
+        now: float | None = None, mandate: str | None = None) -> dict[str, Any]:
+    """Put a folder on the list under a name. Replaces nothing: an existing name is an error.
+
+    `mandate` is for the permission compiler: the id of the permission this entry was made from."""
     if not isinstance(name, str) or not NAME_RE.fullmatch(name):
         raise FolderError("a folder name is 1-40 lower-case letters, digits and '-', starting and ending with a letter or digit")
     folders = _load_for_update(environ)  # first: a damaged list is the thing to fix, whatever is being added
@@ -131,14 +135,18 @@ def add(name: str, path: str | os.PathLike[str], *, output: bool = False, enviro
         raise FolderError(f"there are already {MAX_FOLDERS} folders on the list; remove one first")
     stamp = datetime.fromtimestamp(time.time() if now is None else now, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     folders[name] = {"name": name, "path": str(real), "output": bool(output), "added_at": stamp}
+    if mandate:
+        folders[name]["mandate"] = mandate
     _write(folders, environ)
     return dict(folders[name])
 
 
-def remove(name: str, environ: Mapping[str, str] | None = None) -> bool:
-    """Take a name off the list. False if it was not there. Runs started later can no longer use it."""
+def remove(name: str, environ: Mapping[str, str] | None = None, *, only_mandate: str | None = None) -> bool:
+    """Take a name off the list. False if it was not there. Runs started later can no longer use it.
+
+    `only_mandate` (the permission compiler): remove it only if it was made from that permission."""
     folders = _load_for_update(environ)
-    if name not in folders:
+    if name not in folders or (only_mandate is not None and folders[name].get("mandate") != only_mandate):
         return False
     del folders[name]
     _write(folders, environ)

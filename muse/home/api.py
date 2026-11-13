@@ -1197,6 +1197,8 @@ def _r(method: str, path: str, scope: str, handler: Callable[[Home, Request], tu
     return Route(method, PREFIX + path, handler, scope, **kw)
 
 
+from muse.home import mandates_api as _mandates  # noqa: E402 - permissions (C7); it imports nothing from this module at import time
+
 # Method, path, the scope a device needs (muse/home/auth.py: which roles hold it), the handler.
 ROUTES: tuple[Route, ...] = (
     _r("GET", "/status", "status.read", h_status),
@@ -1223,7 +1225,7 @@ ROUTES: tuple[Route, ...] = (
     _r("GET", "/skills", "skills.read", h_skills_list),
     _r("POST", "/skills/{name}/run", "skills.run", h_skill_run),
     _r("GET", "/skills/runs/{id}", "skills.read", h_skill_run_get),
-    _r("GET", "/mandates/artifacts", "mandates.read", h_not_built, planned=True),
+    *_mandates.routes(_r),  # /mandates...; the last one is GET /mandates/artifacts, now the same list as GET /mandates
 )
 
 

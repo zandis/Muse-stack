@@ -78,10 +78,10 @@ x-error-codes:
 x-role-scopes:
   owner: [status.read, catalogue.read, connect.write, keys.write, jobs.read, jobs.write, cards.read, cards.ask,
           cards.answer, pause.write, apps.read, apps.write, receipts.read, receipts.write, skills.read, skills.run,
-          mandates.read]
+          mandates.read, mandates.request, mandates.write]
   host: [status.read, catalogue.read, jobs.read, jobs.write, cards.read, cards.ask, receipts.write, skills.read,
-         skills.run]
-  viewer: [status.read, catalogue.read, jobs.read, cards.read, receipts.read]
+         skills.run, mandates.request]
+  viewer: [status.read, catalogue.read, jobs.read, cards.read, receipts.read, mandates.read]
 
 paths:
   /v1/status:
@@ -366,7 +366,7 @@ paths:
                 always: {type: boolean, default: false}
       responses:
         "200":
-          description: The card as answered, and what was done about a proposed file if it stood for one.
+          description: The card as answered, and what that caused - a proposed file written, or a requested permission issued - if it stood for one.
           content:
             application/json:
               schema:
@@ -765,16 +765,251 @@ paths:
         "404": {$ref: "#/components/responses/NotFound"}
         default: {$ref: "#/components/responses/Error"}
 
+  /v1/mandates:
+    get:
+      operationId: listMandates
+      x-scope: mandates.read
+      x-roles: [owner, viewer]
+      summary: Every permission as a sentence, with a mark per enforcing system.
+      description: |
+        The Permissions screen. Each permission ("mandate" in the specification) is given as the
+        sentence and limit lines `describe` writes, in the language asked for, with its holder,
+        its validity, its state (`active`, `stopped`, `expired`, `not_yet_valid`) and, per target,
+        how the compiler stands: `active`, `pending` (with a reason), `failed` (with a reason),
+        `not_built` (payments, connectors and the health add-on are not built; the mark is grey,
+        never green) or `revoked`. `enforcement` says what is enforced now and under which setting.
+        Never holds a permission token or a key. Needs the `biscuit-python` package on the home
+        (`unavailable`, 503, without it).
+      parameters:
+        - {name: lang, in: query, required: false, schema: {enum: [en, zh-TW], default: en}}
+      responses:
+        "200":
+          description: The permissions, newest first.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/MandateList"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+    post:
+      operationId: issueMandate
+      x-scope: mandates.request
+      x-roles: [owner, host]
+      summary: Issue a drafted permission (the person), or ask for it (a host bot).
+      description: |
+        Takes the id of a draft this same device made with `POST /v1/mandates/draft` in the last
+        hour.
+
+        From the person's own device (`owner`): the permission is signed with the home's root key,
+        stored, and compiled: what enforces it is made at once (a router app entry, narrowed
+        tokens and listed folders for skills, a consent record). Answers 201 with the permission
+        and its per-target state. When a router app was made, its key is in `token`, ONCE.
+
+        From any other device (`host`): nothing is issued. The home makes one `grant_permission`
+        card and answers 202 with it. The permission is issued when the person approves that card
+        (`POST /v1/cards/{id}/answer`; the reply's `write` then says `state: issued`). A host can
+        ask only for itself (holder `device:<its own name>`). The same request (same holder,
+        actions and resources) is refused with `conflict` (409) while one is waiting, and for a
+        week after the person declined it.
+
+        "The person" is, in this version, a device with the `owner` role; approval with a passkey
+        replaces that check later without changing this call.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [draft]
+              properties:
+                draft: {type: string, pattern: "^[0-9a-f]{16}$"}
+                lang: {enum: [en, zh-TW], default: en}
+      responses:
+        "201":
+          description: Issued and compiled.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/MandateIssued"}
+        "202":
+          description: Asked. A card is waiting for the person; nothing was issued.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [requested, issued, card, recorded]
+                properties:
+                  requested: {const: true}
+                  issued: {const: false}
+                  card: {$ref: "#/components/schemas/Card"}
+                  recorded: {$ref: "#/components/schemas/Recorded"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/mandates/draft:
+    post:
+      operationId: draftMandate
+      x-scope: mandates.request
+      x-roles: [owner, host]
+      summary: Structured fields in, a draft and its sentence back. Nothing is issued.
+      description: |
+        Validates the fields by the permission rules (`docs/spec/interfaces/permission-token.md`)
+        and returns the sentence the person would be approving, the limit lines, and which
+        enforcing systems the permission would set up (with `not_built` where one is not built).
+        The draft is kept for an hour for the device that made it. Turning the person's free text
+        into these fields is the helper's job, not this call's. A device that is not an `owner`
+        may draft only for itself (`forbidden`, 403, otherwise).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/NewMandateDraft"}
+      responses:
+        "201":
+          description: The draft.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [draft]
+                properties:
+                  draft: {$ref: "#/components/schemas/MandateDraft"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/mandates/check:
+    post:
+      operationId: checkOwnMandate
+      x-scope: mandates.request
+      x-roles: [owner, host]
+      summary: What the calling device's own permission says about an action.
+      description: |
+        Behind the tools server's `check_permission`. `has_mandate` is false when no permission
+        was ever issued to `device:<the caller>`: the tools server then answers by its interim
+        rule and says so. Otherwise `decision` is `allow`, `ask` (the permission asks first, or
+        says nothing about this) or `deny` (it was stopped, has ended, or forbids it). Only
+        actions on a folder path and running skills can be checked; sending, installing and
+        paying answer `ask`. Muse cannot block a host's own tools: for those this is advice.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action]
+              properties:
+                action: {enum: [read, list, search, write, delete, send, run, install, spend, other]}
+                resource: {type: [string, "null"], maxLength: 400}
+                amount: {type: [object, "null"]}
+      responses:
+        "200":
+          description: The answer.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [has_mandate, decision, reason, reason_words, mandate]
+                properties:
+                  has_mandate: {type: boolean}
+                  decision: {enum: [allow, ask, deny]}
+                  reason: {type: string, description: A short code; empty for allow.}
+                  reason_words: {type: string}
+                  mandate: {type: [string, "null"], description: The short name of the permission that answered.}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/mandates/declined:
+    get:
+      operationId: listDeclinedMandateRequests
+      x-scope: mandates.request
+      x-roles: [owner, host]
+      summary: Requests for a permission the person declined in the last week.
+      description: |
+        So a helper does not ask again: `POST /v1/mandates` refuses the same request from the same
+        device until `ask_again_after`. A device that is not an `owner` sees only its own.
+      responses:
+        "200":
+          description: The declined requests, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [window_days, declined]
+                properties:
+                  window_days: {const: 7}
+                  declined:
+                    type: array
+                    items:
+                      type: object
+                      required: [card_id, device, holder, actions, resources, declined_at, ask_again_after]
+                      properties:
+                        card_id: {type: string}
+                        device: {type: string}
+                        holder: {type: string}
+                        actions: {type: array, items: {type: string}}
+                        resources: {type: array, items: {$ref: "#/components/schemas/MandateResource"}}
+                        declined_at: {$ref: "#/components/schemas/Time"}
+                        ask_again_after: {$ref: "#/components/schemas/Time"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/mandates/{id}/stop:
+    post:
+      operationId: stopMandate
+      x-scope: mandates.write
+      x-roles: [owner]
+      summary: Stop a permission everywhere.
+      description: |
+        The signed stopped list is written first, so from that moment every check refuses the
+        permission and every token narrowed from it. Then each thing made for it is removed: the
+        router app (its key stops working at the next request), the narrowed tokens, the folders
+        it put on the skill-folders list; a `mandate.revoke` record is written. The reply says how
+        each target ended up. `complete: false` means something could not be removed yet; the
+        home's sweep tries again and nothing made from the permission is honoured meanwhile.
+        Idempotent. No request body.
+      parameters:
+        - {$ref: "#/components/parameters/mandateId"}
+      responses:
+        "200":
+          description: Stopped.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [stopped, was, id, name, targets, complete, recorded]
+                properties:
+                  stopped: {const: true}
+                  was: {enum: [active, stopped, expired, not_yet_valid]}
+                  id: {type: string}
+                  name: {type: string}
+                  targets: {$ref: "#/components/schemas/MandateTargets"}
+                  complete: {type: boolean}
+                  recorded: {$ref: "#/components/schemas/Recorded"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
   /v1/mandates/artifacts:
     get:
       operationId: listMandateArtifacts
       x-scope: mandates.read
-      x-roles: [owner]
-      summary: Planned. Per-target state from the mandate compiler.
-      description: Not built yet; answers 501 `not_built` until the compiler exists.
-      x-planned: true
+      x-roles: [owner, viewer]
+      summary: The same list as `GET /v1/mandates` (the earlier name of this call).
+      description: Per-target state from the compiler, for clients written against the name the architecture first gave it.
+      parameters:
+        - {name: lang, in: query, required: false, schema: {enum: [en, zh-TW], default: en}}
       responses:
-        "501": {$ref: "#/components/responses/NotBuilt"}
+        "200":
+          description: The permissions, newest first.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/MandateList"}
+        "503": {$ref: "#/components/responses/Unavailable"}
         default: {$ref: "#/components/responses/Error"}
 
 components:
@@ -820,6 +1055,12 @@ components:
       in: path
       required: true
       schema: {type: string, pattern: "^[0-9a-f]{16}$"}
+    mandateId:
+      name: id
+      in: path
+      required: true
+      description: A permission's short name (the first 12 hex digits of its id), or the 64 hex digits of its id.
+      schema: {type: string, pattern: "^[0-9a-f]{12,64}$"}
 
   responses:
     Error:
@@ -924,11 +1165,134 @@ components:
 
     WriteOutcome:
       type: object
-      required: [state, file, reason]
+      description: |
+        What approving (or declining) a card caused. For a `save_file` card: the file (`written`,
+        `refused`, `discarded`). For a `grant_permission` card that stood for a device's request:
+        the permission (`issued`, with the members of `MandateIssued`; `declined`, `expired` or
+        `failed`).
+      required: [state]
       properties:
-        state: {enum: [written, refused, discarded], description: "`refused`: approved, but it could not be written (the reason says why)."}
+        state: {enum: [written, refused, discarded, issued, declined, expired, failed], description: "`refused`: approved, but it could not be written (the reason says why)."}
         file: {type: string, description: The file's name.}
         reason: {type: [string, "null"]}
+        mandate: {description: "For a permission: the issued permission (an object), or null."}
+        app: {type: string}
+        token: {type: string, readOnly: true, description: A new router app key, shown once.}
+        token_shown_once: {const: true}
+        recorded: {$ref: "#/components/schemas/Recorded"}
+
+    MandateResource:
+      type: object
+      additionalProperties: false
+      required: [kind, value]
+      properties:
+        kind: {enum: [folder, host, calendar, record_kind, provider, home]}
+        value: {type: string, maxLength: 1024}
+
+    NewMandateDraft:
+      type: object
+      additionalProperties: false
+      required: [holder, actions, resources]
+      properties:
+        holder: {type: string, description: "`helper:<id>`, `app:<id>`, `device:<id>` or `clinician:<id>`."}
+        actions: {type: array, minItems: 1, maxItems: 32, items: {type: string}}
+        resources: {type: array, minItems: 1, maxItems: 64, items: {$ref: "#/components/schemas/MandateResource"}}
+        limits:
+          type: array
+          maxItems: 16
+          items:
+            type: object
+            additionalProperties: false
+            required: [kind, period, amount]
+            properties:
+              kind: {enum: [spend, requests, messages]}
+              unit: {type: string, description: A currency code for `spend`; empty otherwise.}
+              decimals: {type: integer, minimum: 0, maximum: 18}
+              period: {enum: [day, month]}
+              amount: {type: integer, minimum: 0, description: In the unit's minor units.}
+        routine: {type: array, items: {type: string}, description: Actions that need not be confirmed each time.}
+        purpose: {type: string, maxLength: 500}
+        purpose_code: {type: string, maxLength: 64}
+        days: {type: integer, minimum: 1, maximum: 3660, default: 30}
+        not_before: {$ref: "#/components/schemas/Time"}
+        not_after: {$ref: "#/components/schemas/Time"}
+        confirm:
+          description: "`each_write` (default), `never`, or {rule: over_amount, unit, decimals, amount}."
+        privacy: {enum: [local, private, standard, public], default: private}
+        period_zone: {type: string}
+        lang: {enum: [en, zh-TW], default: en}
+
+    MandateDraft:
+      type: object
+      required: [id, holder, sentence, lines, not_before, not_after, targets, issued, valid_for_s]
+      properties:
+        id: {type: string, pattern: "^[0-9a-f]{16}$"}
+        holder: {type: string}
+        sentence: {type: string}
+        lines: {type: array, items: {type: string}}
+        not_before: {$ref: "#/components/schemas/Time"}
+        not_after: {$ref: "#/components/schemas/Time"}
+        targets:
+          type: array
+          items:
+            type: object
+            required: [target, state, reason]
+            properties:
+              target: {enum: [skills, router, records, payments, connectors, health]}
+              state: {enum: [planned, not_built]}
+              reason: {type: string}
+        issued: {const: false}
+        valid_for_s: {type: integer}
+
+    MandateTargets:
+      type: object
+      description: Per enforcing system. Only the systems the permission has to do with are present.
+      additionalProperties:
+        type: object
+        required: [state, reason]
+        properties:
+          state: {enum: [active, pending, failed, not_built, revoked]}
+          reason: {type: string, description: A plain sentence when the state is not a plain yes; empty otherwise.}
+          note: {type: string}
+
+    Mandate:
+      type: object
+      required: [id, name, holder, state, sentence, lines, issued_at, not_before, not_after, targets]
+      properties:
+        id: {type: string, pattern: "^m1_[0-9a-f]{64}$"}
+        name: {type: string, pattern: "^[0-9a-f]{12}$", description: "The short name; usable as the id in a path."}
+        holder: {type: string}
+        state: {enum: [active, stopped, expired, not_yet_valid]}
+        sentence: {type: string}
+        lines: {type: array, items: {type: string}}
+        issued_at: {$ref: "#/components/schemas/Time"}
+        not_before: {$ref: "#/components/schemas/Time"}
+        not_after: {$ref: "#/components/schemas/Time"}
+        targets: {$ref: "#/components/schemas/MandateTargets"}
+
+    MandateList:
+      type: object
+      required: [mandates, enforcement]
+      properties:
+        mandates: {type: array, items: {$ref: "#/components/schemas/Mandate"}}
+        enforcement:
+          type: object
+          required: [skills, skills_not_shipped_with_muse, router, not_built]
+          properties:
+            skills: {enum: ["off", advise, enforce], description: The MUSE_PERMISSIONS setting on the home.}
+            skills_not_shipped_with_muse: {const: enforce}
+            router: {const: enforce}
+            not_built: {type: array, items: {type: string}}
+
+    MandateIssued:
+      type: object
+      required: [mandate, recorded]
+      properties:
+        mandate: {$ref: "#/components/schemas/Mandate"}
+        recorded: {$ref: "#/components/schemas/Recorded"}
+        app: {type: string, description: The router app made from (or tied to) the permission.}
+        token: {type: string, readOnly: true, description: The new app's key. Shown once; the home keeps only its hash.}
+        token_shown_once: {const: true}
 
     SkillRun:
       type: object
