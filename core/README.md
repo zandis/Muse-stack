@@ -6,7 +6,7 @@ no files, no clock (`now` is always an argument), no async, no `unsafe`.
 
 Each function returns what the Python function of the same name returns for
 the same input. That is checked, not promised: `core/conformance/*.json` holds
-5,148 inputs with the answers Python gave, and `cargo test` replays all of them
+8,109 inputs with the answers Python gave (5,148 for the ported rules, 2,961 for records), and `cargo test` replays all of them
 (floats must match bit for bit).
 
 ## Run it
@@ -46,16 +46,51 @@ cannot hold is `{"$float": "nan" | "inf" | "-inf"}`.
 | `ration.burn_rate`, `pace_position`, `pace_release_at`, `pace_holds` (and `Limit`, `Pace`, `Settings`) | `ration::` same names | 30, 494, 684, 348 |
 | `ration.options_trailer`, `parse_options` | `ration::` same names | 33, 59 |
 | `cache.cacheable`, `cache_key` | `cache::` same names | 236, 104 |
+| `muse.records` (see "Records" below) | `records::` same names | 2,961 in `records.json` |
 
 Supporting modules: `pyjson` (JSON read and written by Python's rules, needed
 for the cache key and for finding JSON inside error messages) and `pytext`
 (`str.strip`, `int()`, `float()`, `str.isdigit`, `repr(float)`).
 
-Dependencies: `serde`, `serde_json` (feature `float_roundtrip`), `sha2`.
+Dependencies: `serde`, `serde_json` (feature `float_roundtrip`), `sha2`; for records also `ed25519-dalek`, `hmac`, `unicode-normalization`.
 `chrono` and `chrono-tz` are dev-dependencies only, used by
 `tests/pacific_tzdata.rs` to check the Pacific midnight rule against the tz
 database; the library itself uses the same arithmetic rule as the Python (see
 Finding 1 for why it is not tzdata).
+
+## Records
+
+`records` is the signed, per-device record chain (format:
+`docs/spec/interfaces/record-format.md`). Unlike the modules above it was
+written in both languages at once, so its vectors come from the Python twin
+(`muse/records/vectors.py`, with fixed, public, test-only keys) and are
+replayed by `tests/records_conformance.rs`; `tests/records_props.rs` holds the
+properties (any single-bit change is detected, a proof verifies only for its
+own record). Signatures must match byte for byte: Ed25519 is deterministic.
+
+| Function | Vectors |
+| --- | --- |
+| `jcs::canonicalize`, `jcs::loads_strict` (RFC 8785, integers only; strict reading) | 59, 39 |
+| `check_summary`, `key_shaped`, `resource_ref`, `summary_salt`, `summary_hash`, `genesis` | 59, 30, 19, 11, 9, 5 |
+| `append`, `canonical_bytes`, `hash`, `redact` | 102, 17, 17, 10 |
+| `verify_record`, `verify_signature`, `verify_chain` | 97, 64, 105 |
+| `merkle_root`, `inclusion_proof`, `verify_inclusion`, `consistency_proof`, `verify_consistency` | 77, 614, 638, 682, 166 |
+| `checkpoint`, `verify_checkpoint`, `export`, `export_text`, `verify_export`, `verify_export_text` | 15, 17, 19, 3, 66, 21 |
+
+Storage is not here: `records::RecordStore` is the trait the vault will
+implement, and `MemoryStore` is for tests. Keys come in through the `Signer`
+and `RefKey` traits. Extra dependencies: `ed25519-dalek` 2, `hmac`,
+`unicode-normalization` (and `sha2`, already present). `Cargo.toml` raises the
+optimisation level of `curve25519-dalek` and `sha2` in dev and test builds,
+because the tests verify tens of thousands of signatures.
+
+Where the two sides could still differ, outside what the vectors pin: NFC for
+code points that one side's Unicode tables do not know yet (Python 3.13 has
+Unicode 15.1; the `unicode-normalization` crate follows its own release);
+Ed25519 edge cases beyond the 64 listed (OpenSSL behind Python, ed25519-dalek
+`verify` here); JSON nested between 128 and Python's recursion limit (both
+refuse, at different steps). The records code uses `Option::is_none_or` and
+`is_multiple_of`, so it needs Rust 1.87 or newer.
 
 ## Next (not in this slice)
 

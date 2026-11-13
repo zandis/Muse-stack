@@ -211,6 +211,21 @@ python -m muse.home --fake --tcp 4181 --state cards        # canned data for bui
 - Anything key-shaped in a request to any other call is refused. Errors have one shape: `{"error": {"code", "message", "retry_after"?}}`.
 - **Cards** are the questions the home asks before it acts (save a file, send a message, spend, grant a permission, use a one-off credit, send something private, install a skill). They wait in `~/.muse/cards.sqlite`, expire after 24 hours (5 minutes for a payment), and can be answered once. `muse.home.cards.CardStore` is what other code on the home uses to ask and wait.
 - The fake home has six states (`normal`, `used`, `paused`, `cards`, `empty`, `error`) and signs in with the fixed token it prints. `muse dash` is unchanged and still serves its own read-only page.
+### Records
+
+Muse keeps a signed record of what is done in your name on this computer: one append-only chain per device, each entry signed with the device's key and linked to the one before it, so a changed, removed or reordered entry is detected. Today the chain holds what you do to the home yourself (`muse pause` and `muse resume` each leave a record); the helper's actions, permissions and payments will write to the same chain as those parts are built.
+
+```bash
+muse records list                         # newest first; --since 7d, --action files, --cost-only, --json
+muse records verify                       # "All records check out (N records)", the last seal, and this device's key
+muse records seal                         # sign a checkpoint over every record so far
+muse records export FILE                  # a file someone else can check; same filters; --redact-summaries leaves the text out
+muse records check-file FILE              # check an export, yours or anyone's; --device KEY to require a particular signer
+```
+
+A record holds the time, who acted, the action's name, the permission it ran under, the outcome, the cost, and a short summary. It never holds content: what was acted on is stored as a keyed reference that means nothing without a key that stays on your devices, and a summary that looks like it contains a key or token is refused. An export checks out with nothing but the file, and a filtered export proves each of its records belongs to the sealed set. What a check cannot tell the reader is whose key signed it (show them the key from `muse records verify`) or whether newer records exist.
+
+Files: `~/.muse/records.sqlite` and `~/.muse/device.key` (the signing key; both 0600). Deleting `device.key` starts a new chain under a new key. A seal is kept only on this computer for now, so records removed from the end before any seal, or a whole file replaced by an older copy, cannot be noticed yet; keeping seals somewhere else is planned. A problem writing a record never stops `pause` or `resume`. The format, with a worked example and what an export reveals, is in [docs/spec/interfaces/record-format.md](docs/spec/interfaces/record-format.md); the same rules are in the Rust core (`core/src/records.rs`), and `core/conformance/records.json` holds the cases both must answer alike. No outside security review has been done. Needs the `cryptography` package (in the `dev` and `trust` extras).
 
 ## Trust layer
 

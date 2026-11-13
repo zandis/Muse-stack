@@ -264,13 +264,16 @@ const EXPECTED: [(&str, &[&str]); 3] = [
     ("cache.json", &["cacheable", "cache_key"]),
 ];
 
+/// Vector files replayed by another test file (records.json: tests/records_conformance.rs).
+const OTHER_TESTS: &[&str] = &["records.json"];
+
 #[test]
 fn every_vector_matches_python() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("conformance");
     let mut files: Vec<String> = fs::read_dir(&dir)
         .expect("core/conformance")
         .map(|entry| entry.unwrap().file_name().into_string().unwrap())
-        .filter(|name| name.ends_with(".json"))
+        .filter(|name| name.ends_with(".json") && !OTHER_TESTS.contains(&name.as_str()))
         .collect();
     files.sort();
     let mut known: Vec<&str> = EXPECTED.iter().map(|(file, _)| *file).collect();
