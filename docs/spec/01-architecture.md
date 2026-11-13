@@ -2,7 +2,7 @@
 
 Written 2026-11-13. Part 2 is the user experience (`02-ux.md`); part 3 is the build plan (`03-plan.md`). This specification follows `docs/ecosystem-review-2026-11.md` and replaces the module list in `docs/muse-plan.md` §10. Product positioning, the rationing rules and the helper's operating rules in the earlier documents still stand.
 
-Four recommendations from the review are assumed here and are still the owner's to confirm. They are marked **(assumed)** where they matter:
+Four recommendations from the review were confirmed by the owner on 2026-11-13. They are still marked **(assumed)** below where they shape a module, so a later change of mind is easy to trace:
 
 1. The router stays in Python as a local service. The Rust core holds vault, mandates, receipts, sync and the device link.
 2. Phones are viewer and approver first.

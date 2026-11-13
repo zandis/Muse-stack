@@ -1,6 +1,6 @@
 # Muse v1 specification, part 3: the build plan
 
-Written 2026-11-13. Part 1 is the modules (`01-architecture.md`); part 2 is the experience (`02-ux.md`). This replaces the phase list in `docs/muse-plan.md` §10. The two phase-0 tests there still decide whether the rest is worth building, and they are folded into milestone 1 below.
+Written 2026-11-13. Part 1 is the modules (`01-architecture.md`); part 2 is the experience (`02-ux.md`); part 4 (`04-execution-plan.md`) breaks these milestones into work packages with sizes, a critical path and gates, and corrects this part's twelve-week estimate. This replaces the phase list in `docs/muse-plan.md` §10. The two phase-0 tests there still decide whether the rest is worth building, and they are folded into milestone 1 below.
 
 Assumed team, from the owner's earlier answer: the owner plus one or two engineers, twelve weeks. Work marked **(owner)** cannot be done by an engineer.
 
@@ -175,7 +175,7 @@ If time runs short, cut in this order: Japanese and Korean; mail and calendar co
 
 ## 7. Decisions needed from the owner before milestone 2 starts
 
-1. Confirm the four assumptions at the top of part 1 (router stays Python; phones approve and view first; Biscuit; Coinbase's stack on the test network).
+1. ~~Confirm the four assumptions at the top of part 1.~~ Confirmed by the owner on 2026-11-13.
 2. Which phone platform first, if not both.
 3. Default daily spending limit shown to new users (the specification uses NT$30).
 4. Whether to publish the catalogue openly.
