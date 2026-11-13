@@ -611,6 +611,19 @@ select.field{min-height:52px;padding:0 12px;resize:none}
   .sheet{padding:12px 16px 22px}
 }
 @media (prefers-reduced-motion:reduce){.spin-s{animation:none;border-right-color:var(--accent)}}
+@media (max-width:1500px){.tb .brand{display:none}}
+.tb{gap:8px 10px}
+.sidebar{overflow-y:auto;padding:12px 10px;gap:2px}
+.sidebar .logo{padding:2px 10px 8px}
+.sidebar .sbtn{min-height:44px;font-size:16px;flex:none}
+.sidebar hr{margin:6px 4px;flex:none}
+.gnext{justify-content:center;text-align:center}
+.spend .row{flex-wrap:wrap;gap:4px 12px}
+.tip{flex-wrap:wrap}
+.tip .sp{flex:1 1 140px}
+.rtools{display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.device.desktop .rtools{flex-direction:row;align-items:center}
+.device.desktop .rtools .chips{flex:1}
 </style>
 </head>
 <body>
@@ -695,9 +708,9 @@ const T = {
   cd_spend_x: ['付完後，今天的上限還剩 {0}。', 'After this, {0} of today’s limit is left.'], cd_spend_over: ['這會超過今天的上限 {0}。', 'This is {0} over today’s limit.'], cd_spend_raise: ['只限今天，把上限調到 {0}', 'Raise the limit to {0} for today only'],
   cd_spend_rec: ['付了 NT$1.3 給「搜尋服務（示範）」，完成報告', 'Paid NT$1.3 to Search service (sample) to finish your report'], cd_spend_short: ['付了 NT$1.3', 'Paid NT$1.3'],
   cd_grant_what: ['給一項授權', 'Grant a permission'], cd_grant_thing: ['你的小幫手可以讀取行事曆「家庭」。', 'Your helper may read the calendar “Family”.'], cd_grant_where: ['用來幫你規劃這個星期', 'to plan your week'], cd_grant_under: ['新的授權', 'A new permission'],
-  cd_grant_lim: ['只能看，不能新增或修改活動。', 'Read only. It can’t add or change events.'], cd_grant_end: ['12 月 13 日到期', 'Ends 13 Dec'], cd_grant_rec: ['你授權小幫手讀取行事曆「家庭」', 'You allowed your helper to read the calendar “Family”'], cd_grant_short: ['新授權：行事曆', 'New permission: calendar'],
+  cd_grant_lim: ['只能看，不能新增或修改活動。', 'Read only. It can’t add or change events.'], cd_grant_end: ['到 12 月 13 日', 'until 13 Dec'], cd_grant_rec: ['你授權小幫手讀取行事曆「家庭」', 'You allowed your helper to read the calendar “Family”'], cd_grant_short: ['新授權：行事曆', 'New permission: calendar'],
   cd_cgrant_what: ['給一項授權', 'Grant a permission'], cd_cgrant_thing: ['你的小幫手可以讀取資料夾「文件/帳單」。', 'Your helper may read the folder Documents/Bills.'], cd_cgrant_where: ['這件例行工作需要', 'needed for this chore'], cd_cgrant_under: ['新的授權', 'A new permission'],
-  cd_cgrant_lim: ['只能看，不會改動任何檔案。', 'Read only. No file is changed.'], cd_cgrant_end: ['到你停止為止', 'Until you stop it'], cd_cgrant_rec: ['你授權小幫手讀取資料夾「文件/帳單」', 'You allowed your helper to read the folder Documents/Bills'], cd_cgrant_short: ['新授權：帳單資料夾', 'New permission: Bills folder'],
+  cd_cgrant_lim: ['只能看，不會改動任何檔案。', 'Read only. No file is changed.'], cd_cgrant_end: ['到你停止為止', 'until you stop it'], cd_cgrant_rec: ['你授權小幫手讀取資料夾「文件/帳單」', 'You allowed your helper to read the folder Documents/Bills'], cd_cgrant_short: ['新授權：帳單資料夾', 'New permission: Bills folder'],
   cd_oneoff_what: ['用掉一次性的試用額度', 'Use a one-off trial credit'], cd_oneoff_thing: ['Cohere 試用額度，用來讀一份 80 頁的文件', 'Cohere trial credit, to read an 80-page document'], cd_oneoff_where: ['送到 Cohere', 'sent to Cohere'], cd_oneoff_under: ['你在「問問」裡的要求', 'Your request in Ask'],
   cd_oneoff_x: ['這份額度用完就沒有了，不會補滿。', 'This credit does not refill.'], cd_oneoff_rec: ['用一次性的 Cohere 試用額度讀了一份長文件', 'Read a long document on a one-off Cohere trial credit'], cd_oneoff_short: ['用了試用額度', 'Trial credit used'],
   cd_private_what: ['把私密的東西交給服務處理', 'Send something private to a service'], cd_private_thing: ['「健檢報告.pdf」的兩頁', 'Two pages of “Health check report.pdf”'], cd_private_where: ['不會離開你的裝置', 'It stays on your devices'], cd_private_under: ['你在「問問」裡的要求', 'Your request in Ask'],
@@ -705,7 +718,7 @@ const T = {
   cd_skill_what: ['安裝一項技能', 'Install a skill'], cd_skill_thing: ['「帳單整理」', '“Bill sorter”'], cd_skill_where: ['裝在你的常駐小幫手上', 'on your always-on helper'], cd_skill_under: ['你在「例行工作」裡的要求', 'Your request in Chores'],
   cd_skill_asks: ['它要求：', 'What it asks for:'], cd_skill_list: [['讀取資料夾「文件/帳單」', '在「文件/Muse」新增檔案', '不能上網'], ['Read the folder Documents/Bills', 'Add new files in Documents/Muse', 'No internet access']], cd_skill_by: ['作者：', 'Written by:'], cd_skill_who: ['Muse 團隊（示範）', 'The Muse team (sample)'],
   cd_skill_rec: ['安裝了技能「帳單整理」', 'Installed the skill “Bill sorter”'], cd_skill_short: ['安裝技能', 'Skill installed'],
-  pm_limits: ['限制：', 'Limits:'], pm_ends: ['期限：', 'Ends:'], d_usd: ['美元', 'In US dollars'], d_paidwith: ['付款方式', 'Paid with'], d_paidwith_v: ['測試網路上的練習用 USDC（0.04）', 'practice USDC on the test network (0.04)'],
+  pm_limits: ['限制：', 'Limits:'], pm_ends: ['期限：', 'Lasts:'], d_usd: ['美元', 'In US dollars'], d_paidwith: ['付款方式', 'Paid with'], d_paidwith_v: ['測試網路上的練習用 USDC（0.04）', 'practice USDC on the test network (0.04)'],
   rc_notappr: ['沒有同意：{0} {1}', 'Not approved: {0} {1}'], dc_title: ['拒絕過的', 'Declined'], dc_sub: ['小幫手問過、你沒有同意的。一個星期內它不會再問。', 'Asked for by your helper and declined by you. It won’t ask again within a week.'], dc_none: ['沒有。', 'None.'],
   dc_cal: ['讀取行事曆「家庭」', 'Read the calendar “Family”'], dc_cal_d: ['今天拒絕。11 月 20 日前不會再問。', 'Declined today. Won’t ask again before 20 Nov.'], dc_bills: ['讀取資料夾「文件/帳單」', 'Read the folder Documents/Bills'], dc_bills_d: ['今天拒絕。11 月 20 日前不會再問。', 'Declined today. Won’t ask again before 20 Nov.'],
   dc_mail: ['讀取你所有的郵件', 'Read all of your mail'], dc_mail_d: ['11 月 11 日拒絕。11 月 18 日前不會再問。', 'Declined 11 Nov. Won’t ask again before 18 Nov.'],
@@ -829,14 +842,14 @@ const T = {
   pe_t: ['還沒有任何授權', 'No permissions yet'], pe_b: ['小幫手被允許做的每一件事，都會用一句話列在這裡，每一項都可以停止。', 'Everything your helper is allowed to do will be listed here as a sentence, each with a Stop button.'],
   pm_work: ['你的小幫手可以讀取資料夾「文件/工作」。', 'Your helper may read the folder Documents/Work.'], pm_work_l: ['只能看，不會改動檔案', 'Read only; no file is changed'],
   pm_save: ['你的小幫手可以在「文件/Muse」新增檔案，每次都先問你。', 'Your helper may save new files in Documents/Muse, asking each time.'], pm_save_l: ['只能新增，不能刪除或覆蓋', 'New files only; nothing is deleted or overwritten'],
-  pm_spend: ['你的小幫手每天最多可以在 3 個服務上花 NT$65，到 11 月 30 日為止。', 'Your helper may spend up to NT$65 a day on 3 services, until 30 Nov.'], pm_spend_l: ['每天最多 NT$65（約 US$2），只能付給 3 個服務', 'Up to NT$65 a day (about US$2), to 3 services only'], pm_spend_e: ['11 月 30 日到期', 'Ends 30 Nov'],
+  pm_spend: ['你的小幫手每天最多可以在 3 個服務上花 NT$65，到 11 月 30 日為止。', 'Your helper may spend up to NT$65 a day on 3 services, until 30 Nov.'], pm_spend_l: ['每天最多 NT$65（約 US$2），只能付給 3 個服務', 'Up to NT$65 a day (about US$2), to 3 services only'], pm_spend_e: ['到 11 月 30 日', 'until 30 Nov'],
   pm_spend_q: ['你的小幫手將不能在這些服務上花錢。', 'Your helper won’t be able to spend on these services.'], pm_spend_short: ['每天最多花 NT$65', 'Spend up to NT$65 a day'],
   pm_home: ['你的常駐小幫手可以用你的免費額度執行例行工作。它不能讀私密的紀錄。', 'Your always-on helper may run chores using your free allowances. It can’t read private records.'], pm_home_l: ['不能花錢；不能讀私密的紀錄', 'No spending; no private records'],
   pm_mail: ['你的小幫手可以在郵件裡寫草稿。它不能寄出。', 'Your helper may write drafts in Mail. It can’t send.'], pm_mail_l: ['只能寫草稿，每次都先問你', 'Drafts only, asking each time'],
   pm_app: ['程式「寫程式的工具」可以用你的額度，每天最多 200 次，不能用付費服務。', 'The program “Coding tool” may use your allowances, up to 200 requests a day, never paid services.'], pm_app2: ['你新增的程式可以用你的額度，每天最多 100 次，不能用付費服務。', 'The program you added may use your allowances, up to 100 requests a day, never paid services.'], pm_app_l: ['有每天上限；不能用付費服務', 'Daily limit; no paid services'],
-  pm_noend: ['到你停止為止', 'Until you stop it'], pm_cal: ['你的小幫手可以讀取行事曆「家庭」。', 'Your helper may read the calendar “Family”.'], pm_cal_short: ['讀取行事曆「家庭」', 'Read the calendar “Family”'],
+  pm_noend: ['到你停止為止', 'until you stop it'], pm_cal: ['你的小幫手可以讀取行事曆「家庭」。', 'Your helper may read the calendar “Family”.'], pm_cal_short: ['讀取行事曆「家庭」', 'Read the calendar “Family”'],
   pm_bills: ['你的小幫手可以讀取資料夾「文件/帳單」。', 'Your helper may read the folder Documents/Bills.'], pm_bills_short: ['讀取資料夾「文件/帳單」', 'Read the folder Documents/Bills'],
-  pm_custom: ['你的小幫手可以：{0}', 'Your helper may: {0}'], pm_custom_l: ['要改動、寄出或花錢之前，每次都先問你', 'Asks you each time before it changes, sends or spends'], pm_custom_e: ['12 月 13 日到期（30 天）', 'Ends 13 Dec (30 days)'],
+  pm_custom: ['你的小幫手可以：{0}', 'Your helper may: {0}'], pm_custom_l: ['要改動、寄出或花錢之前，每次都先問你', 'Asks you each time before it changes, sends or spends'], pm_custom_e: ['到 12 月 13 日（30 天）', 'until 13 Dec (30 days)'],
   pk_t: ['用通行密鑰確認', 'Confirm with your passkey'], pk_grant: ['用指紋、臉部或螢幕鎖確認這項授權。', 'Use your fingerprint, face or screen lock to approve this permission.'], pk_wallet: ['用指紋、臉部或螢幕鎖建立你的練習錢包。只要這一次。', 'Use your fingerprint, face or screen lock to create your practice wallet. Just this once.'],
   pk_show: ['用指紋、臉部或螢幕鎖確認是你本人，才會顯示救援金鑰。', 'Use your fingerprint, face or screen lock to show the recovery key.'], pk_unlock: ['用指紋、臉部或螢幕鎖解鎖私密的紀錄。', 'Use your fingerprint, face or screen lock to unlock your private records.'],
   pk_sim: ['模擬畫面：真正的 App 會在這裡跳出系統的確認視窗', 'Simulated: the real app shows the system prompt here'], pk_go: ['繼續（示範）', 'Continue (demo)'],
@@ -1517,7 +1530,7 @@ VIEWS.records = () => {
   }
   return { body: h('div', { class: 'col wide' }, updating(), S.records.length ? seal : null,
     locked ? errBox('lock', t('lk_t'), t('lk_w'), btn(t('lk_btn'), 'small primary', () => passkey('pk_unlock', () => { S.unlocked = true; }), { fk: 'lk' }), 'info') : null,
-    S.records.length ? h('div', { class: 'row wrap' }, h('div', { class: 'sp', style: 'min-width:0' }, chips), exp) : null, listEl) };
+    S.records.length ? h('div', { class: 'rtools' }, chips, exp) : null, listEl) };
 };
 
 /* ---------- 4.5 Services ---------- */
@@ -1852,7 +1865,7 @@ function renderTray() {
     h('span', { 'aria-hidden': 'true', class: 'row g6' }, icon('wifi'), icon('battery'), t('tray_time', NOW))),
   S.tray ? h('section', { class: 'popover', 'aria-label': t('tray_aria') },
     !app ? h('p', { class: 'muted', text: t('tray_setup') }) : [
-      has ? h('div', { class: 'g' }, gauge(pct, { size: 96, mini: true, paused: S.paused }), h('div', { class: 'gtx' }, h('b', { text: pct + '%' }), h('span', { text: S.paused ? t('paused') : t('g_label') }), h('span', { text: pct <= 0 ? t('g_refills', REFILL) : t('g_next', REFILL, 'Gemini') }))) : h('p', { class: 'muted', text: t('g_none_t') }),
+      has ? h('div', { class: 'g' }, gauge(pct, { size: 96, mini: true, paused: S.paused }), h('div', { class: 'gtx' }, h('b', { text: (S.services.some((i) => SVC[i].est) && pct > 0 ? t('about') + ' ' : '') + pct + '%' }), h('span', { text: S.paused ? t('paused') : t('g_label') }), h('span', { text: pct <= 0 ? t('g_refills', REFILL) : t('g_next', REFILL, 'Gemini') }))) : h('p', { class: 'muted', text: t('g_none_t') }),
       h('div', { class: 'line' }, h('span', { text: t('spent_today') }), h('b', { text: t('x_of_y', nt(S.spent), nt(cap())) })),
       w ? cardEl(w, { compact: true }) : h('p', { class: 'small muted', text: t('needs_none') }),
       h('div', { class: 'btnrow' }, btn(t(S.paused ? 'resume' : 'pause'), S.paused ? 'primary small' : 'sec small', () => setPaused(!S.paused), { icon: S.paused ? 'play' : 'pause', fk: 'tr-pause' }), btn(t('tray_open'), 'sec small', () => { S.tray = false; goto('today'); }, { fk: 'tr-open' }))]) : null);
