@@ -6,6 +6,12 @@
 #   ./deploy/oracle-a1-setup.sh                 # Docker (default)
 #   ./deploy/oracle-a1-setup.sh --native        # no Docker; proxy runs in a venv
 #   ./deploy/oracle-a1-setup.sh --tz Asia/Taipei
+#   ./deploy/oracle-a1-setup.sh --services      # also the background services below
+#
+# --services additionally installs, from deploy/vm/units, hardened system units
+# that run as you: the home control API (a Unix socket), the queue, a timer that
+# runs `muse chores tick` every minute, the weekly catalogue check, and the
+# sampler with the idle guard. Without the flag nothing extra is installed.
 #
 # What it does: installs Docker (or a venv), creates .env (mode 600) with a
 # generated master key, starts the proxy on 127.0.0.1:4000, installs the muse
@@ -19,17 +25,21 @@
 #
 # NOT TESTED on a real Oracle VM. It was written without access to one. Read it
 # before running it, and treat the first run as the test.
+#
+# The one-button path (no terminal) is deploy/oracle-stack/README.md.
 
 set -euo pipefail
 
 MODE="docker"
 TZ_NAME="Asia/Taipei"
+SERVICES=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --native) MODE="native" ;;
     --docker) MODE="docker" ;;
     --tz) shift; TZ_NAME="${1:?--tz needs a zone, e.g. Asia/Taipei}" ;;
-    -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
+    --services) SERVICES="yes" ;;
+    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -180,6 +190,26 @@ systemctl --user daemon-reload
 systemctl --user enable --now muse-dash.service
 # Keep user services running after logout and across reboots.
 sudo loginctl enable-linger "$USER" || true
+
+if [ -n "$SERVICES" ]; then
+  say "Background services (system units that run as $USER; shared with deploy/oracle-stack)"
+  VM_CONF="$HOME/.config/muse/vm.conf"
+  mkdir -p "$(dirname "$VM_CONF")"
+  if [ ! -f "$VM_CONF" ]; then
+    # Settings only, no secrets. The units read keys from .env themselves.
+    cat > "$VM_CONF" <<CONF
+MUSE_HOME=$MUSE_HOME_DIR
+MUSE_VM_STATE=$MUSE_HOME_DIR/vm
+MUSE_ENV_FILE=$REPO/.env
+MUSE_ROOT=$REPO
+MUSE_TZ=$TZ_NAME
+MUSE_IDLE_GUARD=on
+CONF
+  fi
+  sudo bash "$REPO/deploy/vm/install-services.sh" --user "$USER" --root "$REPO" --venv "$VENV" \
+       --state "$MUSE_HOME_DIR" --conf "$VM_CONF" --enable \
+       --units "muse-home muse-queue muse-chores muse-catalog-check muse-vm-monitor"
+fi
 
 say "Listening sockets (everything below should be 127.0.0.1, except sshd)"
 ss -tlnH 2>/dev/null | awk '{print $4}' | sort -u

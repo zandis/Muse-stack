@@ -13,6 +13,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=deploy/vm/lib.sh
 . "$HERE/lib.sh"
+case "${1:-}" in -h|--help) sed -n '2,10p' "$0"; exit 0 ;; esac
 load_conf
 
 STATE="${MUSE_VM_STATE:-/var/lib/muse/vm}"

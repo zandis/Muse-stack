@@ -19,16 +19,16 @@ die()  { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 # Read KEY=VALUE settings (no shell code is evaluated: the file is parsed, not
 # sourced). Values already in the environment win, so a test can override.
 load_conf() {
-  local file="${1:-$MUSE_VM_CONF}" line key value
+  local file="${1:-$MUSE_VM_CONF}" line name value
   [ -r "$file" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in ''|'#'*) continue ;; esac
-    key="${line%%=*}"; value="${line#*=}"
-    case "$key" in *[!A-Za-z0-9_]*|'') continue ;; esac
-    if [ -z "${!key+x}" ]; then
-      printf -v "$key" '%s' "$value"
+    name="${line%%=*}"; value="${line#*=}"
+    case "$name" in *[!A-Za-z0-9_]*|'') continue ;; esac
+    if [ -z "${!name+x}" ]; then
+      printf -v "$name" '%s' "$value"
       # shellcheck disable=SC2163
-      export "$key"
+      export "$name"
     fi
   done < "$file"
 }

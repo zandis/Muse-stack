@@ -50,6 +50,9 @@ SETUP_DIR="${MUSE_SETUP_DIR:-/var/lib/muse-setup}"
 TZ_NAME="${MUSE_TZ:-Asia/Taipei}"
 REBOOT_TIME="${MUSE_OS_REBOOT_TIME:-03:30}"
 TESTER_SSH="${MUSE_TESTER_SSH:-no}"
+# Empty on a real machine. The tests point it at a scratch folder so that the
+# few files written outside /opt/muse and /var/lib/muse land there instead.
+SYSROOT="${MUSE_SYSROOT:-}"
 
 valid_version "$VERSION" || die "this release folder ($VERSION) is not named after a fixed version"
 [ "$RELEASE_DIR" = "$BASE/releases/$VERSION" ] || die "run this from $BASE/releases/<version>, not $RELEASE_DIR"
@@ -94,32 +97,32 @@ do_account() {
   fi
   passwd --lock "$RUN_USER" >/dev/null
   # The service user gets no sudo, now or later.
-  if [ -e "/etc/sudoers.d/$RUN_USER" ] || id -nG "$RUN_USER" | tr ' ' '\n' | grep -qxE 'sudo|admin|adm|lxd|docker'; then
+  if [ -e "$SYSROOT/etc/sudoers.d/$RUN_USER" ] || id -nG "$RUN_USER" | tr ' ' '\n' | grep -qxE 'sudo|admin|adm|lxd|docker'; then
     die "the service user must not be able to become root"
   fi
 }
 
 do_folders() {
-  install -d -m 0755 -o root -g root "$BASE" "$BASE/releases" /etc/muse
+  install -d -m 0755 -o root -g root "$BASE" "$BASE/releases" "$SYSROOT/etc/muse" "$SYSROOT/etc/apt/apt.conf.d" "$SYSROOT/etc/sysctl.d" "$SYSROOT/usr/local/bin"
   install -d -m 0700 -o "$RUN_USER" -g "$RUN_USER" "$STATE_ROOT" "$HOME_DIR" "$VM_STATE"
   chown -R root:root "$RELEASE_DIR"
   chmod -R go-w "$RELEASE_DIR"
 }
 
 do_os() {
-  cat > /etc/apt/apt.conf.d/20auto-upgrades <<'CONF'
+  cat > "$SYSROOT/etc/apt/apt.conf.d/20auto-upgrades" <<'CONF'
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
 CONF
-  cat > /etc/apt/apt.conf.d/52muse-unattended-upgrades <<CONF
+  cat > "$SYSROOT/etc/apt/apt.conf.d/52muse-unattended-upgrades" <<CONF
 // Security updates install by themselves; a reboot, when one is needed, happens at this time.
 Unattended-Upgrade::Automatic-Reboot "true";
 Unattended-Upgrade::Automatic-Reboot-Time "$REBOOT_TIME";
 Unattended-Upgrade::Remove-Unused-Dependencies "true";
 CONF
   # The cloud network lets no ICMP in, so let TCP find the path MTU by itself.
-  printf 'net.ipv4.tcp_mtu_probing = 1\n' > /etc/sysctl.d/60-muse.conf
-  sysctl -q -p /etc/sysctl.d/60-muse.conf || true
+  printf 'net.ipv4.tcp_mtu_probing = 1\n' > "$SYSROOT/etc/sysctl.d/60-muse.conf"
+  sysctl -q -p "$SYSROOT/etc/sysctl.d/60-muse.conf" || true
   if command -v timedatectl >/dev/null 2>&1; then timedatectl set-timezone "$TZ_NAME" || true; fi
 }
 
@@ -175,7 +178,7 @@ do_backupkey() {
 }
 
 do_command() {
-  cat > /usr/local/bin/muse <<WRAP
+  cat > "$SYSROOT/usr/local/bin/muse" <<WRAP
 #!/bin/sh
 # The muse CLI on this VM: runs as the service user with the VM's settings.
 #   sudo muse status        sudo muse keys set GEMINI_API_KEY
@@ -187,13 +190,13 @@ export MUSE_HOME="$HOME_DIR" MUSE_ENV_FILE="$ENV_FILE" MUSE_TZ="$TZ_NAME" MUSE_B
 export PYTHONPATH="$BASE/current" PATH="$BASE/current/venv/bin:/usr/bin:/bin"
 cd "$BASE/current" && exec "$BASE/current/venv/bin/python" -m muse "\$@"
 WRAP
-  chmod 755 /usr/local/bin/muse
-  ln -sfn "$BASE/current/deploy/vm/muse-vm-status" /usr/local/bin/muse-vm-status
+  chmod 755 "$SYSROOT/usr/local/bin/muse"
+  ln -sfn "$BASE/current/deploy/vm/muse-vm-status" "$SYSROOT/usr/local/bin/muse-vm-status"
 }
 
 do_services() {
   bash "$RELEASE_DIR/deploy/vm/install-services.sh" --user "$RUN_USER" --root "$BASE/current" \
-       --venv "$BASE/current/venv" --state "$STATE_ROOT" --base "$BASE" --enable
+       --venv "$BASE/current/venv" --state "$STATE_ROOT" --base "$BASE" --dest "$SYSROOT/etc/systemd/system" --enable
 }
 
 do_health() {
