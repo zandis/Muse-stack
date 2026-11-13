@@ -1,7 +1,7 @@
 """Exact-repeat cache (plan section 5.6): answer an identical request without asking anyone.
 
 Off unless MUSE_CACHE=exact. Why built here and not LiteLLM's own cache
-(litellm.caching, 1.108.5): LiteLLM checks its cache inside the client wrapper
+(litellm.caching, 1.108.6): LiteLLM checks its cache inside the client wrapper
 *after* routing and after our deployment hook, keys it on the deployment's
 upstream model rather than the alias the user asked for (so two deployments
 of one alias never share an answer), cannot be told "this request is in a

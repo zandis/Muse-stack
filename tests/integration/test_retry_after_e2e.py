@@ -79,7 +79,7 @@ def test_429_retry_after_60_is_not_retried(make_proxy, upstream, path):
 def test_native_cooldown_alone_does_not_cover_a_second_alias(make_proxy, upstream):
     """Why muse/quota.py and the hook's shared block stay after native Retry-After is on.
 
-    LiteLLM 1.108.5 cools one deployment. `fast` and `cheap` hold two
+    LiteLLM 1.108.6 cools one deployment. `fast` and `cheap` hold two
     deployments of the same upstream, so on the plain proxy `cheap` still calls
     the upstream that just said "stay away for 60 s". If this test starts
     failing, LiteLLM has closed the gap and the shared block can be slimmed.

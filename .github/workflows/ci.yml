@@ -34,7 +34,10 @@ jobs:
       - name: Install
         run: python -m pip install -e ".[dev]"
       - name: Unit tests
-        run: python -m pytest tests -q --ignore=tests/integration
+        # In parallel, one worker per core (pytest-xdist, from the dev extra). Every test
+        # has its own MUSE_HOME and tmp paths and binds port 0, so workers share nothing.
+        # The serial form (drop `-n auto`) still works.
+        run: python -m pytest tests -q --ignore=tests/integration -n auto --dist worksteal
 
   core:
     # The Rust core (core/) replays the vectors exported from Python
@@ -105,7 +108,7 @@ jobs:
       - name: The installed LiteLLM is the pinned one
         run: python scripts/verify_litellm.py
       - name: Hook and proxy tests
-        run: python -m pytest tests/test_hook_unit.py tests/integration -q
+        run: python -m pytest tests/test_hook_unit.py tests/integration -q -n auto --dist worksteal
 
   boot:
     runs-on: ubuntu-latest

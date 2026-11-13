@@ -44,7 +44,14 @@ What is trending overall is mostly agent-skill packs and coding-agent shells. Fe
 | Tauri | An advisory on 26 September about the fetch command's access control [V per the scan] | The app does not use the HTTP plugin | None, unless that plugin is added |
 | iroh | 1.4.0 fixed TLS-library advisories [V per the scan] | Pairing prototype only | Pin 1.4.1 or later |
 
-The advisory details above come from the scan and have not been re-read by a second pass. Each is to be confirmed on the project's own advisory page before acting.
+The advisory details above came from the scan. They were then checked on each project's own pages on 13 November:
+
+| Dependency | What was confirmed | Done |
+|---|---|---|
+| LiteLLM | [V GitHub advisory GHSA-2rwg-2wh4-7c4f, BerriAI/litellm] Published 12 November, high. Six Azure Entra fields in a request body could override a deployment's credential and echo server secrets in an error. It needs an `azure/` or `azure_ai/` model. Fixed in 1.108.6 (also 1.106.9 and 1.109.1). [V PyPI JSON] 1.108.6 exists, uploaded 12 November 01:07 UTC, not yanked. [V ghcr.io registry] `v1.108.6` resolves to index `sha256:c64fe10f…3ec3`, signed with the key LiteLLM rotated to in October (signature checked by hand). [V release notes v1.108.6] The six fields now go in `metadata`. | Upgraded to 1.108.6: image tag and digest, both lock files regenerated, docs and tests. The LiteLLM files the router relies on are byte-identical to 1.108.5. Hook, integration and slow tests pass. |
+| MCP Python SDK | [V GitHub advisories, modelcontextprotocol/python-sdk] Six advisories published 28 September to 5 October. Five are fixed in 2.2.0 and one (request body size) in 2.1.0. [V PyPI JSON] 2.3.0, uploaded 2 October, is the latest. | No change: 2.3.0 already has all six fixes. |
+| Tauri | [V GitHub advisory GHSA-w28w-mhc8-qvjv, tauri-apps/tauri] Published 26 September, high. The scan was wrong about its scope: it is Tauri's own internal channel fetch command, not the HTTP plugin. Affected 2.0.0 to 2.11.5, fixed in 2.11.6. The app pins `tauri` 2.12.5. | No change: the pin is past the fix. |
+| iroh | [V GitHub release notes v1.4.0, n0-computer/iroh] 1.4.0 updates rustls for four RUSTSEC advisories. [V GitHub advisories, rustls/rustls] Those are fixed in rustls 0.23.46; `core/link` locks rustls 0.23.46. [V GitHub advisories, n0-computer/iroh] iroh's own three advisories (5 October) are fixed in 1.1.0. `core/link` pins iroh 1.4.1. | No change: both pins are at or past the fixes. |
 
 ## The Handoff² article
 

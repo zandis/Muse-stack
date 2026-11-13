@@ -4,16 +4,16 @@ Glue only: rules live in muse.quota (what a failure means), muse.ledger (shared
 state) and muse.policy (which deployments a privacy class may use).
 
 Loaded by the proxy through `litellm_settings.callbacks: ["muse.hook.handler"]`
-(LiteLLM 1.108.5 `proxy/types_utils/utils.py:get_instance_fn` imports
+(LiteLLM 1.108.6 `proxy/types_utils/utils.py:get_instance_fn` imports
 `muse.hook` and reads `handler`; PYTHONPATH must contain the repo root, which
 is /opt/muse in the container).
 
-Hooks used, with the 1.108.5 signatures (litellm/integrations/custom_logger.py):
+Hooks used, with the 1.108.6 signatures (litellm/integrations/custom_logger.py):
 - async_pre_call_hook: validate x-muse-privacy (unknown -> 400), resolve the class
   (the app's default_privacy replaces MUSE_DEFAULT_PRIVACY when the header is absent).
   Then the routing rules (muse/rules.py, rule 2): a request with `x-muse-task`, or
   for the model `auto`, has `data["model"]` REPLACED by the task's alias here. The
-  1.108.5 proxy (proxy/common_request_processing.py) runs this hook after its own
+  1.108.6 proxy (proxy/common_request_processing.py) runs this hook after its own
   alias maps and before route_request, which reads data["model"], so the router
   only ever sees a real alias; `auto` needs no entry in the rendered config. The
   task's max_output_tokens is applied as a ceiling; an unknown task is a 400.
@@ -127,7 +127,7 @@ DEFAULT_OUTPUT_ESTIMATE = 1024  # tokens held for a paid call that sets no max_t
 class MusePrivacyError(GuardrailRaisedException):
     """No deployment allowed for the request's privacy class.
 
-    A GuardrailRaisedException, so the 1.108.5 router neither retries nor falls
+    A GuardrailRaisedException, so the 1.108.6 router neither retries nor falls
     back across aliases (router.py: `is_guardrail_intervention(e)`).
     """
 

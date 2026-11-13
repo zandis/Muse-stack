@@ -1,4 +1,4 @@
-# Hash-locked install set for the native (non-Docker) proxy: litellm[proxy]==1.108.5
+# Hash-locked install set for the native (non-Docker) proxy: litellm[proxy]==1.108.6
 # and every transitive dependency. Install with:
 #
 #   pip install --require-hashes -r requirements/proxy.lock
@@ -9,7 +9,9 @@
 # Generated on 2026-11-13 with uv 0.11.32 from requirements/proxy.in:
 #
 #   uv pip compile --universal --generate-hashes --python-version 3.12 \
-#     --exclude-newer 2026-11-11T00:00:00Z --no-header --no-annotate \
+#     --exclude-newer 2026-11-11T00:00:00Z \
+#     --exclude-newer-package litellm=2026-11-12T02:00:00Z \
+#     --no-header --no-annotate \
 #     requirements/proxy.in -o requirements/proxy.lock      # then put this header back
 #
 # Coverage: a universal resolution for CPython >= 3.12 (3.12 and 3.13 are the
@@ -20,19 +22,22 @@
 # CPython 3.12 and 3.13 / linux x86_64. For linux aarch64 every pinned wheel was
 # fetched with hash checking (pip download --platform manylinux*_aarch64
 # --only-binary=:all:, for 3.12 and 3.13) but not installed or run there.
-# --exclude-newer: nothing uploaded to PyPI after 2026-11-11T00:00Z was considered.
+# --exclude-newer: nothing uploaded to PyPI after 2026-11-11T00:00Z was considered,
+# except litellm itself, allowed up to 2026-11-12T02:00Z so that 1.108.6 (the fix
+# for GHSA-2rwg-2wh4-7c4f) can be picked. Every other pin is the same as in the
+# 1.108.5 lock: the resolution changed only the litellm line.
 #
-# litellm 1.108.5 files, SHA-256, as listed by https://pypi.org/pypi/litellm/1.108.5/json
+# litellm 1.108.6 files, SHA-256, as listed by https://pypi.org/pypi/litellm/1.108.6/json
 # on 2026-11-13 (identical to the --hash lines under litellm== below; none yanked):
-#   09b908d15dcb74ef0afd0a1e4ec1f9428d65d160f2656310e3aecb3c2b8ced45  litellm-1.108.5-cp310-abi3-macosx_10_12_x86_64.whl
-#   8e90bfb14bc37406fb32cac962464cfb0660503f86eedacd853fc696bab06902  litellm-1.108.5-cp310-abi3-macosx_11_0_arm64.whl
-#   ff8ecda9f265f2eaa63b6cdbcf130be86173ba62ce2575350385ef3c2ee5803f  litellm-1.108.5-cp310-abi3-manylinux_2_28_aarch64.whl
-#   1b99ab7d3759588e6a943f5c7b6801e851b7f16be3a7fb137341e76546f91ded  litellm-1.108.5-cp310-abi3-manylinux_2_28_x86_64.whl
-#   124de2b86f7c0772b9b6fc6b027cff44daa18a0bd0a4274c16c81f1e12bd8d62  litellm-1.108.5-cp310-abi3-musllinux_1_2_aarch64.whl
-#   951a5b4e0233f8f887c8bbe03a668dcc98abe9381a54b5b29d067ae5b398d3e4  litellm-1.108.5-cp310-abi3-musllinux_1_2_x86_64.whl
-#   63cfc97a0ace136bfc3759cc7aeb605542a78f8934888963a54a274e532717ac  litellm-1.108.5-cp310-abi3-win_amd64.whl
-#   9ab96bd19afac6d89b3c516eaa3f6c9df3f9b71899f6f8e756d8d43b2f6c6f87  litellm-1.108.5.tar.gz
-# PyPI upload time of these files: 2026-11-10T22:47:45.746710Z .. 2026-11-10T22:48:09.494293Z
+#   8f3b194c12b07a908c56d7810a2fe0fc397e7b5195a9b05ea5dd985a31df4d69  litellm-1.108.6-cp310-abi3-macosx_10_12_x86_64.whl
+#   8965bd880821f29fcdd8bac3d3ce75d6a87dcebb2838f470ce6071a9d2eb2167  litellm-1.108.6-cp310-abi3-macosx_11_0_arm64.whl
+#   55d6ccad225633b351a45cf5f94aab53b1057975b32724cac89351673b530d7b  litellm-1.108.6-cp310-abi3-manylinux_2_28_aarch64.whl
+#   e1203ca46466e48d78c210389c0d2a1f8ca42d636063a78707e0bf6991f072b3  litellm-1.108.6-cp310-abi3-manylinux_2_28_x86_64.whl
+#   e06653e4755b43a98c0de7652fa0e6534d338fdf30220d06c2f3ccfb47f78005  litellm-1.108.6-cp310-abi3-musllinux_1_2_aarch64.whl
+#   b3f9d7790be23a9b56d0d77b5a0a4faed66454745621bf81ccf359c82193c37e  litellm-1.108.6-cp310-abi3-musllinux_1_2_x86_64.whl
+#   a3890b759b18cf97743efb5509c4c44c58628ee70ebb3e3ebe211bb6ccf958ed  litellm-1.108.6-cp310-abi3-win_amd64.whl
+#   d3a3de43a3bbe3a47a5a14d3df25a835a5f0ddf2b79c734db5685a5deb50edd6  litellm-1.108.6.tar.gz
+# PyPI upload time of these files: 2026-11-12T01:07:12.615855Z .. 2026-11-12T01:07:37.569826Z
 # (after 2026-10-21 13:23 UTC, when the compromised 1.107.0 was removed, and after
 # the signing-key rotation of 2026-10-23). scripts/verify_litellm.py checks an
 # installed copy against this file.
@@ -1213,15 +1218,15 @@ jsonschema==4.26.0 \
 jsonschema-specifications==2025.9.1 \
     --hash=sha256:98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe \
     --hash=sha256:b540987f239e745613c7a9176f3edb72b832a4ac465cf02712288397832b5e8d
-litellm==1.108.5 \
-    --hash=sha256:09b908d15dcb74ef0afd0a1e4ec1f9428d65d160f2656310e3aecb3c2b8ced45 \
-    --hash=sha256:124de2b86f7c0772b9b6fc6b027cff44daa18a0bd0a4274c16c81f1e12bd8d62 \
-    --hash=sha256:1b99ab7d3759588e6a943f5c7b6801e851b7f16be3a7fb137341e76546f91ded \
-    --hash=sha256:63cfc97a0ace136bfc3759cc7aeb605542a78f8934888963a54a274e532717ac \
-    --hash=sha256:8e90bfb14bc37406fb32cac962464cfb0660503f86eedacd853fc696bab06902 \
-    --hash=sha256:951a5b4e0233f8f887c8bbe03a668dcc98abe9381a54b5b29d067ae5b398d3e4 \
-    --hash=sha256:9ab96bd19afac6d89b3c516eaa3f6c9df3f9b71899f6f8e756d8d43b2f6c6f87 \
-    --hash=sha256:ff8ecda9f265f2eaa63b6cdbcf130be86173ba62ce2575350385ef3c2ee5803f
+litellm==1.108.6 \
+    --hash=sha256:55d6ccad225633b351a45cf5f94aab53b1057975b32724cac89351673b530d7b \
+    --hash=sha256:8965bd880821f29fcdd8bac3d3ce75d6a87dcebb2838f470ce6071a9d2eb2167 \
+    --hash=sha256:8f3b194c12b07a908c56d7810a2fe0fc397e7b5195a9b05ea5dd985a31df4d69 \
+    --hash=sha256:a3890b759b18cf97743efb5509c4c44c58628ee70ebb3e3ebe211bb6ccf958ed \
+    --hash=sha256:b3f9d7790be23a9b56d0d77b5a0a4faed66454745621bf81ccf359c82193c37e \
+    --hash=sha256:d3a3de43a3bbe3a47a5a14d3df25a835a5f0ddf2b79c734db5685a5deb50edd6 \
+    --hash=sha256:e06653e4755b43a98c0de7652fa0e6534d338fdf30220d06c2f3ccfb47f78005 \
+    --hash=sha256:e1203ca46466e48d78c210389c0d2a1f8ca42d636063a78707e0bf6991f072b3
 litellm-enterprise==0.1.79.post1 \
     --hash=sha256:36acdd099ad8f094a8c69a55b1b8ed86859878a046b1c9afc95393fd3716294a \
     --hash=sha256:b6c922298628b7a8bfd459df51d7e0c4e9346ca1dce0fb30be21d572333733e2

@@ -140,10 +140,10 @@ python -m pytest tests/test_sandbox_escape.py tests/test_sandbox.py -q -rs 2>&1 
 
 Run as the ordinary `ubuntu` user, not root. If doctor shows `setting up uid map: Permission denied`, Ubuntu's AppArmor rule is blocking the outer layer; the other two layers should still satisfy "require". Send me the doctor lines and the last 15 lines.
 
-**2.3 The full test suite and the Rust core on ARM.** About 20 minutes; it can run in tmux.
+**2.3 The full test suite and the Rust core on ARM.** About 20 minutes one test at a time, less in parallel; it can run in tmux.
 
 ```bash
-python -m pytest tests -q -p no:cacheprovider 2>&1 | tail -5
+python -m pytest tests -q -p no:cacheprovider -n auto --dist worksteal 2>&1 | tail -5   # parallel; drop -n auto to run one test at a time
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && . ~/.cargo/env
 (cd core && cargo test --locked 2>&1 | grep "test result")
 ```

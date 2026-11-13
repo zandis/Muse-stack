@@ -71,7 +71,7 @@ Each module has one job, a small interface, and a named owner in the code. "Exis
 ### 2.1 Router (exists; Python)
 
 - **Job.** One OpenAI-compatible endpoint on `127.0.0.1` for every app on the home. Chooses where each request goes, rations allowances between apps, and adds the provider key.
-- **Code.** `muse/hook.py`, `ration.py`, `quota.py`, `rules.py`, `cache.py`, `policy.py`, `apps.py`, `auth.py`, `ledger.py`, on LiteLLM `1.108.5` pinned by digest and hash.
+- **Code.** `muse/hook.py`, `ration.py`, `quota.py`, `rules.py`, `cache.py`, `policy.py`, `apps.py`, `auth.py`, `ledger.py`, on LiteLLM `1.108.6` pinned by digest and hash.
 - **In.** A request with an app token and optional headers: `x-muse-task`, `x-muse-privacy`, `x-muse-allow-paid`, `x-muse-allow-oneoff`, `x-muse-handoff`.
 - **Out.** The answer plus `x-muse-provider`, `x-muse-privacy`, `x-muse-app`, `x-muse-cost-usd`, `x-muse-ration`, `x-muse-task`, `x-muse-cache`, `x-muse-min-output` (the output floor raised the cap), `x-muse-answer: empty-reasoning` (a 200 with no visible text); or a refusal with `Retry-After` and an `options=` trailer (wait, hand off, pay).
 - **State.** Usage ledger (SQLite, never content), blocks, app list.

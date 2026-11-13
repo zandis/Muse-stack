@@ -26,7 +26,7 @@ def record_hash(data: bytes) -> str:
     return "sha256=" + base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=").decode()
 
 
-def install(site: Path, version: str = "1.108.5", name: str = "litellm", record: bool = True) -> Path:
+def install(site: Path, version: str = "1.108.6", name: str = "litellm", record: bool = True) -> Path:
     """A minimal installed distribution, laid out the way pip leaves one."""
     site.mkdir(parents=True, exist_ok=True)
     pkg = site / name
@@ -53,7 +53,7 @@ def repo(tmp_path: Path) -> Path:
     root = tmp_path / "repo"
     (root / "requirements").mkdir(parents=True)
     (root / "requirements" / "proxy.lock").write_text(
-        "# header\naiohttp==3.14.5 \\\n    --hash=sha256:" + "1" * 64 + "\nlitellm==1.108.5 \\\n    --hash=sha256:" + "2" * 64 + "\n",
+        "# header\naiohttp==3.14.5 \\\n    --hash=sha256:" + "1" * 64 + "\nlitellm==1.108.6 \\\n    --hash=sha256:" + "2" * 64 + "\n",
         encoding="utf-8")
     return root
 
@@ -104,8 +104,8 @@ def text(findings) -> str:
 # ---------------------------------------------------------------- image references
 
 @pytest.mark.parametrize("raw, registry, repository, tag, digest", [
-    ("ghcr.io/berriai/litellm:v1.108.5", "ghcr.io", "berriai/litellm", "v1.108.5", None),
-    (f"ghcr.io/berriai/litellm:v1.108.5@{AMD}", "ghcr.io", "berriai/litellm", "v1.108.5", AMD),
+    ("ghcr.io/berriai/litellm:v1.108.6", "ghcr.io", "berriai/litellm", "v1.108.6", None),
+    (f"ghcr.io/berriai/litellm:v1.108.6@{AMD}", "ghcr.io", "berriai/litellm", "v1.108.6", AMD),
     (f"ghcr.io/berriai/litellm@{AMD}", "ghcr.io", "berriai/litellm", None, AMD),
     ("litellm/litellm:latest", "docker.io", "litellm/litellm", "latest", None),
     ("postgres:16-alpine", "docker.io", "library/postgres", "16-alpine", None),
@@ -118,21 +118,21 @@ def test_parse_image(raw, registry, repository, tag, digest):
 
 def test_compose_images_reads_every_image_line_and_ignores_comments():
     found = v.compose_images('services:\n  db:\n    image: postgres:16-alpine\n  # image: old/litellm:latest\n'
-                             f'  litellm:\n    image: "ghcr.io/berriai/litellm:v1.108.5@{AMD}"  # pinned\n')
-    assert [r.raw for r in found] == ["postgres:16-alpine", f"ghcr.io/berriai/litellm:v1.108.5@{AMD}"]
+                             f'  litellm:\n    image: "ghcr.io/berriai/litellm:v1.108.6@{AMD}"  # pinned\n')
+    assert [r.raw for r in found] == ["postgres:16-alpine", f"ghcr.io/berriai/litellm:v1.108.6@{AMD}"]
     assert [r.is_litellm for r in found] == [False, True]
 
 
 @pytest.mark.parametrize("raw, word", [
-    ("ghcr.io/berriai/litellm:v1.108.5", "no @sha256"),
+    ("ghcr.io/berriai/litellm:v1.108.6", "no @sha256"),
     ("ghcr.io/berriai/litellm", "no @sha256"),
     ("ghcr.io/berriai/litellm:latest", "floating"),
     (f"ghcr.io/berriai/litellm:main-latest@{AMD}", "floating"),
     (f"ghcr.io/berriai/litellm:main-stable@{AMD}", "floating"),
     (f"ghcr.io/berriai/litellm:main@{AMD}", "floating"),
-    ("ghcr.io/berriai/litellm:v1.108.5@sha256:abc", "not a full sha256"),
-    (f"ghcr.io/berriai/litellm:v1.108.5@{BAD}", "compromised"),
-    ("ghcr.io/berriai/litellm-database:v1.108.5@sha256:c00f9d92c427" + "0" * 52, "compromised"),
+    ("ghcr.io/berriai/litellm:v1.108.6@sha256:abc", "not a full sha256"),
+    (f"ghcr.io/berriai/litellm:v1.108.6@{BAD}", "compromised"),
+    ("ghcr.io/berriai/litellm-database:v1.108.6@sha256:c00f9d92c427" + "0" * 52, "compromised"),
     (f"ghcr.io/berriai/litellm:v1.107.0@{AMD}", "compromised release"),
 ])
 def test_image_pin_problems(raw, word):
@@ -140,7 +140,7 @@ def test_image_pin_problems(raw, word):
 
 
 def test_a_version_tag_with_a_full_digest_is_accepted():
-    assert v.image_pin_problems(v.parse_image(f"ghcr.io/berriai/litellm:v1.108.5@{AMD}")) == []
+    assert v.image_pin_problems(v.parse_image(f"ghcr.io/berriai/litellm:v1.108.6@{AMD}")) == []
 
 
 def test_the_repo_compose_file_is_pinned_by_digest():
@@ -152,20 +152,20 @@ def test_the_repo_compose_file_is_pinned_by_digest():
 
 def test_image_matches_the_registry(repo):
     body = index()
-    compose(repo, f"ghcr.io/berriai/litellm:v1.108.5@{digest_of(body)}")
+    compose(repo, f"ghcr.io/berriai/litellm:v1.108.6@{digest_of(body)}")
     registry = FakeRegistry(body)
     findings = v.check_image(repo, registry)
     assert levels(findings) == [v.OK, v.OK, v.OK], text(findings)
     assert AMD in text(findings) and ARM in text(findings)
     token_url, manifest_url = registry.calls[0][0], registry.calls[1][0]
     assert token_url.startswith("https://ghcr.io/token?") and "repository:berriai/litellm:pull" in token_url
-    assert manifest_url == "https://ghcr.io/v2/berriai/litellm/manifests/v1.108.5"
+    assert manifest_url == "https://ghcr.io/v2/berriai/litellm/manifests/v1.108.6"
     assert registry.calls[1][1]["Authorization"] == "Bearer anon" and "oci.image.index" in registry.calls[1][1]["Accept"]
     assert all(method == "GET" for _, _, method in registry.calls)  # read-only
 
 
 def test_a_moved_tag_is_a_problem(repo):
-    compose(repo, f"ghcr.io/berriai/litellm:v1.108.5@{AMD}")
+    compose(repo, f"ghcr.io/berriai/litellm:v1.108.6@{AMD}")
     findings = v.check_image(repo, FakeRegistry(index()))
     assert v.PROBLEM in levels(findings) and "should never move" in text(findings)
     assert v.exit_code(findings) == 1
@@ -174,20 +174,20 @@ def test_a_moved_tag_is_a_problem(repo):
 def test_the_known_bad_digest_from_the_registry_is_a_problem(repo, monkeypatch):
     body = index()
     monkeypatch.setattr(v, "KNOWN_BAD_DIGESTS", frozenset({digest_of(body)}))
-    compose(repo, f"ghcr.io/berriai/litellm:v1.108.5@{AMD}")
+    compose(repo, f"ghcr.io/berriai/litellm:v1.108.6@{AMD}")
     assert "listed as compromised" in text(v.check_image(repo, FakeRegistry(body)))
 
 
 def test_a_known_bad_platform_image_is_a_problem(repo):
     body = index(platforms=(("linux", "amd64", BAD), ("linux", "arm64", ARM)))
-    compose(repo, f"ghcr.io/berriai/litellm:v1.108.5@{digest_of(body)}")
+    compose(repo, f"ghcr.io/berriai/litellm:v1.108.6@{digest_of(body)}")
     findings = v.check_image(repo, FakeRegistry(body))
     assert "linux/amd64 image" in text(findings) and "known-bad" in text(findings) and v.exit_code(findings) == 1
 
 
 def test_a_missing_arm64_image_is_a_problem(repo):
     body = index(platforms=(("linux", "amd64", AMD),))
-    compose(repo, f"ghcr.io/berriai/litellm:v1.108.5@{digest_of(body)}")
+    compose(repo, f"ghcr.io/berriai/litellm:v1.108.6@{digest_of(body)}")
     findings = v.check_image(repo, FakeRegistry(body))
     assert "no linux/arm64 image" in text(findings) and v.exit_code(findings) == 1
 
@@ -209,7 +209,7 @@ def test_an_unpinned_or_floating_image_is_a_problem_without_asking_the_registry(
     FakeRegistry(b"not json"),
 ])
 def test_an_unreachable_or_odd_registry_is_could_not_check_never_ok(repo, registry):
-    compose(repo, f"ghcr.io/berriai/litellm:v1.108.5@{digest_of(registry.body or index())}")
+    compose(repo, f"ghcr.io/berriai/litellm:v1.108.6@{digest_of(registry.body or index())}")
     findings = v.check_image(repo, registry)
     assert v.exit_code(findings) == 2 and v.OK not in levels(findings), text(findings)
     assert "was not compared with the registry" in text(findings)
@@ -217,14 +217,14 @@ def test_an_unreachable_or_odd_registry_is_could_not_check_never_ok(repo, regist
 
 def test_other_registries_and_missing_files_are_could_not_check(repo):
     assert v.exit_code(v.check_image(repo, FakeRegistry(index()))) == 2  # no compose file at all
-    compose(repo, f"registry.example.com/mirror/litellm:v1.108.5@{AMD}")
+    compose(repo, f"registry.example.com/mirror/litellm:v1.108.6@{AMD}")
     findings = v.check_image(repo, FakeRegistry(index()))
     assert v.exit_code(findings) == 2 and "no anonymous lookup" in text(findings)
 
 
 def test_the_spend_compose_file_is_checked_too_and_other_images_are_ignored(repo):
     body = index()
-    compose(repo, f"ghcr.io/berriai/litellm:v1.108.5@{digest_of(body)}")
+    compose(repo, f"ghcr.io/berriai/litellm:v1.108.6@{digest_of(body)}")
     (repo / "docker-compose.spend.yml").write_text("services:\n  db:\n    image: postgres:16-alpine\n  litellm:\n    image: litellm/litellm:latest\n")
     findings = v.check_image(repo, FakeRegistry(body))
     assert "docker-compose.spend.yml" in text(findings) and v.exit_code(findings) == 1
@@ -270,7 +270,7 @@ def test_the_compromised_version_is_a_problem(tmp_path, repo):
 def test_a_version_other_than_the_pin_is_a_problem(tmp_path, repo):
     site = install(tmp_path / "site", version="1.109.0")
     findings = v.check_package([site], repo / "requirements" / "proxy.lock")
-    assert v.exit_code(findings) == 1 and "the repo pins 1.108.5" in text(findings)
+    assert v.exit_code(findings) == 1 and "the repo pins 1.108.6" in text(findings)
 
 
 def test_not_installed_is_could_not_check_or_a_note_with_image(tmp_path, repo):
@@ -295,7 +295,7 @@ def test_a_similarly_named_package_is_not_litellm(tmp_path, repo):
 
 
 def test_pinned_version_reads_the_repo_lock():
-    assert v.pinned_version() == "1.108.5"
+    assert v.pinned_version() == "1.108.6"
     lock = (ROOT / "requirements" / "proxy.lock").read_text(encoding="utf-8")
     assert "litellm==1.107.0" not in lock
 
@@ -371,7 +371,7 @@ def test_main_could_not_check_is_2(tmp_path, repo):
 
 def test_main_with_image(tmp_path, repo):
     body = index()
-    compose(repo, f"ghcr.io/berriai/litellm:v1.108.5@{digest_of(body)}")
+    compose(repo, f"ghcr.io/berriai/litellm:v1.108.6@{digest_of(body)}")
     site = install(tmp_path / "site")
     code, out = run_main(["--image", "--site-packages", str(site)], repo, tmp_path, FakeRegistry(body))
     assert code == 0 and "still resolves to the pinned" in out
@@ -405,7 +405,7 @@ def test_validator_install_and_image_rules():
     install_cmd = "pip" + " install "
     assert vc.install_line_problems(install_cmd + "litellm[proxy]")
     assert vc.install_line_problems("RUN " + install_cmd + "--no-cache-dir 'litellm>=1.100,<2'")
-    assert not vc.install_line_problems(install_cmd + "'litellm[proxy]==1.108.5'")
+    assert not vc.install_line_problems(install_cmd + "'litellm[proxy]==1.108.6'")
     assert not vc.install_line_problems(install_cmd + "--require-hashes -r requirements/proxy.lock")
     assert vc.unpinned_litellm("litellm==1.*") and not vc.unpinned_litellm("litellm-enterprise")
     vc.scenario_supply_chain()  # the repo as it stands passes
@@ -417,7 +417,7 @@ def test_validator_refuses_an_unpinned_compose_image(tmp_path, monkeypatch):
 
     for name in ("docker-compose.spend.yml",):
         (tmp_path / name).write_text((ROOT / name).read_text(encoding="utf-8"), encoding="utf-8")
-    (tmp_path / "docker-compose.yml").write_text("services:\n  litellm:\n    image: ghcr.io/berriai/litellm:v1.108.5\n")
+    (tmp_path / "docker-compose.yml").write_text("services:\n  litellm:\n    image: ghcr.io/berriai/litellm:v1.108.6\n")
     monkeypatch.setattr(vc, "ROOT", tmp_path)
     with pytest.raises(vc.Failure, match="no @sha256"):
         vc.scenario_supply_chain()
