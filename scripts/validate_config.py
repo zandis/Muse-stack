@@ -554,7 +554,7 @@ def scenario_min_output_tokens() -> None:
               f"{info['id']}: a floor must be a positive whole number on a chat deployment")
     # The shipped figure is an observation on gpt-oss only; anything else needs its own evidence and this check updated.
     for dep_id, floor in declared.items():
-        check((floor == 256) == ("gpt-oss" in dep_id), f"{dep_id}: min_output_tokens {floor!r}; only gpt-oss deployments carry 256")
+        check((floor == 1024) == ("gpt-oss" in dep_id), f"{dep_id}: min_output_tokens {floor!r}; only gpt-oss deployments carry 1024")
     # A provider-level default reaches its chat deployments; a deployment's own value wins; other modes get none.
     custom = copy.deepcopy(catalog)
     cohere = next(p for p in custom["providers"] if p["id"] == "cohere")
@@ -591,6 +591,44 @@ def scenario_min_output_tokens() -> None:
     except SystemExit:
         return
     raise Failure("a floor on a non-chat deployment was rendered")
+
+
+def scenario_reasoning() -> None:
+    """`reasoning` is rendered as model_info.muse_reasoning only where declared, and only where LiteLLM passes it on."""
+    import copy
+    from datetime import date
+
+    import litellm
+
+    from muse import catalog as catalog_mod
+
+    catalog = load_catalog(CATALOG_PATH)
+    keys = {str(p["env"]): "k" for p in catalog["providers"] if p.get("env")}
+    keys.update({str(n): "a" * 32 for p in catalog["providers"] for n in p.get("also_env") or []})
+    config, _ = render(catalog, env_with(MUSE_ALLOW_PAID_FALLBACK="true", **keys))
+    declared = {str(d["id"]): (p, d, catalog_mod.reasoning_for(d)) for p in catalog["providers"] for d in p.get("deployments") or []}
+    check(any(r for _, _, r in declared.values()), "no shipped deployment declares reasoning")
+    for entry in config["model_list"]:
+        info = entry["model_info"]
+        _, _, want = declared[str(info["id"]).split("__")[0]]
+        check(info.get("muse_reasoning") == want, f"{info['id']}: muse_reasoning {info.get('muse_reasoning')!r}, the catalogue says {want!r}")
+    for dep_id, (provider, dep, want) in declared.items():
+        if not want:
+            continue
+        route, _, model = str(dep["model"]).partition("/")
+        supported = litellm.get_supported_openai_params(model=model, custom_llm_provider=route) or []
+        check(want["param"] in supported, f"{dep_id}: LiteLLM drops {want['param']} for {route}/, so the setting would do nothing")
+    broken = copy.deepcopy(catalog)
+    target = next(p for p in broken["providers"] if p["id"] == "cohere")
+    for bad in ({"param": "thinking", "light": "low"}, {"param": "reasoning_effort"}, {"param": "reasoning_effort", "light": "none"},
+                {"param": "reasoning_effort", "tiny": "low"}, "low"):
+        target["deployments"][0]["reasoning"] = bad
+        check(any(".reasoning" in p for p in catalog_mod.validate_provider(target, date.today())), f"reasoning {bad!r} passed")
+        try:
+            render(broken, env_with(COHERE_API_KEY="c"))
+        except SystemExit:
+            continue
+        raise Failure(f"reasoning {bad!r} was rendered")
 
 
 # ---------------------------------------------------------------- supply chain
@@ -659,25 +697,25 @@ def scenario_supply_chain() -> None:
     floating tag or an open version range would have run it.
     """
     # The rules themselves, so a regex slip cannot silently pass everything.
-    bad_images = ("ghcr.io/berriai/litellm:v1.108.5", "ghcr.io/berriai/litellm:main-latest", "litellm/litellm:latest",
+    bad_images = ("ghcr.io/berriai/litellm:v1.108.6", "ghcr.io/berriai/litellm:main-latest", "litellm/litellm:latest",
                   "ghcr.io/berriai/litellm", "ghcr.io/berriai/litellm:main-stable@sha256:" + "a" * 64,
-                  "ghcr.io/berriai/litellm:main@sha256:" + "a" * 64, "ghcr.io/berriai/litellm:v1.108.5@sha256:abc",
+                  "ghcr.io/berriai/litellm:main@sha256:" + "a" * 64, "ghcr.io/berriai/litellm:v1.108.6@sha256:abc",
                   "ghcr.io/berriai/litellm:v1.107.0@sha256:1bbcb1443bc962e45f5aad53fe3d2c30600e0379715fb6c664cdd3ac126c339e")
     for raw in bad_images:
         check(image_pin_problems(compose_images(f"    image: {raw}")[0]), f"the image rule accepted {raw}")
-    good = compose_images("    image: ghcr.io/berriai/litellm:v1.108.5@sha256:" + "a" * 64)[0]
+    good = compose_images("    image: ghcr.io/berriai/litellm:v1.108.6@sha256:" + "a" * 64)[0]
     check(not image_pin_problems(good), "the image rule refused a version tag with a digest")
     installer = "pip" + " install "  # split so this file does not match its own rule
     for line in (installer + "litellm", installer + "'litellm[proxy]'", installer + '"litellm[proxy]>=1.108"',
                  installer + "-U litellm[proxy]~=1.108.0", "uv " + installer + "litellm==1.*", "python -m " + installer + "-e . litellm[proxy]<2",
                  "Run `" + installer + "litellm[proxy]` first."):
         check(install_line_problems(line), f"the install rule accepted: {line}")
-    for line in (installer + '"litellm[proxy]==1.108.5"', installer + "--require-hashes -r requirements/proxy.lock",
+    for line in (installer + '"litellm[proxy]==1.108.6"', installer + "--require-hashes -r requirements/proxy.lock",
                  installer + "litellm-proxy-extras", installer + "-e '.[dev]'", "# litellm is installed elsewhere",
                  "`" + installer + "-e .` installs the CLI; litellm comes from the lock file", installer + "pyyaml && echo litellm"):
         check(not install_line_problems(line), f"the install rule refused: {line}")
     check(install_line_problems("litellm[proxy]>=1.100\n", requirement_file=True) and
-          not install_line_problems("# c\n-c proxy.lock\nlitellm[proxy]==1.108.5\npytest>=8\n", requirement_file=True),
+          not install_line_problems("# c\n-c proxy.lock\nlitellm[proxy]==1.108.6\npytest>=8\n", requirement_file=True),
           "the requirement-file rule is wrong")
 
     # The compose files.
@@ -747,6 +785,7 @@ def main() -> int:
         scenario_catalogue_v2,
         scenario_oneoff_and_also_env,
         scenario_min_output_tokens,
+        scenario_reasoning,
         scenario_native_retry_after,
         scenario_supply_chain,
     ]

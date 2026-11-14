@@ -18,7 +18,8 @@ from test_rules_pace_e2e import ledger, models, start, wait_for
 
 CANARY = "CANARY-E2E-FILE-3c9e77"
 ANSWER = json.dumps({"answer": "The monthly rent is 18,500 dollars [1].",
-                     "claims": [{"text": "The monthly rent is 18,500 dollars", "cites": [1]}], "not_found": False})
+                     "claims": [{"quote": "The monthly rent is 18,500 dollars", "n": 1, "says": "The monthly rent is 18,500 dollars"}],
+                     "not_found": False})
 
 
 @pytest.fixture()
@@ -53,14 +54,15 @@ def test_files_answer_through_the_real_router(make_proxy, upstream, docs, tmp_pa
     code, out, err = run_cli(capsys, *base, "--json")  # the skill's own default class is `standard`
     result = json.loads(out)
     assert code == 0 and result["status"] == "done" and result["check"] == {"status": "passed", "reasons": []}
-    assert result["output"]["text"] == "The monthly rent is 18,500 dollars [1].\n\nSources:\n[1] lease.md › paragraph 2"
+    assert result["output"]["text"] == ("The monthly rent is 18,500 dollars [1].\n\nSources:\n"
+                                        "[1] lease.md › paragraph 2: “The monthly rent is 18,500 dollars”")
     assert result["output"]["retrieval"]["mode"] == "lexical"  # no embed alias: words only, and the run still finished
     answered = [e for e in result["events"] if e["kind"] == "call" and e.get("ok")]
     assert len(answered) == 1
     assert answered[0]["task"] == "everyday"  # the task the router applied (its x-muse-task response header)
     assert answered[0]["provider"] == "freeb" and answered[0]["privacy"] == "standard" and answered[0]["cost_usd"] == 0
     assert models(upstream) == ["b-model"]  # everyday -> `cheap` -> free B; the strong, paid and one-off models were not touched
-    assert upstream.calls()[0].path.endswith("/chat/completions") and upstream.calls()[0].max_tokens == 900
+    assert upstream.calls()[0].path.endswith("/chat/completions") and upstream.calls()[0].max_tokens == 1200
 
     # Nothing was charged, and the usage ledger knows the app but none of the text.
     assert result["used"]["cost_usd"] == 0 and result["used"]["providers"]["freeb"]["requests"] == 1

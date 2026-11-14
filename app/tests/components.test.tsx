@@ -10,6 +10,7 @@ import { CARD_KINDS, type Card as CardData, type Job, type Status } from '../src
 import { I18nProvider, translate } from '../src/i18n';
 import { parseRoute } from '../src/router';
 import { jobLines } from '../src/screens/Today';
+import { pretendAppClient } from './app-fixtures';
 import { CARDS, NOW, job, provider, status } from './fixtures';
 
 function setWidth(desktop: boolean) {
@@ -323,7 +324,7 @@ function pretendHome(over: Partial<Pretend['state']> = {}): Pretend {
 
 async function renderApp(home: Pretend, lang: 'en' | 'zh-TW' = 'en') {
   localStorage.setItem('muse.lang', lang);
-  render(<App client={home} />);
+  render(<App client={home} appClient={pretendAppClient()} />);
   await act(async () => {
     await Promise.resolve();
   });
@@ -355,7 +356,7 @@ describe('Today', () => {
     await renderApp(pretendHome({ status: status({ providers: [provider({ configured: false })] }), cards: [], jobs: [] }));
     const box = await screen.findByTestId('nothing-connected');
     expect(within(box).getByRole('heading', { name: 'Connect your first service' })).toBeTruthy();
-    expect(within(box).getByRole('link', { name: 'Connect a service' }).getAttribute('href')).toBe('/services');
+    expect(within(box).getByRole('link', { name: 'Connect a service' }).getAttribute('href')).toBe('/welcome');
     expect(screen.queryByTestId('tip')).toBeNull();
     expect(screen.getByText('Nothing needs you right now.')).toBeTruthy();
     expect(screen.getByText('Nothing is running.')).toBeTruthy();
@@ -527,8 +528,6 @@ describe('navigation and the other screens', () => {
 
   it('each placeholder says what will appear there and that it comes later; Pause stays reachable', async () => {
     for (const [path, title] of [
-      ['/ask', 'What do you want done now?'],
-      ['/chores', 'No chores yet'],
       ['/records', 'No records yet'],
       ['/permissions', 'No permissions yet'],
       ['/devices', 'Only this device so far'],

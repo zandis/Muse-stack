@@ -22,7 +22,7 @@ pdf = ["pypdf>=4"]
 permissions = ["biscuit-python==0.4.0"]
 # The Muse tools server for host bots (python -m muse.mcp). The proxy lock already pins this same version.
 mcp = ["mcp==2.3.0"]
-dev = ["pytest>=8", "cryptography>=42"]
+dev = ["pytest>=8", "pytest-xdist>=3.6", "cryptography>=42"]
 
 [project.scripts]
 muse = "muse.cli:main"

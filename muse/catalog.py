@@ -518,6 +518,59 @@ def validate_min_output_tokens(item: Mapping[str, Any], where: str) -> list[str]
     return problems
 
 
+REASONING_PARAMS = ("reasoning_effort",)  # what LiteLLM 1.108.5 passes through for the providers that use it (README)
+REASONING_VALUES = ("low", "medium", "high")
+REASONING_TASKS = ("light", "everyday", "heavy", "frontier")
+
+
+def reasoning_for(deployment: Mapping[str, Any]) -> dict[str, str] | None:
+    """A chat deployment's `reasoning` setting as {"param": ..., <task>: <value>, ...}; None when it has none or it is bad.
+
+    `reasoning: {param: reasoning_effort, light: low, everyday: low}` asks the provider to think less on short
+    tasks, so a small output allowance is not used up by hidden reasoning. The router sets it per call by the
+    task tier, only when the client did not set the parameter itself (muse/hook.py). Only on deployments whose
+    provider documents the parameter AND whose LiteLLM route passes it through (a dropped parameter does nothing).
+    scripts/render_config.py renders the same value as model_info.muse_reasoning.
+    """
+    raw = deployment.get("reasoning")
+    if str(deployment.get("mode")) != "chat" or not isinstance(raw, Mapping) or validate_reasoning_value(raw):
+        return None
+    return {str(k): str(v) for k, v in raw.items()}
+
+
+def validate_reasoning_value(raw: Any) -> list[str]:
+    if not isinstance(raw, Mapping):
+        return ["must be a mapping like {param: reasoning_effort, light: low}"]
+    problems: list[str] = []
+    if raw.get("param") not in REASONING_PARAMS:
+        problems.append(f"param must be one of {', '.join(REASONING_PARAMS)}")
+    tasks = [k for k in raw if k != "param"]
+    if not tasks:
+        problems.append("name at least one task (light, everyday, ...) and its value")
+    for key in tasks:
+        if key not in REASONING_TASKS:
+            problems.append(f"unknown task {key!r} (one of {', '.join(REASONING_TASKS)})")
+        elif raw[key] not in REASONING_VALUES:
+            problems.append(f"{key} must be one of {', '.join(REASONING_VALUES)}")
+    return problems
+
+
+def validate_reasoning(item: Mapping[str, Any], where: str) -> list[str]:
+    """`reasoning` on a provider's deployments (chat only); see reasoning_for."""
+    problems: list[str] = []
+    if "reasoning" in item:
+        problems.append(f"{where}.reasoning: set it on a deployment, not on the provider")
+    deployments = item.get("deployments")
+    for dep in deployments if isinstance(deployments, list) else []:
+        if not isinstance(dep, Mapping) or "reasoning" not in dep:
+            continue
+        spot = f"{where}: deployment {dep.get('id', '?')}.reasoning"
+        problems.extend(f"{spot}: {p}" for p in validate_reasoning_value(dep["reasoning"]))
+        if str(dep.get("mode")) != "chat":
+            problems.append(f"{spot}: only a chat deployment reasons")
+    return problems
+
+
 def provider_from_dict(item: Mapping[str, Any]) -> Provider:
     """Build a Provider from one entry of providers.yaml. Tolerant: validation is separate."""
     local = item.get("kind", "cloud") == "local"
@@ -908,6 +961,7 @@ def validate_provider(item: Mapping[str, Any], today: date) -> list[str]:
     if not isinstance(item.get("name"), str) or not item["name"].strip():
         problems.append(f"{where}: name is needed")
     problems.extend(validate_min_output_tokens(item, where))
+    problems.extend(validate_reasoning(item, where))
     if local:
         problems.extend(validate_terms_flags(item.get("terms_flags"), f"{where}.terms_flags"))
         return problems

@@ -164,7 +164,7 @@ LEASE = ("The flat is at 12 Harbour Street.\n\nThe monthly rent is 18,500 dollar
          f"The deposit equals two months of rent. {CANARY_DOC}\n")
 TASKS = [
     ("t-right", "lookup", "How much is the monthly rent?", {"facts": [{"number": 18500, "source": "lease.md"}]}),
-    ("t-wrong", "lookup", "What is the deposit and where is the flat?", {"facts": [{"any": ["12 Harbour Street"], "source": "lease.md"}]}),
+    ("t-wrong", "lookup", "What are the deposit terms of the flat?", {"facts": [{"any": ["12 Harbour Street"], "source": "lease.md"}]}),
     ("t-none", "not-found", "What is the door code?", {"not_found": True}),
     ("t-held", "numeric", "When is the rent due each month?", {"facts": [{"any": ["5th"], "source": "lease.md"}]}),
     ("t-bad", "date", f"Where is the flat? {CANARY_QUESTION}", {"facts": [{"any": ["12 Harbour Street"], "source": "lease.md"}]}),
@@ -172,8 +172,9 @@ TASKS = [
 
 
 def claim(text: str, cites: list[int], not_found: bool = False) -> str:
-    return json.dumps({"answer": text + "".join(f" [{n}]" for n in cites), "claims": [{"text": text, "cites": cites}] if cites else [],
-                       "not_found": not_found})
+    """A model reply whose one claim quotes `text` from passage cites[0] (the quote rule decides whether it stands)."""
+    return json.dumps({"answer": text + "".join(" [1]" for _ in cites[:1]),
+                       "claims": [{"quote": text, "n": cites[0], "says": text}] if cites else [], "not_found": not_found})
 
 
 ANSWERS: dict[str, Callable[[], Any]] = {
@@ -261,7 +262,7 @@ def test_full_run_report_shape_deferred_accounting_and_no_leaks(env, proxy, task
     assert held["status"] == "needs_choice" and held["independent"] is None and held["deferrals"] == 1
     assert held["offered"] == ["wait+handoff"] and held["options"] == ["wait", "handoff"]
     bad = runs["t-bad"]
-    assert bad["status"] == "needs_choice" and bad["failure"] == "check-failed" and bad["check_reasons"] == {"weak-overlap": 1}
+    assert bad["status"] == "needs_choice" and bad["failure"] == "check-failed" and bad["check_reasons"] == {"empty": 1, "unknown-source": 1}
     assert bad["requests"] == 2  # the runner's one stronger retry
     assert all(r["cost_usd"] == 0 and r["providers"] in ({"freea": r["requests"]}, {}) for r in runs.values())
 
@@ -269,16 +270,18 @@ def test_full_run_report_shape_deferred_accounting_and_no_leaks(env, proxy, task
     assert (s["planned"], s["runs"], s["completed"], s["deferred"], s["not_run"]) == (5, 5, 4, 1, 0)
     assert (s["passed_own"], s["passed_independent"], s["passed_both"], s["own_passed_but_wrong"], s["failed"]) == (3, 2, 2, 1, 1)
     assert s["rate_own"] == 0.75 and s["interval_own"] == [round(v, 4) for v in cc.wilson(3, 4)]
-    assert s["rate_independent"] == 0.5 and s["failures"] == {"check-failed": 1} and s["check_reasons"] == {"weak-overlap": 1}
+    assert s["rate_independent"] == 0.5 and s["failures"] == {"check-failed": 1} and s["check_reasons"] == {"empty": 1, "unknown-source": 1}
     assert s["cost_usd"] == 0 and s["providers"] == {"freea": 4} and s["offered"] == {"wait+handoff": 1}
     assert s["by_kind"]["lookup"] == {"completed": 2, "passed_own": 2, "passed_independent": 1}
-    assert s["g1"] == {"met": False, "completed": 4, "enough_runs": False, "nothing_spent": True}
+    assert s["g1"] == {"met": False, "completed": 4, "enough_runs": False, "nothing_spent": True, "counts": "right",
+                       "own_check_would_say": False}
     assert report["verdict"]["met"] is False and report["verdict"]["cost_usd"] == 0
 
     # The readable summary.
     assert "files-answer 0.1.0: 5 planned, 4 completed, 1 deferred, 0 not run" in out
     assert re.search(r"passed own check\s+3 of 4\s+75\.0%\s+\(95% interval 30\.1% to 95\.4%\)", out)
-    assert "G1: at least 80% of completed runs passed their own check with nothing spent: no (3 of 4)" in out
+    assert "G1: at least 80% of completed runs RIGHT by the expected facts with nothing spent: no (2 of 4)" in out
+    assert "Own check (second line, not the gate): 3 of 4 passed (75.0%); it overstates the right-rate by 25.0 points" in out
     assert "only 4 completed runs; the gate asks for 50 per skill" in out
     assert "CAVEAT: the skill's own check passed answers that were wrong 1 time(s) by the expected facts" in out
     assert "reported apart: neither passes nor failures" in out and "ghost-skill: skipped" in out
@@ -310,7 +313,7 @@ def test_resume_keeps_finished_runs_and_tries_deferred_ones_again(env, proxy, ta
     route(proxy)
     check(env, tasks_dir, "--yes", "--quiet")
     before = len(proxy.requests)
-    route(proxy, {"t-held": lambda: chat(claim("The rent is due on the 5th of each month.", [1]))})
+    route(proxy, {"t-held": lambda: chat(claim("due on the 5th of each month", [1]))})
     code = check(env, tasks_dir, "--yes", "--resume")
     out = capsys.readouterr().out
     assert len(proxy.requests) - before == 1  # only the run that was deferred
@@ -318,11 +321,14 @@ def test_resume_keeps_finished_runs_and_tries_deferred_ones_again(env, proxy, ta
     report = report_of(env)
     assert report["runs"]["files-answer/t-held#1"]["outcome"] == "passed" and len(report["runs"]) == 5
     s = report["skills"]["files-answer"]["summary"]
-    assert (s["completed"], s["deferred"], s["passed_own"]) == (5, 0, 4) and s["g1"]["met"] is True and s["rate_own"] == 0.8
-    assert code == cc.EXIT_OK and "nothing spent: yes (4 of 5)" in out
+    assert (s["completed"], s["deferred"], s["passed_own"], s["passed_independent"]) == (5, 0, 4, 3) and s["rate_own"] == 0.8
+    # 80% passed their own check, but only 60% are right: the gate, which counts right answers, is not met.
+    assert s["g1"]["met"] is False and s["g1"]["own_check_would_say"] is True
+    assert code == cc.EXIT_NOT_MET and "nothing spent: no (3 of 5)" in out
+    assert "By the own check alone this skill would have looked like it met the line; it did not." in out
     # Everything done: a further resume sends nothing.
     before = len(proxy.requests)
-    assert check(env, tasks_dir, "--yes", "--resume") == cc.EXIT_OK and len(proxy.requests) == before
+    assert check(env, tasks_dir, "--yes", "--resume") == cc.EXIT_NOT_MET and len(proxy.requests) == before
     assert "Nothing to run." in capsys.readouterr().out
     # Without --resume the report starts again.
     route(proxy)
@@ -425,15 +431,15 @@ def test_the_shipped_set_runs_end_to_end_for_both_skills_against_the_fake_router
     code = cc.main(["--delay", "0", "--max-wait", "0", "--yes", "--sample", "7", "--seed", "2"], environ=env)
     out = capsys.readouterr().out
     report = report_of(env)
-    assert set(report["skills"]) == {"files-answer", "research-report"} and report["skipped"] == [] and code == cc.EXIT_OK
+    assert set(report["skills"]) == {"files-answer", "research-report"} and report["skipped"] == [] and code == cc.EXIT_NOT_MET
     assert re.search(r"research-report\s+7 runs \(7 tasks x 1\): at most 280 requests and 1050000 tokens", out)
     for name in ("files-answer", "research-report"):
         s = report["skills"][name]["summary"]
-        assert s["completed"] == 7 and s["passed_own"] == 7 and s["cost_usd"] == 0 and s["g1"]["met"] is True
+        assert s["completed"] == 7 and s["passed_own"] == 7 and s["cost_usd"] == 0 and s["g1"]["met"] is False
         assert s["passed_independent"] == s["by_kind"]["not-found"]["passed_independent"] == 1  # only the not-in-the-files task is right
         assert s["own_passed_but_wrong"] == 6 and set(s["by_kind"]) == KINDS
     assert out.count("CAVEAT: the skill's own check passed answers that were wrong 6 time(s)") == 2
-    assert "Overall G1 line (every skill that ran): yes - not every skill has 50 completed runs yet. Spent: US$0.000000." in out
+    assert "Overall G1 line (right by expected facts, every skill that ran): no - not every skill has 50 completed runs yet." in out
 
 
 def test_record_and_replay_together_is_refused(env, tasks_dir, capsys):
@@ -479,3 +485,116 @@ def test_record_then_replay_does_not_call_the_router_again(env, proxy, tasks_dir
     second = json.loads(report_b.read_text(encoding="utf-8"))
     assert second["options"]["replay"] == str(recorded)
     assert {k: v["outcome"] for k, v in first["runs"].items()} == {k: v["outcome"] for k, v in second["runs"].items()}
+
+
+# ================================================================ typed facts (the first real run's fa-025: a right date, written another way)
+
+
+@pytest.mark.parametrize("fact, texts, wrong", [
+    ({"date": "2031-04-03"}, ["2031-04-03", "3 April 2031", "April 3, 2031", "2031/4/3", "03 Apr 2031", "2031年4月3日",
+                              "民國120年4月3日", "due 2031.04.03", "the 3rd of April 2031"],
+     ["2031-04-30", "4 April 2031", "April 3, 2032", "4月3日", "2031/3/4", "民國121年4月3日"]),
+    ({"date": "2031-03-21", "year_optional": True}, ["21 March", "March 21", "3 月 21 日", "2031-03-21"], ["21 March 2030", "March 22"]),
+    ({"time": "08:40"}, ["08:40", "8:40 am", "8:40", "上午8點40分", "8點40分", "8.40am"], ["8:40 pm", "下午8點40分", "08:41", "18.40 dollars"]),
+    ({"time": "13:15"}, ["13:15", "1:15 pm", "1:15", "下午1點15分"], ["1:15 am", "13:16", "上午1點15分"]),
+    ({"time": "22:30"}, ["10:30 pm", "22:30", "晚上10點半"], ["10:30 am", "22:00"]),
+    ({"amount": 1450}, ["1,450", "1450.00", "US$1,450", "NT$1,450", "1,450 元", "$1450"], ["14,500", "145", "1,451"]),
+    ({"count": 3, "unit": "year"}, ["3 years", "three years", "a 3-year warranty", "3 年", "三年", "保固三年"], ["4 years", "3 months", "十三年"]),
+    ({"count": 2, "unit": "year"}, ["兩年", "2 年", "two years"], ["二十年", "12 years"]),
+])
+def test_typed_facts_take_every_form_of_the_value_and_no_other_value(fact, texts, wrong):
+    for text in texts:
+        assert cc.fact_in(fact, text), text
+    for text in wrong:
+        assert not cc.fact_in(fact, text), text
+    assert cc.accepted_forms(fact)
+
+
+def test_typed_facts_are_validated_and_the_shipped_dates_times_and_amounts_are_typed():
+    base = {"id": "x", "skill": "s", "kind": "date", "lang": "en", "folders": [], "inputs": {"question": "q"}}
+    for bad in ({"date": "3 April 2031"}, {"time": "8:40"}, {"time": "25:00"}, {"amount": "1450"}, {"count": 3}, {"count": 3, "unit": "fortnight"}):
+        assert cc.task_problems({**base, "expect": {"facts": [bad]}}, Path("."), "s"), bad
+    found, problems = cc.load_tasks(cc.TASKS_DIR)
+    assert problems == []
+    facts = [f for tasks in found.values() for t in tasks for f in t["expect"].get("facts", [])]
+    assert sum("date" in f for f in facts) >= 15 and sum("time" in f for f in facts) >= 10 and sum("amount" in f for f in facts) >= 50
+    fa025 = next(t for t in found["files-answer"] if t["id"] == "fa-025")
+    assert fa025["expect"]["facts"] == [{"date": "2031-04-03", "source": "invoices.csv"}]
+    # No `any` list is left that is only ways of writing one date.
+    for f in facts:
+        if "any" in f:
+            assert not all(any(y for y, _, _ in cc.dates_in(a)) for a in f["any"]), f
+
+
+# ================================================================ --keep-failures, the old-router warning, the caps
+
+
+def test_keep_failures_writes_wrong_and_failed_runs_with_quotes_only_and_mode_0600(env, proxy, tasks_dir):
+    route(proxy)
+    check(env, tasks_dir, "--yes", "--quiet")
+    path = Path(env["MUSE_HOME"]) / cc.FAILURES_FILE
+    assert not path.exists()  # nothing is kept by default
+    check(env, tasks_dir, "--yes", "--quiet", "--keep-failures")
+    assert (path.stat().st_mode & 0o777) == 0o600
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    assert {r["task"] for r in rows} == {"t-wrong", "t-bad"}
+    wrong = next(r for r in rows if r["task"] == "t-wrong")
+    assert wrong["own_check"] == "passed" and wrong["right"] is False
+    assert wrong["claims"] == [{"id": 1, "says": "The deposit equals two months of rent.", "quote": "The deposit equals two months of rent.",
+                                "passage": 1, "source": "lease.md › paragraph 3"}]
+    assert wrong["missing_facts"] == [{"fact": 1, "kind": "any", "accepted": ["12 Harbour Street"], "source": ["lease.md"]}]
+    text = path.read_text(encoding="utf-8")
+    assert CANARY_DOC not in text  # the passage around the quote never leaves
+    assert CANARY_REPLY in text  # the failed answer itself is what the person asked to keep
+
+
+def test_an_old_router_is_named_loudly_and_a_current_one_is_recorded(env, proxy, tasks_dir, capsys):
+    route(proxy, {tid: (lambda: chat("")) for tid in ANSWERS})  # empty answers with no x-muse-answer header: an old build
+    check(env, tasks_dir, "--yes", "--quiet", "--sample", "2")
+    out, err = capsys.readouterr()
+    assert "WARNING: your router is older than these skills" in err and "Update it and restart it" in err
+    report = report_of(env)
+    assert report["router"] == {"build": "old", "warned": True} and "Router build: old" in out
+    run = next(iter(report["runs"].values()))
+    assert run["empty_answers"] >= 1 and run["router"] == "old" and run["calls"] and all(set(c) == {"provider", "task", "ms", "status", "empty"}
+                                                                                           for c in run["calls"])
+    current = lambda: chat(claim("The monthly rent is 18,500 dollars.", [1]), **{"x-muse-reasoning": "low"})  # noqa: E731
+    route(proxy, {tid: current for tid in ANSWERS})
+    check(env, tasks_dir, "--yes", "--quiet", "--sample", "1")
+    out, err = capsys.readouterr()
+    assert "WARNING" not in err and report_of(env)["router"]["build"] == "current"
+
+
+def test_only_kinds_and_the_request_cap(env, proxy, tasks_dir, capsys):
+    route(proxy)
+    assert check(env, tasks_dir, "--yes", "--quiet", "--only-kinds", "lookup") in (cc.EXIT_OK, cc.EXIT_NOT_MET)
+    assert {r["kind"] for r in report_of(env)["runs"].values()} == {"lookup"}
+    assert check(env, tasks_dir, "--yes", "--only-kinds", "poetry") == cc.EXIT_USAGE
+    capsys.readouterr()
+    check(env, tasks_dir, "--yes", "--quiet", "--max-requests", "13")  # a run may take 12: after two small runs the third could cross 13
+    out = capsys.readouterr().out
+    report = report_of(env)
+    assert len(report["runs"]) == 2 and report["stopped"] == "request-cap" and report["requests_used"] <= 13
+    assert "request cap: 13" in out and f"Requests used: {report['requests_used']} of the cap of 13 (stopped at the cap)" in out
+    assert cc.main(["--max-requests", "0"], environ=env) == cc.EXIT_USAGE
+
+
+def test_the_report_has_status_steps_slowest_calls_and_the_allowance_at_both_ends(env, proxy, tasks_dir, capsys):
+    route(proxy)
+    check(env, tasks_dir, "--yes", "--quiet")
+    out = capsys.readouterr().out
+    report = report_of(env)
+    s = report["skills"]["files-answer"]["summary"]
+    assert s["statuses"] == {"done": 3, "needs_choice": 2} and s["recoveries"] == 0 and s["unanswered"] == 0
+    assert set(s["right_by_empty_answers"]) == {"0"} and s["slowest_calls"] and all("ms" in c for c in s["slowest_calls"])
+    assert "statuses: done 3, needs_choice 2" in out and "slowest calls:" in out
+    assert report["allowance"]["start"] is not None and report["allowance"]["end"] is not None
+    assert "Free allowance at the start:" in out and "Free allowance at the end:" in out
+
+
+def test_router_build_reads_the_call_facts():
+    assert cc.router_build([{"reasoning": "low"}]) == "current" and cc.router_build([{"min_output": "raised:300->1024"}]) == "current"
+    assert cc.router_build([{"empty": True, "flagged": True}]) == "current"
+    assert cc.router_build([{"empty": True, "flagged": False}]) == "old"
+    assert cc.router_build([{"deployment": "groq-gpt-oss-20b__fast", "task": "light"}]) == "old"
+    assert cc.router_build([{"deployment": "gemini-3.1-flash-lite", "task": "light"}]) == "unknown" and cc.router_build([]) == "unknown"

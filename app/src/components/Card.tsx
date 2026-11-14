@@ -201,6 +201,23 @@ function extraFor(card: CardData, t: T, lang: Lang): { lines: ReactNode; over: b
   }
 }
 
+/**
+ * The home's own cards carry `title_key` and `params` (card.schema.json): shown in the person's language.
+ * An unknown key, or a card from a host bot, keeps its own words.
+ */
+export function localised(card: Pick<CardData, 'title_key' | 'params'>, t: T): { title: string; under: string } | null {
+  const p = card.params ?? {};
+  const v = (name: string) => redact(String(p[name] ?? ''));
+  switch (card.title_key) {
+    case 'save_file_chore':
+      return { title: t('ck_save_file'), under: t('ck_under_chore', v('label')) };
+    case 'save_file_skill':
+      return { title: t('ck_save_file'), under: t('ck_under_skill', v('skill')) };
+    default:
+      return null;
+  }
+}
+
 export interface CardProps {
   card: CardData;
   /** The app's clock, for the expiry line. */
@@ -218,7 +235,9 @@ export function Card({ card, now, paused = false, compact = false, onAnswer }: C
   const dialogTitle = useId();
   const { lines, over } = extraFor(card, t, lang);
   const left = fmtDuration(Date.parse(card.expires_at) - now, lang);
-  const title = redact(card.title);
+  const known = localised(card, t);
+  const title = known ? known.title : redact(card.title);
+  const under = known ? known.under : redact(card.under.text);
   const thing = redact(card.thing);
   const cost: CardData['cost'] = card.cost;
   const usd = isMoney(cost) && cost.currency === 'TWD' ? fmtMoney(localToUsd(Number(cost.amount)), 'USD', lang) : null;
@@ -229,7 +248,7 @@ export function Card({ card, now, paused = false, compact = false, onAnswer }: C
       <p className="thing">{thing}</p>
       {card.where ? <p>{redact(card.where)}</p> : null}
       {lines}
-      {card.under.text ? <Line label={t('cd_under')}>{redact(card.under.text)}</Line> : null}
+      {under ? <Line label={t('cd_under')}>{under}</Line> : null}
       <Line label={t('cd_cost')}>{isMoney(cost) ? <strong>{fmtCardMoney(cost, lang)}</strong> : t('cd_nothing')}</Line>
       {usd ? (
         <Details t={t}>

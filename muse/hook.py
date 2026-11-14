@@ -4,16 +4,16 @@ Glue only: rules live in muse.quota (what a failure means), muse.ledger (shared
 state) and muse.policy (which deployments a privacy class may use).
 
 Loaded by the proxy through `litellm_settings.callbacks: ["muse.hook.handler"]`
-(LiteLLM 1.108.5 `proxy/types_utils/utils.py:get_instance_fn` imports
+(LiteLLM 1.108.6 `proxy/types_utils/utils.py:get_instance_fn` imports
 `muse.hook` and reads `handler`; PYTHONPATH must contain the repo root, which
 is /opt/muse in the container).
 
-Hooks used, with the 1.108.5 signatures (litellm/integrations/custom_logger.py):
+Hooks used, with the 1.108.6 signatures (litellm/integrations/custom_logger.py):
 - async_pre_call_hook: validate x-muse-privacy (unknown -> 400), resolve the class
   (the app's default_privacy replaces MUSE_DEFAULT_PRIVACY when the header is absent).
   Then the routing rules (muse/rules.py, rule 2): a request with `x-muse-task`, or
   for the model `auto`, has `data["model"]` REPLACED by the task's alias here. The
-  1.108.5 proxy (proxy/common_request_processing.py) runs this hook after its own
+  1.108.6 proxy (proxy/common_request_processing.py) runs this hook after its own
   alias maps and before route_request, which reads data["model"], so the router
   only ever sees a real alias; `auto` needs no entry in the rendered config. The
   task's max_output_tokens is applied as a ceiling; an unknown task is a 400.
@@ -34,13 +34,18 @@ Hooks used, with the 1.108.5 signatures (litellm/integrations/custom_logger.py):
   the client set no cap). LiteLLM hands this hook a fresh copy of the request for
   every attempt, so a fallback to a deployment without a floor sends the client's
   own value; the paid hold below it is estimated on the raised figure.
+  Next to the floor, the reasoning setting: a deployment whose
+  model_info.muse_reasoning names a parameter and a value for the request's
+  task (e.g. reasoning_effort: low for light) gets that parameter on this one
+  upstream call when the client did not set it (catalogue `reasoning`).
 - async_post_call_failure_deployment_hook: one call per failed attempt (retries
   and fallbacks too), unlike async_log_failure_event which fires once per request.
 - async_log_success_event: record the call (app, priority, cost, paid) and limits.
 - async_post_call_response_headers_hook: x-muse-provider / -deployment / -privacy /
   -app, x-muse-cost-usd, x-muse-ration and Retry-After on a rationing refusal,
   x-muse-task (the task applied), x-muse-handoff: suggest (rule 6), x-muse-cache,
-  x-muse-min-output (the output floor below raised this call's cap) and
+  x-muse-min-output (the output floor below raised this call's cap),
+  x-muse-reasoning (the reasoning setting this call was sent with) and
   x-muse-answer: empty-reasoning (a 200 whose visible answer is empty because
   the model spent its output allowance on reasoning; the body is not changed).
   A 429 whose last failure was a provider limit (the provider answered 429 and
@@ -110,6 +115,10 @@ MIN_OUTPUT_HEADER = "x-muse-min-output"  # response: raised:<from>-><to>[;over-c
 ANSWER_HEADER = "x-muse-answer"  # response: empty-reasoning
 ANSWER_EMPTY_REASONING = "empty-reasoning"
 MIN_OUTPUT_INFO = "muse_min_output_tokens"  # model_info field, rendered from the catalogue's min_output_tokens
+REASONING_HEADER = "x-muse-reasoning"  # response: the reasoning value the router set for this call (e.g. low)
+REASONING_INFO = "muse_reasoning"  # model_info field, rendered from the catalogue's reasoning
+REASONING_PARAMS = ("reasoning_effort",)
+REASONING_VALUES = ("low", "medium", "high")
 OUTPUT_CAP_KEYS = ("max_tokens", "max_completion_tokens", "max_output_tokens")
 AUTO_MODEL = "auto"
 CACHE_PROVIDER = "cache"  # provider/upstream recorded for an answer served from the exact-repeat cache
@@ -123,7 +132,7 @@ DEFAULT_OUTPUT_ESTIMATE = 1024  # tokens held for a paid call that sets no max_t
 class MusePrivacyError(GuardrailRaisedException):
     """No deployment allowed for the request's privacy class.
 
-    A GuardrailRaisedException, so the 1.108.5 router neither retries nor falls
+    A GuardrailRaisedException, so the 1.108.6 router neither retries nor falls
     back across aliases (router.py: `is_guardrail_intervention(e)`).
     """
 
@@ -215,6 +224,9 @@ class _Note:
     # What the latest attempt's raise changed (key -> (from, to)), so a request dict that is
     # reused for the next deployment gets the client's own value back first.
     raised_last: dict[str, tuple[int, int]] = field(default_factory=dict)
+    # The reasoning setting, per deployment id (the x-muse-reasoning value), and what the latest attempt set.
+    reasoning: dict[str, str] = field(default_factory=dict)
+    reasoning_last: tuple[str, str] | None = None
 
 
 def _metadata(data: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -390,6 +402,28 @@ def min_output_header(changed: Mapping[str, tuple[int, int]], ceiling: Any = Non
     if isinstance(ceiling, int) and not isinstance(ceiling, bool) and 0 < ceiling < after:
         text += f";over-ceiling:{ceiling}"
     return text
+
+
+def reasoning_of(info: Mapping[str, Any] | None, task: Any) -> tuple[str, str] | None:
+    """(parameter, value) the deployment's model_info.muse_reasoning names for this task; None when none applies."""
+    raw = info.get(REASONING_INFO) if isinstance(info, Mapping) else None
+    if not isinstance(raw, Mapping) or not isinstance(task, str):
+        return None
+    param, value = raw.get("param"), raw.get(task)
+    if param in REASONING_PARAMS and value in REASONING_VALUES:
+        return str(param), str(value)
+    return None
+
+
+def apply_reasoning(data: dict[str, Any], setting: tuple[str, str] | None) -> str | None:
+    """Set the reasoning parameter when the request did not set it. Returns the value set, or None."""
+    if not setting:
+        return None
+    param, value = setting
+    if data.get(param) is not None:
+        return None  # the client's own choice wins
+    data[param] = value
+    return value
 
 
 def _get(obj: Any, name: str) -> Any:
@@ -1026,6 +1060,7 @@ class MuseHook(CustomLogger):
 
         # The output floor for this deployment, before the paid hold so the hold counts the raised cap.
         raised = self._output_floor(info, kwargs, call_type, call_id)
+        reasoned = self._reasoning(info, kwargs, call_type, call_id)
 
         # Record/replay sits on this one call, after the floor, so the cassette
         # sees the cap the provider will see. Live mode returns without touching
@@ -1038,7 +1073,38 @@ class MuseHook(CustomLogger):
         # The paid cap, atomically across workers, right before money is spent.
         if ration.is_paid(info):
             await self._hold_paid(info, kwargs, call_id)
-        return kwargs if raised or routed else None
+        return kwargs if raised or reasoned or routed else None
+
+    def _reasoning(self, info: Mapping[str, Any], kwargs: dict, call_type: Any, call_id: str | None) -> bool:
+        """Set the deployment's reasoning parameter for this task on this attempt. True when it changed the request.
+
+        Chat calls only, and only when the client did not set the parameter. As with the floor, a value the
+        previous attempt set is taken back first, so a fallback deployment without the setting gets the client's
+        own request. An error here is counted and the request goes out as the client sent it.
+        """
+        try:
+            note = self._note(call_id, create=False)
+            dep_id = str(info.get("id", ""))
+            if note is not None:
+                if note.reasoning_last is not None and kwargs.get(note.reasoning_last[0]) == note.reasoning_last[1]:
+                    kwargs.pop(note.reasoning_last[0], None)
+                note.reasoning_last = None
+                note.reasoning.pop(dep_id, None)
+            if _call_mode(call_type) != "chat":
+                return False
+            setting = reasoning_of(info, _metadata(kwargs).get("muse_task"))
+            value = apply_reasoning(kwargs, setting)
+            if value is None or setting is None:
+                return False
+            note = self._note(call_id)
+            if note is not None:
+                note.reasoning_last = (setting[0], value)
+                note.reasoning[dep_id] = value
+                note.details.append(f"reasoning: {dep_id}: {setting[0]}={value}")
+            return True
+        except Exception as exc:
+            self._fault("reasoning", exc)
+            return False
 
     def _output_floor(self, info: Mapping[str, Any], kwargs: dict, call_type: Any, call_id: str | None) -> bool:
         """Raise this attempt's output cap to the chosen deployment's floor. True when it changed.
@@ -1324,6 +1390,8 @@ class MuseHook(CustomLogger):
                 # The floor of the deployment that answered, not of one tried before it.
                 if note is not None and info.get("id") and str(info["id"]) in note.min_output:
                     out[MIN_OUTPUT_HEADER] = note.min_output[str(info["id"])]
+                if note is not None and info.get("id") and str(info["id"]) in note.reasoning:
+                    out[REASONING_HEADER] = note.reasoning[str(info["id"])]
                 if empty_reasoning(response):
                     out[ANSWER_HEADER] = ANSWER_EMPTY_REASONING
             elif note is not None and note.provider_limit_last and note.provider_until is not None:

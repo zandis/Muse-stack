@@ -33,6 +33,9 @@ PAID_TIERS = {"paid", "metered"}
 PAID_ORDER_OFFSET = 20
 FALSY = {"0", "false", "no", "off"}
 MIN_OUTPUT_TOKENS_MAX = 8192  # same bound as muse/catalog.py (this script imports nothing from muse)
+REASONING_PARAMS = ("reasoning_effort",)  # same as muse/catalog.py
+REASONING_VALUES = ("low", "medium", "high")
+REASONING_TASKS = ("light", "everyday", "heavy", "frontier")
 
 
 def load_dotenv(path: Path, environ: dict[str, str]) -> None:
@@ -230,6 +233,23 @@ def _min_output_tokens(provider: Mapping[str, Any], deployment: Mapping[str, Any
     return found[0] if found else None
 
 
+def _reasoning(provider: Mapping[str, Any], deployment: Mapping[str, Any]) -> dict[str, str] | None:
+    """A chat deployment's `reasoning` setting, as muse.catalog.reasoning_for reads it. A bad value stops the
+    render for a catalogue provider; in a hand-edited local catalog it means no setting."""
+    raw = deployment.get("reasoning")
+    if raw is None:
+        return None
+    ok = (isinstance(raw, Mapping) and raw.get("param") in REASONING_PARAMS and len(raw) > 1
+          and all(k in REASONING_TASKS and v in REASONING_VALUES for k, v in raw.items() if k != "param")
+          and str(deployment.get("mode")) == "chat")
+    if not ok:
+        if is_local(provider):
+            return None
+        raise SystemExit(f"{deployment.get('id')}: reasoning must be {{param: reasoning_effort, <task>: low|medium|high}} "
+                         "on a chat deployment")
+    return {str(k): str(v) for k, v in raw.items()}
+
+
 def _quota_list(provider: Mapping[str, Any]) -> list[dict[str, Any]]:
     """The provider's declared `quota:` as [{window, metric, limit}] for the hook's reserve rule."""
     raw = provider.get("quota")
@@ -310,6 +330,10 @@ def _model_info(provider: Mapping[str, Any], deployment: Mapping[str, Any], depl
     if floor is not None:
         # muse/hook.py raises a smaller max_tokens to this for the one upstream call (reasoning models).
         info["muse_min_output_tokens"] = floor
+    reasoning = _reasoning(provider, deployment)
+    if reasoning is not None:
+        # muse/hook.py sets this parameter by task tier when the client did not (see providers.yaml header).
+        info["muse_reasoning"] = reasoning
     declared = _quota_list(provider)
     if declared:
         info["muse_quota"] = declared
@@ -402,7 +426,7 @@ def render(catalog: Mapping[str, Any], environ: Mapping[str, str]) -> tuple[dict
         "num_retries": 1,
         "timeout": 120,
         # No `allowed_fails` here, on purpose. Setting it switches LiteLLM
-        # 1.108.5 to its legacy rule (cool a deployment only after N failures
+        # 1.108.6 to its legacy rule (cool a deployment only after N failures
         # in a minute), so a single 429 was sent to the same upstream again.
         # Without it, a 429 cools the deployment at once, for the provider's
         # Retry-After (router.py deployment_callback_on_failure: deployment
@@ -430,7 +454,7 @@ def render(catalog: Mapping[str, Any], environ: Mapping[str, str]) -> tuple[dict
     if environ.get("LITELLM_MASTER_KEY", "").strip():
         general["master_key"] = "os.environ/LITELLM_MASTER_KEY"
     else:
-        # LiteLLM 1.108.5 refuses to boot with no master key. This is the
+        # LiteLLM 1.108.6 refuses to boot with no master key. This is the
         # documented local-dev override so a first start with an empty .env
         # still comes up. Do not expose that process past localhost.
         general["dangerously_permit_weak_or_unset_master_key"] = True

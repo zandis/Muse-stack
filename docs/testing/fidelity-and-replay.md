@@ -59,7 +59,7 @@ python3 -m muse.fakeprov
 | Gemini PerDay (`quotaId` … `PerDay`) | The one model is exhausted until midnight Pacific. A second Gemini model in the same alias still answers. The catalogue says the limit is per project and per model, so the block stays on that upstream until a captured response shows the cap is project-wide. The test that wants provider scope is `xfail(strict=True)`. |
 | Error object inside an HTTP 200 SSE stream | The stream is a success as far as the hook is concerned, so `classify_failure` never sees it, the upstream stays eligible, and the fallback is not taken. The test that wants a block is `xfail(strict=True)`. Confirm the frame with a captured stream before teaching the hook to read it. |
 | 403 whose message says the quota is used up | The bad-key rule: the whole provider, for 15 minutes. The next request skips every model of that provider. |
-| Empty content, reasoning tokens spent, small `max_tokens` | The output floor in `muse/hook.py` raises the cap to the deployment's `min_output_tokens` (256 on the gpt-oss deployments) before the call is sent. The fake returns text once the cap is at least that floor. |
+| Empty content, reasoning tokens spent, small `max_tokens` | The output floor in `muse/hook.py` raises the cap to the deployment's `min_output_tokens` (1,024 on the gpt-oss deployments) before the call is sent. The fake returns text once the cap is at least that floor. |
 
 `strict=True` means a test that starts passing fails CI until the mark is removed. That is the point: a fix should be a deliberate change, with the mark deleted in the same commit.
 

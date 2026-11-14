@@ -46,7 +46,7 @@ From the review on PR #8 (`docs/reviews/2026-11-13-dsh-our-free-model-ideas.md`)
 | Gemini PerDay blocks only the model that returned it | Open. The catalogue says the limit is per project and per model. The block stays on that one upstream until a cassette shows the cap is project-wide. The desired test is `xfail(strict=True)`. |
 | An error frame inside an HTTP 200 SSE stream | Open. The failure hook is the only place that classifies, and a 200 never arrives there, so the upstream stays eligible and the fallback is not taken. The desired test is `xfail(strict=True)`. |
 
-A 403 whose message says the quota is used up is still the bad-key rule: the whole provider, for 15 minutes. Empty visible text from a reasoning model with a small `max_tokens` is the output floor in `muse/hook.py` (256 on the gpt-oss deployments); the fake provider covers that shape.
+A 403 whose message says the quota is used up is still the bad-key rule: the whole provider, for 15 minutes. Empty visible text from a reasoning model with a small `max_tokens` is the output floor in `muse/hook.py` (1,024 on the gpt-oss deployments); the fake provider covers that shape.
 
 ## Never verified against the real thing
 

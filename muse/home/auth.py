@@ -26,7 +26,10 @@ is made in one place before any handler runs:
            own permission says. It cannot issue or stop a permission,
            pause or resume, store keys, connect services, manage apps, answer a
            card, read the records, or see another device's jobs, cards or runs.
-  viewer   read-only: status, catalogue, cards, jobs, records, permissions.
+  viewer   read-only: status, catalogue, cards, jobs, records, permissions, the chore list and the settings.
+
+Asking a question, the kept conversations, changing chores or settings, storing or removing
+a key and restarting the router are the person's own (`owner`) only.
 
 A token file written before roles existed has no `role` field; such a device is
 an `owner`, which is what every token was until then.
@@ -81,13 +84,16 @@ SCOPES = (
     "receipts.read", "receipts.write",
     "skills.read", "skills.run",
     "mandates.read", "mandates.request", "mandates.write",
+    # The app's screens (muse/home/app_api.py).
+    "ask.write", "chores.read", "chores.write", "settings.read", "settings.write", "home.admin",
 )
 
 ROLE_SCOPES: dict[str, frozenset[str]] = {
     OWNER: frozenset(SCOPES),
     HOST: frozenset({"status.read", "catalogue.read", "cards.read", "cards.ask", "jobs.read", "jobs.write",
                      "receipts.write", "skills.read", "skills.run", "mandates.request"}),
-    VIEWER: frozenset({"status.read", "catalogue.read", "cards.read", "jobs.read", "receipts.read", "mandates.read"}),
+    VIEWER: frozenset({"status.read", "catalogue.read", "cards.read", "jobs.read", "receipts.read", "mandates.read",
+                       "chores.read", "settings.read"}),
 }
 
 # Roles that see every device's jobs, cards and skill runs. Any other role sees only what it made itself.

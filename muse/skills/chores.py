@@ -417,7 +417,8 @@ def run_one(
         cards = CardStore(env, clock=store.clock)
         card_id = cards.create(kind="save_file", title=w("card_title", lang), thing=Path(write.path).name[:200],
                                where=_shown_folder(str(Path(write.path).parent)), under=w("card_under", lang, label=label or "Muse"),
-                               cost=None, extra={"size_bytes": len(write.data)}, job_ref=f"chore:{chore.id}:{run.id}")
+                               cost=None, extra={"size_bytes": len(write.data)}, job_ref=f"chore:{chore.id}:{run.id}",
+                               title_key="save_file_chore", params={"label": (label or "Muse")[:200]})
     except (CardError, OSError):
         _forget(env, run.id)
         return _finish(store, run, "failed", f"{counts}; {w('no_card', lang)}", **used)

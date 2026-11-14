@@ -24,7 +24,23 @@ Rules that stay in force on this VM: no real patient data; test network only; ev
 
 ## Stage 0: make real runs routine (do once, about 30 minutes)
 
-**0.1 Check what the VM costs.** It was reported as 4 cores and 48 GB. Oracle's free allowance is 2 cores and 12 GB. In the Oracle console open Billing, then Cost Analysis, and look at the last 7 days for this instance. Decide: keep it as a paid test bench, or resize to 2 cores and 12 GB (Instance, Edit, Edit shape). If it is free-only and over the allowance, it can be stopped without notice.
+**0.1 Check the account type and what the VM costs.** The VM has been described as 4 cores with 24 GB and as 4 cores with 48 GB; the console decides. Do not press Upgrade during this check.
+
+1. In the Oracle console, open the profile menu, then Tenancy. Note whether the account is "Always Free" or "Pay As You Go", and the home region.
+2. Open Compute, Instances, the instance. Note the shape, the OCPU count and the memory.
+3. Open Billing, Cost Analysis, last 7 days, filtered to this instance. Note the amount.
+4. Take a boot-volume backup (Block Storage, Boot Volumes, the volume, Create Backup). Five backups are free.
+
+What the answers mean:
+
+| Account | Size | Meaning |
+|---|---|---|
+| Always Free | 2 cores, 12 GB or less | Inside the free allowance. It can still be stopped after 7 quiet days (see below) |
+| Always Free | more than 2 cores or 12 GB | Over the documented allowance. It can be stopped, and the larger size may not be available again. Ask Oracle Support in writing before resizing or upgrading |
+| Pay As You Go | up to 4 cores, 24 GB | Reported to be free inside the paid-account allowance of 3,000 core-hours and 18,000 GB-hours a month. A card is on file, so set a budget alert first. This figure comes from the review of 14 November and has not been re-read by me on Oracle's price list |
+| either | 48 GB | Above every free allowance. Cost Analysis will show what it costs |
+
+Oracle may stop an Always Free instance when, over 7 days, processor use (95th percentile), network use and, on ARM, memory use are all under 20%. All three must be low, so keeping one of them above 20% is enough. The repository's idle guard does this with the processor (`MUSE_IDLE_GUARD`, target 25%); it is off until you decide. See `docs/reviews/vm-options-2026-11-14.md`.
 
 **0.2 Let Claude work on the VM.** This removes the relay through you.
 
@@ -124,10 +140,10 @@ python -m pytest tests/test_sandbox_escape.py tests/test_sandbox.py -q -rs 2>&1 
 
 Run as the ordinary `ubuntu` user, not root. If doctor shows `setting up uid map: Permission denied`, Ubuntu's AppArmor rule is blocking the outer layer; the other two layers should still satisfy "require". Send me the doctor lines and the last 15 lines.
 
-**2.3 The full test suite and the Rust core on ARM.** About 20 minutes; it can run in tmux.
+**2.3 The full test suite and the Rust core on ARM.** About 20 minutes one test at a time, less in parallel; it can run in tmux.
 
 ```bash
-python -m pytest tests -q -p no:cacheprovider 2>&1 | tail -5
+python -m pytest tests -q -p no:cacheprovider -n auto --dist worksteal 2>&1 | tail -5   # parallel; drop -n auto to run one test at a time
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && . ~/.cargo/env
 (cd core && cargo test --locked 2>&1 | grep "test result")
 ```
@@ -136,9 +152,9 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && . ~/.
 
 ---
 
-## Stage 3: the gate, on the fixed skills (after I confirm the research fix is merged)
+## Stage 3: the gate, on the fixed skills
 
-Do not re-run before I say the fix is merged; the result would be the same as today.
+The research fix is merged on `ccr-645e0264-bn082z` (14 November). Do stage 1 first: the fix is partly in the router (a higher minimum answer length and a lower reasoning setting for the gpt-oss models), so a run against the old live router would repeat the old result. The report now prints a warning when the router looks old.
 
 **3.1 Files skill only, capped.** The files skill passed (65 of 67). This run looks at its two misses and its slow tail, with failed answers kept.
 
@@ -148,7 +164,7 @@ python scripts/chores_check.py --check-tasks
 python scripts/chores_check.py --only files-answer --keep-failures --max-requests 200
 ```
 
-`--keep-failures` and `--max-requests` arrive with the fix. Until then use `--keep-outputs` and `--sample 20`.
+The research skill now makes fewer, larger calls (about 6 a run offline, against 12 on 13 November), so 250 requests should cover the sample of 10 with room to spare.
 
 **3.2 Research report, a sample first.**
 

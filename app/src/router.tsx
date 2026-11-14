@@ -5,7 +5,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 
 export const SCREENS = ['today', 'ask', 'chores', 'records', 'more', 'services', 'permissions', 'devices', 'wallet', 'apps', 'settings'] as const;
 export type Screen = (typeof SCREENS)[number];
-export type Route = Screen | 'tray';
+export type Route = Screen | 'tray' | 'welcome';
 
 /** The four main tabs, then what "More" holds (docs/spec/02-ux.md section 2). */
 export const NAV_MAIN: readonly Screen[] = ['today', 'ask', 'chores', 'records'];
@@ -14,6 +14,7 @@ export const NAV_MORE: readonly Screen[] = ['services', 'permissions', 'devices'
 export function parseRoute(pathname: string): Route {
   const seg = pathname.replace(/^\/+|\/+$/g, '').split('/')[0] ?? '';
   if (seg === 'tray') return 'tray';
+  if (seg === 'welcome') return 'welcome';
   return (SCREENS as readonly string[]).includes(seg) ? (seg as Screen) : 'today';
 }
 

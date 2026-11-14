@@ -8,6 +8,12 @@ use std::collections::HashMap;
 use biscuit_auth::{Biscuit, BlockBuilder};
 use muse_core::permissions::*;
 
+/// The library's own default gives an authorizer 1 ms, which a busy CI machine can miss.
+/// These tests are about what is allowed, not how fast, so the clock limit is generous.
+fn slow_machine_limits() -> biscuit_auth::AuthorizerLimits {
+    biscuit_auth::AuthorizerLimits { max_time: std::time::Duration::from_secs(30), ..Default::default() }
+}
+
 pub const TEST_ROOT: &str = "ed25519-private/0101010101010101010101010101010101010101010101010101010101010101";
 const T0: i64 = 1_794_528_000; // 2026-11-13T00:00:00Z
 const DAY: i64 = 86_400;
@@ -404,12 +410,12 @@ fn a_widening_block_changes_nothing() {
                 "time(2026-11-13T00:00:00Z); time_late(2026-11-13T00:00:00Z); req_holder(\"helper:vm\"); req_privacy(1); req_action(\"{}\"); req_resource(\"folder\", \"{}\");",
                 want.action, want.resource.value
             );
-            let result = biscuit_auth::AuthorizerBuilder::new().code(&facts).unwrap().code(AUTHORIZER_POLICY).unwrap().build(&biscuit).unwrap().authorize();
+            let result = biscuit_auth::AuthorizerBuilder::new().set_limits(slow_machine_limits()).code(&facts).unwrap().code(AUTHORIZER_POLICY).unwrap().build(&biscuit).unwrap().authorize();
             assert!(result.is_err(), "the library allowed {want:?} after {attack}");
         }
         // and the request the narrowed token does allow is still allowed by the library
         let facts = "time(2026-11-13T00:00:00Z); time_late(2026-11-13T00:00:00Z); req_holder(\"helper:vm\"); req_privacy(1); req_action(\"files.read\"); req_resource(\"folder\", \"/docs/work/sub/a\");";
-        let result = biscuit_auth::AuthorizerBuilder::new().code(facts).unwrap().code(AUTHORIZER_POLICY).unwrap().build(&biscuit).unwrap().authorize();
+        let result = biscuit_auth::AuthorizerBuilder::new().set_limits(slow_machine_limits()).code(facts).unwrap().code(AUTHORIZER_POLICY).unwrap().build(&biscuit).unwrap().authorize();
         assert!(result.is_ok(), "{attack}: {result:?}");
     }
 }
