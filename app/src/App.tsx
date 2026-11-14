@@ -52,7 +52,7 @@ function Routes() {
 export function App({ client, appClient, now }: { client: HomeClient; appClient: AppClient; now?: () => number }) {
   return (
     <I18nProvider>
-      <StoreProvider client={client} now={now}>
+      <StoreProvider client={client} {...(now !== undefined ? { now } : {})}>
         <AppClientProvider client={appClient}>
           <RouterProvider>
             <Routes />
