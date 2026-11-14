@@ -324,7 +324,7 @@ function pretendHome(over: Partial<Pretend['state']> = {}): Pretend {
 
 async function renderApp(home: Pretend, lang: 'en' | 'zh-TW' = 'en') {
   localStorage.setItem('muse.lang', lang);
-  render(<App client={home} appClient={pretendAppClient()} />);
+  render(<App client={home} appClient={pretendAppClient()} now={() => NOW} />);
   await act(async () => {
     await Promise.resolve();
   });
