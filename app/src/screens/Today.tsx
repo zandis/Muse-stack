@@ -18,6 +18,7 @@ import { computeGauge, computeSpending, type Gauge as GaugeData, type Spending }
 import { isPaused, waitingCards, type State } from '../state/reducer';
 import { useActions, useAppState } from '../state/store';
 import { chooseTip, parseTipMemory, TIP_STORAGE_KEY, type TipMemory } from '../state/tip';
+import { useStartFirstRun } from './FirstRun';
 
 const SLOW_MS = 600;
 const DONE_LINES = 5;
@@ -211,6 +212,7 @@ export function Today() {
   const waiting = waitingCards(state);
   const { running, done } = useMemo(() => jobLines(state.jobs, state.now, paused, t, lang), [state.jobs, state.now, paused, t, lang]);
   const { tip, dismiss } = useTip(state, gauge?.connected ?? 0);
+  useStartFirstRun(gauge ? gauge.connected : null);
   const slow = useSlow(state.refreshing);
   const firstLoad = !state.loaded && !state.problem;
   const updating = firstLoad || (slow && state.loaded);

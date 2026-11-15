@@ -2355,10 +2355,11 @@ components:
       description: |
         The paid total in the person's currency. The rate is a setting, not a lookup:
         `rate_source` is always `fixed setting`. `daily_limit.source` is `default` until a limit
-        is saved; the default is NT$30 (US$0.9375 at 32). `daily_limit.router_usd` is the cap the
-        router enforces for the same settings, and `in_step` says whether the two agree: they
-        differ on a home that has never stored a key or saved a limit, where the router's own
-        default of US$1.00 still applies to other programs.
+        is saved; the default is NT$30 (US$0.9375 at the fixed rate of 32), which is also the
+        router's own default, so a new home is in step from the start and nothing is written for
+        it. `daily_limit.router_usd` is the cap the router enforces for the same settings, and
+        `in_step` says whether the two agree (a saved limit reaches the router at its next
+        start; see `restart_pending`).
       required: [currency, rate, rate_source, rate_date, spent_today, daily_limit]
       properties:
         currency: {type: string, enum: [TWD, USD, JPY, KRW]}
@@ -2836,6 +2837,13 @@ components:
         languages: {type: array, items: {type: string}}
         privacy_choices: {type: array, items: {type: string}}
         restart_pending: {type: boolean}
+        first_run:
+          type: string
+          enum: [pending, done, skipped]
+          description: |
+            Whether the first-run flow (docs/spec/02-ux.md section 3) has been finished or skipped on this home.
+            The app opens it by itself only while this is `pending` and no service is connected. Once `done`
+            or `skipped`, it stays so.
 
     SettingsReply:
       type: object
@@ -2856,6 +2864,7 @@ components:
         language: {type: string, enum: [en, zh-TW]}
         currency: {type: string, enum: [TWD, USD, JPY, KRW]}
         usd_rate: {type: [number, string], description: Units of the currency per US dollar.}
+        first_run: {type: string, enum: [done, skipped], description: The first-run flow was finished or skipped. The first value sent is kept.}
 
     Memory:
       type: object

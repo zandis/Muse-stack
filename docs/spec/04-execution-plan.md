@@ -37,6 +37,14 @@ Also confirmed by the owner on 2026-11-13:
 | First testers | Get the always-on helper flow as well as the desktop app |
 | Phone push | A minimal relay that forwards an empty wake signal and never sees content. It is the only service Muse runs |
 
+Decided on 2026-11-15:
+
+| Decision | Outcome |
+|---|---|
+| Vault slot for the always-on VM | None by default. The VM holds only what a job is handed; the person can add a slot explicitly later |
+| Recovery words | Shown once, at creation; never shown again. Lost words mean a new recovery key from an unlocked device |
+| VM idle guard | On by default for Always Free accounts, off for paid ones (`deploy/oracle-stack/README.md`, "Idle guard") |
+
 **The owner's VM.** The owner reports 4 cores and 48 GB. Oracle's Always Free allowance is 2 cores and 12 GB, so this instance is above it. Either it is on a paid account and is being charged for the difference (a rough estimate from Oracle's public list prices is US$50 to 60 a month; check the console's cost page, this figure is not verified), or it is on a free-only account and may be stopped. It is a good test bench either way. The product must still be built and measured for 2 cores and 12 GB, because that is what a user gets for free; the VM stack in work package D3 is tested at that size.
 
 ---

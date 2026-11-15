@@ -432,7 +432,6 @@ export const en = {
   st_limit_b: 'Your helper never spends more than this in a day. Zero means it never spends.',
   st_limit_usd: 'About {0}',
   st_limit_bad: 'Type an amount, zero or more.',
-  st_limit_router: 'Your helper uses the new limit after it restarts. Until then it stops at {0}.',
   st_save: 'Save',
   st_saved: 'Saved.',
   st_failed: 'That did not go through. Nothing was changed.',

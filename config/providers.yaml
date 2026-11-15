@@ -8,7 +8,7 @@
 # join:
 #   always          — part of the public alias (fast, smart, ...) whenever the key is set
 #   paid_fallback   — joins the public aliases when paid use is on: MUSE_DAILY_PAID_CAP_USD
-#                     > 0 (default 1.00) and MUSE_ALLOW_PAID_FALLBACK not false, or
+#                     > 0 (default 0.9375, NT$30 at 32) and MUSE_ALLOW_PAID_FALLBACK not false, or
 #                     MUSE_ALLOW_PAID_FALLBACK=true. Otherwise direct model name only.
 #   With the cap > 0, every tier paid/metered alias entry is rendered at order
 #   20 + its own order (or later than the highest free/local order), so free,

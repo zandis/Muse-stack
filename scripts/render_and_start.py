@@ -44,7 +44,7 @@ def main() -> None:
         )
     else:
         paid = paid_fallback_enabled(os.environ)
-        cap = os.environ.get("MUSE_DAILY_PAID_CAP_USD", "").strip() or "1.00"
+        cap = os.environ.get("MUSE_DAILY_PAID_CAP_USD", "").strip() or "0.9375 (default, NT$30 at 32)"
         cap_text = f"daily paid cap ${cap}" if paid_cap_positive(os.environ) else "daily paid cap 0 (paid never used)"
         print(
             f"muse-stack: enabled providers: {', '.join(enabled)}. "

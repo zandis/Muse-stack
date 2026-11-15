@@ -40,7 +40,7 @@ What the answers mean:
 | Pay As You Go | up to 4 cores, 24 GB | Reported to be free inside the paid-account allowance of 3,000 core-hours and 18,000 GB-hours a month. A card is on file, so set a budget alert first. This figure comes from the review of 14 November and has not been re-read by me on Oracle's price list |
 | either | 48 GB | Above every free allowance. Cost Analysis will show what it costs |
 
-Oracle may stop an Always Free instance when, over 7 days, processor use (95th percentile), network use and, on ARM, memory use are all under 20%. All three must be low, so keeping one of them above 20% is enough. The repository's idle guard does this with the processor (`MUSE_IDLE_GUARD`, target 25%); it is off until you decide. See `docs/reviews/vm-options-2026-11-14.md`.
+Oracle may stop an Always Free instance when, over 7 days, processor use (95th percentile), network use and, on ARM, memory use are all under 20%. All three must be low, so keeping one of them above 20% is enough. (Rule re-read on Oracle's Always Free page on 15 November 2026.) The repository's idle guard does this with the processor (`MUSE_IDLE_GUARD`, target 25%, about one minute in ten, never memory or network). Decided: it is on by default for an Always Free account and off for a paid one (`MUSE_ACCOUNT_TYPE=always_free|paid`, `MUSE_IDLE_GUARD=auto|on|off` in `/etc/muse/vm.conf`; the stack's form has the same two settings). This test VM is set up by hand, so after the account check in step 0.1 set `MUSE_ACCOUNT_TYPE` to match. See `deploy/oracle-stack/README.md`, "Idle guard".
 
 **0.2 Let Claude work on the VM.** This removes the relay through you.
 
@@ -248,7 +248,7 @@ What to look for: the bot's answers appear in Muse's records with a route; a req
 
 ## Stage 7: the one-button VM setup on a real Oracle account (later; needs decisions first)
 
-Not ready to run. It needs, from you: a public address for the release files (the repository is private, and both Oracle's deploy button and the first boot fetch over plain https), and a decision on the idle guard being on by default. When those exist, the ten checks are listed in `deploy/oracle-stack/README.md`; the first four gate the rest:
+Not ready to run. It needs, from you: a public address for the release files (the repository is private, and both Oracle's deploy button and the first boot fetch over plain https). The idle guard decision is made: on by default for Always Free accounts, off for paid ones. When that exists, the ten checks are listed in `deploy/oracle-stack/README.md`; the first four gate the rest:
 
 1. Terraform validates and applies through Oracle's Resource Manager.
 2. The deploy button accepts the published zip address.

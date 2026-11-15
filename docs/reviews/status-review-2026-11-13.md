@@ -154,7 +154,7 @@ Step 3 follows from idea 2: a job can be taken from someone else only if its res
 4. **The changed promise** (5.4).
 5. **Make the allowance engine general** (idea 1) the next infrastructure package.
 6. **Publish measured model quality** (idea 4) as the first data product, once a licence is chosen and a native reader has checked the test set.
-7. From earlier, still open: a licence for the repository; the two vault decisions; the VM's size and cost.
+7. From earlier, still open: a licence for the repository; the two vault decisions (decided on 2026-11-15: no vault slot for the VM by default; recovery words shown once); the VM's size and cost.
 
 ## 9. What I would do in the next seven days if all of the above is accepted
 

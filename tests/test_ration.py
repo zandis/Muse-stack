@@ -137,9 +137,10 @@ def test_local_deployment_is_never_paid_whatever_its_tier_says():
 
 
 def test_paid_cap_decision_and_message():
-    out = run(INTERACTIVE, [PAID], state(paid_spend_usd=Decimal("1.00")))
+    out = run(INTERACTIVE, [PAID], state(paid_spend_usd=Decimal("0.9375")))  # the default cap: NT$30 at 32
     assert out.decision.kind == REFUSE and out.decision.code == PAID_CAP
-    assert "daily paid cap of $1.00 reached" in out.decision.message and out.decision.retry_at == DAY_END
+    assert "daily paid cap of $0.94 reached" in out.decision.message and out.decision.retry_at == DAY_END
+    assert run(INTERACTIVE, [PAID], state(paid_spend_usd=Decimal("0.9374"))).decision is None  # just under it: allowed
 
 
 def test_tiny_cap_formatting():
@@ -373,7 +374,7 @@ def test_declared_quota_resets_on_provider_day():
 # ---------------------------------------------------------------- settings
 
 @pytest.mark.parametrize("raw, expected", [
-    (None, Decimal("1.00")), ("", Decimal("1.00")), ("  ", Decimal("1.00")),
+    (None, Decimal("0.9375")), ("", Decimal("0.9375")), ("  ", Decimal("0.9375")),
     ("0", Decimal("0")), ("0.00", Decimal("0")), ("2.5", Decimal("2.5")), ("$3", Decimal("3")), ("0.001", Decimal("0.001")),
     ("abc", Decimal("0")), ("-1", Decimal("0")), ("nan", Decimal("0")), ("inf", Decimal("0")), ("1,00", Decimal("0")),
 ])
@@ -387,7 +388,7 @@ def test_paid_cap_parsing_fails_closed(raw, expected):
 def test_settings_from_env_defaults_and_overrides():
     s = Settings.from_env({})
     assert (s.paid_cap_usd, s.active_window_s, s.reserve_background, s.reserve_normal, s.expiring_day_s, s.expiring_month_s, s.local_yields) == (
-        Decimal("1.00"), 120.0, 0.30, 0.10, 3600.0, 86400.0, True)
+        Decimal("0.9375"), 120.0, 0.30, 0.10, 3600.0, 86400.0, True)
     s = Settings.from_env({"MUSE_DAILY_PAID_CAP_USD": "0.5", "MUSE_ACTIVE_WINDOW_S": "30", "MUSE_RESERVE_BACKGROUND": "0.5",
                            "MUSE_RESERVE_NORMAL": "0", "MUSE_EXPIRING_DAY_S": "60", "MUSE_EXPIRING_MONTH_S": "600",
                            "MUSE_LOCAL_YIELD": "false", "MUSE_TZ": "Asia/Taipei"})

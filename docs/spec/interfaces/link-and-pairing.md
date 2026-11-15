@@ -26,7 +26,9 @@ Architecture §2.10, §3.5–3.7 and UX §4.7, made concrete:
 - **Pairing.** A device already in the vault shows a QR code. The new device
   scans it, both run a key exchange bound to the one-time secret in the code,
   both show the same four words, the person confirms on both, and the new
-  device gets its own vault slot. No vault key crosses the channel.
+  device gets its own vault slot. No vault key crosses the channel. (The
+  always-on VM is to get no vault slot by default, by the decision of
+  2026-11-15; the code does not tell it apart yet: see section 13.)
 - **I lost this device.** From another device: the Link refuses the lost one
   at once (open connections are closed), its vault slot is removed with a key
   rotation, and a record is written.
@@ -398,7 +400,9 @@ code, at the cost of a cheap way to cancel open invitations.
   next to the home, and `verify(peer)` in the home).
 - Storing the registry in the vault (a later package); `MemoryRegistry` only.
 - Issuing a device mandate at pairing (`mandate: None`).
-- Sync over the sync channel; the always-on VM.
+- Sync over the sync channel; the always-on VM. When it is paired, it must
+  get no vault slot by default (decided 2026-11-15): `inviter_finish`
+  currently adds one for every joiner.
 - QR rendering and scanning, and the Devices screen.
 - Mobile builds (iroh publishes Swift/Kotlin bindings; not tried here).
 - Persisting the link key in a keystore.

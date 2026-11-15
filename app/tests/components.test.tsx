@@ -10,7 +10,7 @@ import { CARD_KINDS, type Card as CardData, type Job, type Status } from '../src
 import { I18nProvider, translate } from '../src/i18n';
 import { parseRoute } from '../src/router';
 import { jobLines } from '../src/screens/Today';
-import { pretendAppClient } from './app-fixtures';
+import { APP_REPLIES, pretendAppClient } from './app-fixtures';
 import { CARDS, NOW, job, provider, status } from './fixtures';
 
 function setWidth(desktop: boolean) {
@@ -322,13 +322,78 @@ function pretendHome(over: Partial<Pretend['state']> = {}): Pretend {
   };
 }
 
-async function renderApp(home: Pretend, lang: 'en' | 'zh-TW' = 'en') {
+async function renderApp(home: Pretend, lang: 'en' | 'zh-TW' = 'en', appClient = pretendAppClient()) {
   localStorage.setItem('muse.lang', lang);
-  render(<App client={home} appClient={pretendAppClient()} now={() => NOW} />);
+  render(<App client={home} appClient={appClient} now={() => NOW} />);
   await act(async () => {
     await Promise.resolve();
   });
 }
+
+/** The pretend app client, with the home's first-run state set. */
+function withFirstRun(firstRun: 'pending' | 'done' | 'skipped' | undefined, calls: string[] = []) {
+  const settings = (APP_REPLIES['GET /v1/settings'] as { settings: Record<string, unknown> }).settings;
+  return pretendAppClient(
+    {
+      ...APP_REPLIES,
+      'GET /v1/settings': { settings: { ...settings, ...(firstRun ? { first_run: firstRun } : {}) } },
+      'PATCH /v1/settings': (body: unknown) => ({ settings: { ...settings, ...(body as object) }, restart: { needed: false, proxy_running: false, command: 'muse restart' } }),
+    },
+    calls,
+  );
+}
+
+describe('first run starts by itself', () => {
+  const empty = () => pretendHome({ status: status({ providers: [provider({ configured: false })] }), cards: [], jobs: [] });
+
+  it('opens /welcome on a fresh home with nothing connected, and "Skip for now" is written to the home', async () => {
+    const calls: string[] = [];
+    await renderApp(empty(), 'en', withFirstRun('pending', calls));
+    expect(await screen.findByTestId('first-run')).toBeTruthy();
+    expect(window.location.pathname).toBe('/welcome');
+    fireEvent.click(screen.getByTestId('fr-skip'));
+    await waitFor(() => expect(calls).toContain('PATCH /v1/settings {"first_run":"skipped"}'));
+    expect(await screen.findByTestId('nothing-connected')).toBeTruthy(); // the empty state is still there after a skip
+    expect(window.location.pathname).toBe('/today');
+  });
+
+  it('opening /welcome by hand writes nothing to the home until it is finished or skipped', async () => {
+    const calls: string[] = [];
+    window.history.replaceState(null, '', '/welcome');
+    await renderApp(empty(), 'en', withFirstRun('pending', calls));
+    await screen.findByTestId('first-run');
+    expect(calls.filter((c) => c.startsWith('PATCH'))).toEqual([]);
+  });
+
+  it('does not open when a service is connected, when the home says it is over, or when the home does not say', async () => {
+    for (const [connected, firstRun] of [
+      [true, 'pending'],
+      [false, 'done'],
+      [false, 'skipped'],
+      [false, undefined],
+    ] as const) {
+      const calls: string[] = [];
+      window.history.replaceState(null, '', '/today');
+      await renderApp(connected ? pretendHome() : empty(), 'en', withFirstRun(firstRun, calls));
+      await screen.findByTestId(connected ? 'gauge-card' : 'nothing-connected');
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 20));
+      });
+      expect(screen.queryByTestId('first-run'), String(firstRun)).toBeNull();
+      expect(window.location.pathname).toBe('/today');
+      cleanup();
+    }
+  });
+
+  it('does not open again on a device that already finished it, even before the home answers', async () => {
+    localStorage.setItem('muse.firstRunDone', '1');
+    const calls: string[] = [];
+    await renderApp(empty(), 'en', withFirstRun('pending', calls));
+    await screen.findByTestId('nothing-connected');
+    expect(calls).not.toContain('GET /v1/settings');
+    expect(window.location.pathname).toBe('/today');
+  });
+});
 
 describe('Today', () => {
   it('shows the gauge, next refill, spending and that nothing was spent', async () => {
@@ -352,9 +417,12 @@ describe('Today', () => {
     expect(screen.getByText(/US\$0\.03 of US\$1\.00/)).toBeTruthy();
   });
 
-  it('nothing connected: the gauge is replaced by "Connect your first service", and there is no tip', async () => {
-    await renderApp(pretendHome({ status: status({ providers: [provider({ configured: false })] }), cards: [], jobs: [] }));
+  it('nothing connected, first run skipped: the gauge is replaced by "Connect your first service", and there is no tip', async () => {
+    const calls: string[] = [];
+    await renderApp(pretendHome({ status: status({ providers: [provider({ configured: false })] }), cards: [], jobs: [] }), 'en', withFirstRun('skipped', calls));
     const box = await screen.findByTestId('nothing-connected');
+    await waitFor(() => expect(calls).toContain('GET /v1/settings'));
+    expect(window.location.pathname).toBe('/today'); // skipped once: Today's empty state stays
     expect(within(box).getByRole('heading', { name: 'Connect your first service' })).toBeTruthy();
     expect(within(box).getByRole('link', { name: 'Connect a service' }).getAttribute('href')).toBe('/welcome');
     expect(screen.queryByTestId('tip')).toBeNull();

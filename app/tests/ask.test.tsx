@@ -93,10 +93,11 @@ describe('the three choices', () => {
 
 describe('the opener allow-list', () => {
   it('takes service key-page hosts from the home, plain DNS names only, https only', () => {
-    expect(allowedExternal('https://cloud.cerebras.ai/keys')).toBeNull();
-    allowCatalogueHosts(['cloud.cerebras.ai', 'evil.example/x', 'javascript:alert(1)', null, '127.0.0.1']);
-    expect(allowedExternal('https://cloud.cerebras.ai/keys')?.hostname).toBe('cloud.cerebras.ai');
-    expect(allowedExternal('http://cloud.cerebras.ai/keys')).toBeNull();
+    // A service newer than this build's catalogue (the build already holds every catalogue host).
+    expect(allowedExternal('https://keys.newer-service.com/keys')).toBeNull();
+    allowCatalogueHosts(['keys.newer-service.com', 'evil.example/x', 'javascript:alert(1)', null, '127.0.0.1']);
+    expect(allowedExternal('https://keys.newer-service.com/keys')?.hostname).toBe('keys.newer-service.com');
+    expect(allowedExternal('http://keys.newer-service.com/keys')).toBeNull();
     expect(allowedExternal('https://127.0.0.1/')).toBeNull();
   });
 });

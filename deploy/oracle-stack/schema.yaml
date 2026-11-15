@@ -36,6 +36,7 @@ variableGroups:
       - create_identity_resources
       - backup_keep
       - backup_expire_days
+      - account_type
       - idle_guard
       - update_manifest_url
       - update_public_key
@@ -139,11 +140,25 @@ variables:
     maximum: 365
     visible: show_advanced
 
+  account_type:
+    type: enum
+    title: "Oracle account type"
+    description: "always_free if you have not upgraded your Oracle account; paid if you have (pay as you go). It only sets the default below."
+    enum:
+      - always_free
+      - paid
+    default: "always_free"
+    visible: show_advanced
+
   idle_guard:
-    type: boolean
+    type: enum
     title: "Keep the helper from being reclaimed as idle"
-    description: "Oracle may take back a free instance that looks unused for 7 days. With this on, the helper keeps its memory use just above that level. See the README, 'Idle guard'."
-    default: true
+    description: "Oracle may take back a free instance that looks unused for 7 days. auto: on for a free account, off for a paid one. When on, about one minute in ten the helper runs its processor at a quarter of capacity unless real work already did; it never uses extra memory or network. See the README, 'Idle guard'."
+    enum:
+      - auto
+      - "on"
+      - "off"
+    default: "auto"
     visible: show_advanced
 
   update_manifest_url:

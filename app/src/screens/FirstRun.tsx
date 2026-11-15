@@ -2,14 +2,18 @@
 // plain facts, try it, and the answer with its grey line. The recovery-key step
 // is shown only when the home says the vault is wired in (`features.recovery`);
 // until then it is left out, and no words are ever made up.
+//
+// It opens by itself from Today, once: when the home says it was never finished or
+// skipped (`settings.first_run === 'pending'`) and no service is connected. Finishing
+// or "Skip for now" is written to the home, so it does not open again on any device.
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Icon } from '../components/Icon';
 import { ErrorBox } from '../components/ui';
 import type { Turn } from '../home/types';
 import { useI18n, type Key, type LangChoice } from '../i18n';
-import { writeStored } from '../lib/storage';
+import { readStored, writeStored } from '../lib/storage';
 import { Markdown } from '../lib/markdown';
-import { useRouter } from '../router';
+import { useRouter, type Route } from '../router';
 import { useAppClient, useLoad } from '../state/app-client';
 import { greyLine } from '../state/ask';
 import { useActions, useAppState } from '../state/store';
@@ -20,6 +24,29 @@ const ONE_TAP_ID = 'openrouter';
 const SUGGESTIONS: readonly Key[] = ['fr_s1', 'fr_s2', 'fr_s3'];
 
 type Step = 'welcome' | 'service' | 'try' | 'answer';
+
+/**
+ * Opens the first run instead of Today's empty state, once. `connected` is how many services the home
+ * has (null while unknown). Only a home that says `first_run: 'pending'` starts it; any doubt (no reply,
+ * an older home, this device already finished it) leaves Today as it is.
+ */
+export function useStartFirstRun(connected: number | null): void {
+  const client = useAppClient();
+  const { route, go } = useRouter();
+  const asked = useRef(false);
+  const where = useRef<Route>(route);
+  where.current = route;
+  useEffect(() => {
+    if (connected !== 0 || asked.current || readStored(FIRST_RUN_KEY) === '1') return;
+    asked.current = true;
+    client
+      .settings()
+      .then((s) => {
+        if (s.first_run === 'pending' && where.current === 'today') go('welcome', true);
+      })
+      .catch(() => undefined);
+  }, [connected, client, go]);
+}
 
 export function FirstRun() {
   const { t, lang, choice, setChoice } = useI18n();
@@ -44,8 +71,10 @@ export function FirstRun() {
     heading.current?.focus();
   }, [step]);
 
-  const finish = () => {
+  const finish = (how: 'done' | 'skipped') => {
     writeStored(FIRST_RUN_KEY, '1');
+    // Remembered on the home, so it does not start again on this or any other device.
+    void client.saveSettings({ first_run: how }).catch(() => undefined);
     retry();
     go('today');
   };
@@ -164,14 +193,14 @@ export function FirstRun() {
               <ErrorBox icon="alert" what={t('fr_ask_failed')} will={t('gl_nothing')} />
             )}
             {about.data?.features.recovery ? <p className="small">{t('fr_recovery')}</p> : null}
-            <button type="button" className="btn primary block" onClick={finish} data-testid="fr-done">
+            <button type="button" className="btn primary block" onClick={() => finish('done')} data-testid="fr-done">
               <Icon name="check" />
               {t('fr_done')}
             </button>
           </section>
         ) : null}
         {step !== 'answer' ? (
-          <button type="button" className="btn link small" onClick={finish} data-testid="fr-skip">
+          <button type="button" className="btn link small" onClick={() => finish('skipped')} data-testid="fr-skip">
             {t('fr_skip')}
           </button>
         ) : null}

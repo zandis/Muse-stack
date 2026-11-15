@@ -11,6 +11,9 @@ What it writes, from config/providers.yaml and config/resources/*.yaml:
     catalogue/catalogue.v1.json       the document, indented
     catalogue/catalogue.v1.min.json   the same document on one line
     catalogue/CHANGELOG.md            a short entry whenever an entry changed
+    app/src/lib/link-hosts.json       the hosts the app may open, derived from the
+                                      document (scripts/export_link_hosts.py); only
+                                      when writing to (or checking) catalogue/
 
 Usage:
     python scripts/publish_catalogue.py              # rewrite catalogue/
@@ -468,7 +471,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--date", metavar="YYYY-MM-DD", help="generated_at (default: the newest checked_on)")
     parser.add_argument("--release", action="store_true", help="mark the document released and keep a dated copy (needs a chosen licence)")
     args = parser.parse_args(argv)
-    return run(out_dir=args.out, check=args.check, date=args.date, release=args.release)
+    code = run(out_dir=args.out, check=args.check, date=args.date, release=args.release)
+    if code == 0 and args.out.resolve() == OUT_DIR.resolve():
+        # The app's list of hosts it may open is derived from this document (scripts/export_link_hosts.py).
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import export_link_hosts
+
+        code = export_link_hosts.main(["--check"] if args.check else [])
+    return code
 
 
 if __name__ == "__main__":

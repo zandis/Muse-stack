@@ -88,7 +88,7 @@ def cooldown_fallback(environ: Mapping[str, str]) -> float:
 
 
 def paid_cap_positive(environ: Mapping[str, str]) -> bool:
-    """MUSE_DAILY_PAID_CAP_USD > 0. Unset means the default 1.00; unparsable means 0.
+    """MUSE_DAILY_PAID_CAP_USD > 0. Unset means the default (0.9375, NT$30 at 32); unparsable means 0.
 
     Mirrors muse.ration.parse_paid_cap without importing the package, so the
     validator runs with PyYAML only.

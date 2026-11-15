@@ -153,7 +153,7 @@ def test_paid_cap_reached(h, db):
     db.record_call(provider="paidp", deployment_id="pp", upstream="paidp:pp", ok=True, cost_usd=1.0, paid=True, now=NOW - 5)
     with pytest.raises(MuseRationError) as err:
         filt(h, [PP], req(OWNER, call_id="c-cap"))
-    assert "daily paid cap of $1.00 reached" in str(err.value)
+    assert "daily paid cap of $0.94 reached" in str(err.value)  # the default: NT$30 at 32, US$0.9375
     h2 = MuseHook(ledger=db, clock=lambda: NOW, environ={**ENV, "MUSE_DAILY_PAID_CAP_USD": "5"})
     assert filt(h2, [PP], req(OWNER, call_id="c-cap2")) == [PP]
 

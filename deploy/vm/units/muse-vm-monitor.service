@@ -1,7 +1,9 @@
 # Samples CPU, memory and network once a minute for muse-vm-status, and runs
-# the idle guard: when memory in use would stay under the level Oracle treats
-# as idle, it holds the difference (and gives it back as soon as real work
-# needs it). No network access at all. See deploy/vm/muse-vm-monitor.py.
+# the idle guard: when no minute in the last ten reached the target processor
+# use by itself, it keeps the processor near that target for one minute, at
+# the lowest priority, and stops as soon as real work needs the processor.
+# It never holds memory and has no network access at all. On by default for
+# an Always Free account, off for a paid one. See deploy/vm/muse-vm-monitor.py.
 [Unit]
 Description=Muse VM monitor and idle guard
 
@@ -14,9 +16,11 @@ Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/python3 @MUSE_ROOT@/deploy/vm/muse-vm-monitor.py
 Restart=always
 RestartSec=30
-MemoryMax=4G
+MemoryMax=128M
 MemorySwapMax=0
-CPUQuota=10%
+# One thread at most one core; the guard needs half a core on 2 OCPUs.
+CPUQuota=100%
+CPUWeight=1
 TasksMax=8
 OOMScoreAdjust=1000
 Nice=19

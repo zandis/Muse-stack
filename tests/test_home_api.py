@@ -201,7 +201,7 @@ def test_a_key_is_stored_through_the_key_store_and_never_echoed(rig, caplog):
     assert got == {
         "provider": "groq", "stored": ["GROQ_API_KEY"], "backend": "dotenv", "warnings": [], "still_needed": [],
         "restart": {"needed": True, "proxy_running": True, "command": "muse restart", "managed": False, "next": None},
-        "recorded": True, "limit_written": True,  # the app's wrapper: the default daily limit, written for the router
+        "recorded": True,  # the app's wrapper writes no daily limit: the router's default is the home's
     }
     assert KEY_CANARY not in json.dumps(got) and KEY_CANARY not in caplog.text
     assert f"GROQ_API_KEY={KEY_CANARY}" in rig.env_file.read_text()  # cleaned of the stray space and newline

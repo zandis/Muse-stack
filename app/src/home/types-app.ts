@@ -311,6 +311,8 @@ export interface SettingsData {
   currencies: string[];
   privacy_choices: Badge[];
   restart_pending: boolean;
+  /** `pending` until the first run is finished or skipped on this home. A home that does not send it never starts it. */
+  first_run?: 'pending' | 'done' | 'skipped';
 }
 
 export interface SettingsPatch {
@@ -318,6 +320,7 @@ export interface SettingsPatch {
   default_privacy?: Badge;
   language?: string;
   currency?: string;
+  first_run?: 'done' | 'skipped';
 }
 
 export interface SettingsSaved {

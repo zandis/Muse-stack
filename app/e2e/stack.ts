@@ -107,12 +107,20 @@ export async function axeClean(page: Page): Promise<void> {
   expect(bad, 'no serious or critical accessibility violations').toEqual([]);
 }
 
+/** An empty home whose first run was skipped: Today shows its empty state instead of opening /welcome. */
+export async function skipFirstRun(stack: Stack): Promise<Stack> {
+  const r = await stack.home('PATCH', '/v1/settings', { first_run: 'skipped' });
+  if (r.status !== 200) throw new Error(`the fake home did not take first_run: ${r.status}`);
+  return stack;
+}
+
 class Pool {
   private readonly stacks = new Map<FakeState, Promise<Stack>>();
   get(state: FakeState): Promise<Stack> {
     let s = this.stacks.get(state);
     if (!s) {
-      s = startStack(state);
+      // A shared empty home is one where "Skip for now" was pressed: the first run opens by itself only once.
+      s = state === 'empty' ? startStack(state).then(skipFirstRun) : startStack(state);
       this.stacks.set(state, s);
     }
     return s;

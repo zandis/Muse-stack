@@ -8,7 +8,8 @@
 //!   3. the two windows declared in tauri.conf.json.
 //!
 //! The logic that needs no window (HTTP over the home's socket, the token file, the link
-//! allow-list) lives in crates/home-link, where it is unit-tested without WebKit.
+//! allow-list, compiled in from src/lib/link-hosts.json) lives in crates/home-link, where it
+//! is unit-tested without WebKit.
 
 use serde_json::Value;
 use tauri::menu::{Menu, MenuItem};
