@@ -26,7 +26,7 @@ One document:
 
 | Field | Meaning |
 |---|---|
-| `schema_version` | `1.0`. A new optional field raises the second number. A change that breaks readers gets a new file name (`catalogue.v2.json`). |
+| `schema_version` | `1.1`. A new optional field raises the second number (1.1 added optional `policy.clinical_use`). A change that breaks readers gets a new file name (`catalogue.v2.json`). |
 | `generated_at` | The date given with `--date`, or else the newest `checked_on`. It is not a clock reading. |
 | `catalogue_date` | The newest `checked_on` among the entries. |
 | `release` | `draft` or `released`, and the release date. |
@@ -46,7 +46,7 @@ Each entry holds only public facts:
   - `unknown` means the catalogue holds no confirmed number. It does not mean there is no allowance.
 - `connection`: the method (`oauth_pkce`, `paste_key` or `none`), the page where a key is made, plain-language steps in English and Traditional Chinese, whether a card or a phone number is needed (`yes`, `no` or `unknown`), and `minutes_estimate`. The minutes are the maintainers' estimate, not a measurement, and are labelled `"basis": "estimate"`.
 - `connection.env_names`: the names of the environment variables this project reads. Names only.
-- `policy` and `terms`: whether inputs are used for training, whether people may review them, the region, where it is hosted, commercial use, and the account rules. `unknown` means nobody has confirmed it; treat it as the cautious answer.
+- `policy` and `terms`: whether inputs are used for training, whether people may review them, the region, where it is hosted, commercial use, and the account rules. `policy.clinical_use` is `forbidden` or `allowed` when that has been read in the terms, and is left out when it is unknown. `unknown` means nobody has confirmed it; treat it as the cautious answer.
 - `models[]` for AI services: the model id as a LiteLLM route, its mode, the context window where the provider states one, and a price where the catalogue has one read on the provider's page. No price is recorded today.
 - `checked_on`, `confidence` (`H`, `M` or `L`), `source_urls` and `notes`.
 

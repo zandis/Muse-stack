@@ -26,7 +26,7 @@ DEFAULT_OUT = ROOT / "config" / "generated" / "litellm.yaml"
 
 TRUTHY = {"1", "true", "yes", "on"}
 LOCAL_PLACEHOLDER_KEY = "local-no-key"
-ALIASES_ORDER = ("fast", "cheap", "smart", "long-context", "embed", "rerank")
+ALIASES_ORDER = ("fast", "cheap", "smart", "long-context", "vision", "embed", "rerank")
 HOOK_CALLBACK = "muse.hook.handler"
 CUSTOM_AUTH = "muse.auth.user_api_key_auth"
 PAID_TIERS = {"paid", "metered"}
@@ -303,6 +303,20 @@ def _tri(value: Any) -> str:
     return text if text in {"yes", "no"} else "unknown"
 
 
+def _clinical_use(value: Any) -> str:
+    """forbidden | allowed | unknown. Anything else, including a missing field, is unknown."""
+    text = str(value).strip().lower() if value is not None else ""
+    return text if text in {"forbidden", "allowed", "unknown"} else "unknown"
+
+
+_LOOPBACK_BINDS = {"", "127.0.0.1", "localhost", "::1"}
+
+
+def bind_is_loopback(environ: Mapping[str, str]) -> bool:
+    """Unset MUSE_BIND means the compose and native default, which is loopback."""
+    return environ.get("MUSE_BIND", "").strip().lower() in _LOOPBACK_BINDS
+
+
 def _model_info(provider: Mapping[str, Any], deployment: Mapping[str, Any], deployment_id: str) -> dict[str, Any]:
     policy = provider.get("policy") or {}
     info: dict[str, Any] = {
@@ -317,6 +331,7 @@ def _model_info(provider: Mapping[str, Any], deployment: Mapping[str, Any], depl
         "muse_tier": str(provider.get("tier", "unknown")),
         "muse_trains": _tri(policy.get("trains_on_inputs")),
         "muse_human_review": _tri(policy.get("human_review")),
+        "muse_clinical_use": _clinical_use(policy.get("clinical_use")),
         "muse_region": str(policy.get("region", "unknown")),
         # Catalogue v2: trial credits that never renew. muse/ration.py holds these
         # back for jobs that need them. Always a real boolean.
@@ -453,6 +468,14 @@ def render(catalog: Mapping[str, Any], environ: Mapping[str, str]) -> tuple[dict
     }
     if environ.get("LITELLM_MASTER_KEY", "").strip():
         general["master_key"] = "os.environ/LITELLM_MASTER_KEY"
+    elif not bind_is_loopback(environ):
+        # The override below accepts unauthenticated calls. That is only safe
+        # on loopback. Compose publishes MUSE_BIND; the process inside the
+        # container always listens on 0.0.0.0, so the bind has to be checked here.
+        raise SystemExit(
+            f"LITELLM_MASTER_KEY is empty and MUSE_BIND={environ.get('MUSE_BIND', '').strip()} "
+            "is not loopback. Refusing to start an unauthenticated proxy off this machine."
+        )
     else:
         # LiteLLM 1.108.6 refuses to boot with no master key. This is the
         # documented local-dev override so a first start with an empty .env

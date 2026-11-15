@@ -1527,7 +1527,7 @@ def handoff_link(sub: Subscription, prompt: str, kind: str = "app") -> str | Non
 # store or the ledger, and the key-check request (`connection.test`), API base
 # addresses, routing weights and aliases are left out on purpose.
 
-PUBLIC_SCHEMA_VERSION = "1.0"
+PUBLIC_SCHEMA_VERSION = "1.1"
 LIMIT_STATUS = ("verified", "estimated", "unknown")
 
 
@@ -1595,6 +1595,27 @@ def _public_connection(conn: Connection | None, env_names: list[str]) -> dict[st
     }
 
 
+def _clinical_word(value: Any) -> str:
+    text = str(value).strip().lower() if value is not None else ""
+    return text if text in {"forbidden", "allowed", "unknown"} else "unknown"
+
+
+def _public_policy(policy: Mapping[str, Any]) -> dict[str, Any]:
+    """Privacy facts. clinical_use is omitted when unknown so an unset field stays absent."""
+    out: dict[str, Any] = {
+        "trains_on_inputs": _tri_word(policy.get("trains_on_inputs")),
+        "human_review": _tri_word(policy.get("human_review")),
+        "region": str(policy.get("region") or "unknown"),
+        "commercial_use": str(policy.get("commercial_use") or "unknown"),
+        "terms_url": _s(policy.get("terms_url")),
+        "note": _s(policy.get("note")),
+    }
+    clinical = _clinical_word(policy.get("clinical_use"))
+    if clinical != "unknown":
+        out["clinical_use"] = clinical
+    return out
+
+
 def _public_terms(flags: Mapping[str, str]) -> dict[str, str]:
     return {
         "one_account_per_person": flags.get("one_account_per_person", "unknown"),
@@ -1640,14 +1661,7 @@ def public_ai_service(provider: Provider) -> dict[str, Any]:
         "allowance": _public_allowance(provider.allowance, provider.kinds_of_allowance, provider.reset, raw.get("quota"), one_off=provider.one_off),
         "read_remaining": _public_read_remaining(provider.read_remaining),
         "connection": _public_connection(provider.connection, names),
-        "policy": {
-            "trains_on_inputs": _tri_word(policy.get("trains_on_inputs")),
-            "human_review": _tri_word(policy.get("human_review")),
-            "region": str(policy.get("region") or "unknown"),
-            "commercial_use": str(policy.get("commercial_use") or "unknown"),
-            "terms_url": _s(policy.get("terms_url")),
-            "note": _s(policy.get("note")),
-        },
+        "policy": _public_policy(policy),
         "terms": _public_terms(provider.terms_flags),
         "models": sorted(models, key=lambda m: (m["mode"], m["model"])),
         "checked_on": provider.checked_on,

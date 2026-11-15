@@ -679,9 +679,18 @@
                 "string",
                 "null"
               ]
+            },
+            "clinical_use": {
+              "type": "string",
+              "enum": [
+                "forbidden",
+                "allowed",
+                "unknown"
+              ],
+              "description": "Whether the provider's terms allow clinical practice or medical advice. Omitted when unknown. forbidden means every tier, paid or unpaid."
             }
           },
-          "description": "Privacy and terms facts. unknown means nobody has confirmed it; treat it as the cautious answer."
+          "description": "Privacy and terms facts. unknown means nobody has confirmed it; treat it as the cautious answer. clinical_use is present only when it is not unknown."
         },
         "terms": {
           "$ref": "#/$defs/terms"
