@@ -1,6 +1,6 @@
 """The fake home: the same API from canned data, for building apps against.
 
-    python -m muse.home --fake [--tcp PORT] [--state normal|used|paused|cards|empty|error]
+    python -m muse.home --fake [--tcp PORT] [--state normal|used|paused|cards|empty|error|mismatch]
 
 It needs no proxy, no ledger and no keys. It is the real `Home` and the real
 route table pointed at a throw-away folder: the status snapshot is the bundled
@@ -16,6 +16,15 @@ States (what the Today screen must handle, docs/spec/02-ux.md section 4.1 and 8)
     cards    one waiting card of each of the seven kinds, plus answered and expired ones
     empty    nothing connected, no apps, no jobs, no cards
     error    every call answers 503 `unavailable` (the home cannot be reached)
+    mismatch as normal, but one record's text was changed after it was written, so the records do not check out
+
+Every state but empty and error also has a history for the Records and Permissions screens (section 4.4, 4.6):
+records over several days (the person's own, a helper's, a program's; one that cost money; one whose text was
+removed, "redacted"), sealed once; and, when `biscuit-python` is installed, five permissions made by the real
+compiler: a folder for the helper, spending (whose spending limit is honestly "not built"), a program's use of the
+allowances (the FIRST stop of this one fails at the router entry, so a failed target can be shown; stopping it
+again works), one that ended, and one that was stopped two days ago. Plus one request a host bot made that the
+person declined. Without the library the fake simply has no permissions, as a real home would not.
 
 Sign in with the fixed token `FAKE_TOKEN`. It only ever works on a fake home.
 """
@@ -33,7 +42,11 @@ from muse.home import api
 from muse.home.auth import StaticVerifier
 from muse.home.cards import CardStore
 
-STATES = ("normal", "used", "paused", "cards", "empty", "error")
+STATES = ("normal", "used", "paused", "cards", "empty", "error", "mismatch")
+DAY = 86400.0
+HOST_BOT = "openmausbot-tools"  # the demo host bot (a device with the `host` role)
+PROGRAM = "coding-tool"  # the demo program that may use the allowances
+SPEND_HOSTS = ("search.example.com", "maps.example.com", "translate.example.com")  # made-up payees: nothing here is a real company
 FAKE_TOKEN = "fake-home-token"
 FAKE_DEVICE = "fake-device"
 DEMO_CARDS_PATH = Path(__file__).resolve().parent / "demo_cards.json"
@@ -156,6 +169,8 @@ class FakeHome(api.Home):
         self._fake_keys: set[str] = set()
         self._fake_connected: set[str] = set()
         self._fake_removed: set[str] = set()
+        self.fail_stop_once: set[str] = set()  # permissions whose next stop fails at the router entry (then works)
+        self.demo_mandates: dict[str, str] = {}  # demo name -> permission id, for tests
         from muse.home.app_fake import FakeApp
 
         self.app = FakeApp(self)  # canned behaviour for the app's routes (muse/home/app_api.py)
@@ -224,6 +239,21 @@ class FakeHome(api.Home):
     def proxy_running(self) -> bool:
         return self.state != "empty"
 
+    def compiler(self) -> Any:
+        """The real compiler, except that removing the router entry of a permission in `fail_stop_once` fails once."""
+        from muse.compiler.core import Compiler
+
+        home = self
+
+        class FakeCompiler(Compiler):
+            def _remove_one(self, row: Any, why: str, actor: str) -> None:
+                if row["kind"] in ("app", "app_adopted") and row["mandate_id"] in home.fail_stop_once:
+                    home.fail_stop_once.discard(row["mandate_id"])
+                    raise RuntimeError("fake home: this removal fails once, on purpose")
+                super()._remove_one(row, why, actor)
+
+        return FakeCompiler(self.environ, clock=self.clock, record=self.record)
+
     def restart_command(self, running: bool) -> str:
         return "muse restart" if running else "muse up"
 
@@ -240,7 +270,7 @@ class FakeHome(api.Home):
         if self.state != "cards":
             wanted = [c for c in wanted if c["state"] != "pending"] + [c for c in wanted if c["state"] == "pending"][:1]
         seed_cards(self.cards, wanted, self.clock())
-        self._seed_records()
+        self._seed_history()
         self._seed_app()
 
     def _seed_app(self) -> None:
@@ -286,29 +316,144 @@ class FakeHome(api.Home):
             self.app.conversations.add_turn(None, question, {"privacy": "standard", "task": "everyday", "attachments": []},
                                             app_api._answer_from(self, app_ask.classify(reply, now), question, "standard"))  # noqa: SLF001
 
-    def _seed_records(self) -> None:
-        """A few signed demo records, oldest first, so the Records screen and its filters have something to show:
-        the person's own actions, a host bot's, something sent to a service, and one that does not say where it went."""
+    def _seed_history(self) -> None:
+        """Records over several days, and the permissions they ran under, oldest first (a chain's time never goes back).
+
+        Permissions are made by the real compiler and need `biscuit-python`; records need `cryptography`. Without
+        either, that part is simply missing, as it would be on a real home. See the module's docstring for the list."""
+        from muse import permissions as P
         from muse.records.home import HomeRecords
 
         now = self.clock()
-        bot = {"actor": "helper", "mandate": "device:openmausbot-tools"}
-        demo: tuple[tuple[float, str, str, dict[str, Any]], ...] = (
-            (86400 * 2, "key.store", "Stored a key for the service gemini", {"egress": "none"}),
-            (86400 + 7200, "card.create", "Asked whether to save a file", {**bot, "egress": "none"}),
-            (86400 + 7100, "card.answer", "Approved: save a file (answered on desktop)", {"egress": "none"}),
-            (86400 + 7000, "host.files.write", "A host bot says it saved a file", bot),  # its own report: it did not say
-            (7200, "llm.call", "A skill used Gemini: 3 requests", {**bot, "egress": "service:gemini"}),
-            (7190, "skill.run", "Ran the skill files-answer for a host bot", {**bot, "egress": "host:openmausbot-tools"}),
-            (3600, "home.pause", "Paused the queue", {"egress": "none"}),
-            (3000, "home.resume", "Resumed the queue", {"egress": "none"}),
-            (600, "card.answer", "Declined: spend money (answered on desktop)", {"egress": "none", "outcome": "declined"}),
-        )
+        documents = self.demo_root / "documents"
+        documents.mkdir(parents=True, exist_ok=True)
+        bot = {"actor": "helper", "mandate": f"device:{HOST_BOT}"}
+        ids = self.demo_mandates
+        can_permit = P.available()
+
+        def at(age: float) -> Callable[[], float]:
+            return lambda t=now - age: t
+
+        def write(age: float, action: str, summary: str, **fields: Any) -> dict[str, Any] | None:
+            try:
+                return HomeRecords(self.environ, clock=at(age)).write(action, summary, **fields)
+            except Exception:
+                return None  # no `cryptography` here: no records, as on a real home without it
+
+        def issue(age: float, name: str, body: dict[str, Any]) -> None:
+            if not can_permit:
+                return
+            from muse.compiler.core import Compiler
+            from muse.home import mandates_api
+
+            try:
+                compiler = Compiler(self.environ, clock=at(age))
+                fields = mandates_api._fields_of(body, compiler.now(), "Asia/Taipei")  # noqa: SLF001
+                mandate, _applied = compiler.issue(mandates_api.draft_from(fields, compiler.ensure_root()), actor="person")
+                ids[name] = mandate.id
+            except Exception as exc:
+                api.log.warning("fake home: the demo permission %s was not made (%s)", name, type(exc).__name__)
+
+        def stop(age: float, name: str) -> None:
+            if name in ids:
+                from muse.compiler.core import Compiler
+
+                try:
+                    Compiler(self.environ, clock=at(age)).revoke(ids[name], actor="person")
+                except Exception as exc:
+                    api.log.warning("fake home: the demo permission %s was not stopped (%s)", name, type(exc).__name__)
+
+        router = {"kind": "provider", "value": "router"}
+        issue(40 * DAY, "ended", {"holder": "helper:home", "actions": ["calendar.read"],
+                                  "resources": [{"kind": "calendar", "value": "Family"}], "days": 30})
+        write(12 * DAY, "key.store", "Stored a key for the service gemini", egress="none")
+        if "ended" in ids:
+            from muse.compiler.core import Compiler
+
+            try:
+                Compiler(self.environ, clock=at(10 * DAY - 600)).sweep()  # the home's own sweep, just after it ended
+            except Exception as exc:
+                api.log.warning("fake home: the sweep did not run (%s)", type(exc).__name__)
+        issue(10 * DAY - 300, "stopped", {"holder": "app:chat-window", "actions": ["llm.call"], "resources": [router],
+                                    "limits": [{"kind": "requests", "period": "day", "amount": 100}], "days": 90})
+        issue(6 * DAY, "folder", {"holder": "helper:home", "actions": ["files.read", "llm.call"],
+                                  "resources": [{"kind": "folder", "value": str(documents)}, router], "days": 30})
+        issue(5 * DAY, "spend", {"holder": "helper:home", "actions": ["pay.spend"],
+                                 "resources": [{"kind": "host", "value": h} for h in SPEND_HOSTS],
+                                 "limits": [{"kind": "spend", "unit": "TWD", "decimals": 2, "period": "day", "amount": 3000}],
+                                 "confirm": {"rule": "over_amount", "unit": "TWD", "decimals": 2, "amount": 1000}, "days": 20})
+        issue(4 * DAY, "program", {"holder": f"app:{PROGRAM}", "actions": ["llm.call"], "resources": [router],
+                                   "limits": [{"kind": "requests", "period": "day", "amount": 200}], "days": 60})
+        if "program" in ids:
+            self.fail_stop_once.add(ids["program"])
+        write(3 * DAY, "llm.call", f"The program {PROGRAM} used Groq: 12 requests", actor="helper", mandate=ids.get("program"),
+              egress="service:groq")
+        stop(2 * DAY + 3600, "stopped")
+        write(DAY + 7200, "card.create", "Asked whether to save a file", **bot, egress="none")
+        write(DAY + 7100, "card.answer", "Approved: save a file (answered on desktop)", egress="none")
+        write(DAY + 7000, "host.files.write", "A host bot says it saved a file", **bot)  # its own report: it did not say
+        write(DAY + 5400, "skill.run", "Ran the skill files-answer", actor="helper", mandate=ids.get("folder"), egress="service:groq")
+        hidden = write(DAY + 5300, "files.write", "Saved the weekly digest to Documents", actor="helper",
+                       mandate=ids.get("folder"), egress="none")
+        write(DAY + 3600, "llm.call", "Answered a question with a paid service: deepseek", cost={"currency": "USD", "minor": 4},
+              egress="service:deepseek")
+        changed = write(7200, "llm.call", "A skill used Gemini: 3 requests", **bot, egress="service:gemini")
+        write(7190, "skill.run", "Ran the skill files-answer for a host bot", **bot, egress=f"host:{HOST_BOT}")
+        write(3600, "home.pause", "Paused the queue", egress="none")
+        write(3000, "home.resume", "Resumed the queue", egress="none")
+        write(600, "card.answer", "Declined: spend money (answered on desktop)", egress="none", outcome="declined")
+        self._seed_declined_request()
         try:
-            for age, action, summary, fields in demo:
-                HomeRecords(self.environ, clock=lambda t=now - age: t).write(action, summary, **fields)
+            HomeRecords(self.environ, clock=at(0)).seal()
         except Exception:
-            pass  # no `cryptography` here: the fake home simply has no records, as a real one would not
+            pass
+        if hidden is not None:
+            self._rewrite_record(hidden["seq"], redact=True)  # the text is gone; the record still checks out
+        if changed is not None and self.state == "mismatch":
+            self._rewrite_record(changed["seq"], summary="A skill used Gemini: 300 requests")  # no longer what was signed
+
+    def _seed_declined_request(self) -> None:
+        """A host bot asked to use the allowances without a daily cap, and the person said no: the "Declined" list."""
+        from muse import permissions as P
+        from muse.home.auth import Device
+
+        if not P.available():
+            return
+        bot = Device(HOST_BOT, role="host")
+        owner = Device(FAKE_DEVICE, role="owner")
+
+        def call(device: Device, method: str, path: str, body: dict[str, Any]) -> dict[str, Any]:
+            resp = api.dispatch(self, device, method, path, json.dumps(body).encode())
+            return resp.payload if resp.status < 300 else {}
+
+        draft = call(bot, "POST", "/v1/mandates/draft", {"holder": f"device:{HOST_BOT}", "actions": ["llm.call", "llm.paid"],
+                                                         "resources": [{"kind": "provider", "value": "router"}],
+                                                         "days": 90}).get("draft")
+        if not draft:
+            return
+        card = call(bot, "POST", "/v1/mandates", {"draft": draft["id"]}).get("card")
+        if card:
+            call(owner, "POST", f"/v1/cards/{card['id']}/answer", {"decision": "decline"})
+
+    def _rewrite_record(self, seq: int, *, redact: bool = False, summary: str | None = None) -> None:
+        """Change one stored record in place: remove its text (redaction keeps it valid) or change it (it no longer checks)."""
+        import sqlite3
+
+        from muse.records import format as fmt
+        from muse.records.home import records_path
+        from muse.records.jcs import canonicalize
+
+        conn = sqlite3.connect(str(records_path(self.environ)))
+        try:
+            row = conn.execute("SELECT body FROM records WHERE seq=?", (seq,)).fetchone()
+            if row is None:
+                return
+            record = json.loads(row[0])
+            record = fmt.redact(record) if redact else {**record, "summary": summary}
+            with conn:
+                conn.execute("UPDATE records SET body=? WHERE seq=?", (canonicalize(record).decode("utf-8"), seq))
+        finally:
+            conn.close()
 
     def _seed_apps(self) -> None:
         from muse import apps

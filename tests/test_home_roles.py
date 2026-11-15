@@ -44,6 +44,7 @@ EXPECTED: dict[tuple[str, str], set[str]] = {
     ("POST", "/v1/apps/{name}/rotate"): {O},
     ("GET", "/v1/receipts"): {O, V},
     ("POST", "/v1/receipts"): {O, H},
+    ("POST", "/v1/receipts/export"): {O},  # sealing writes a checkpoint, and the file holds every record
     ("GET", "/v1/skills"): {O, H},
     ("POST", "/v1/skills/{name}/run"): {O, H},
     ("GET", "/v1/skills/runs/{id}"): {O, H},

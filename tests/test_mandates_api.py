@@ -101,6 +101,10 @@ def test_the_owner_issues_lists_and_stops_with_records(home):
     issued = ok(home, OWNER, "POST", "/v1/mandates", {"draft": draft["id"]}, status=201)
     m = issued["mandate"]
     assert m["holder"] == "app:reader" and m["state"] == "active" and issued["recorded"] is True
+    # The plain facts, so an app can write the sentence in its own words.
+    assert m["actions"] == ["llm.call"] and m["resources"] == [{"kind": "provider", "value": "router"}]
+    assert m["limits"] == [{"kind": "requests", "unit": "", "decimals": 0, "period": "day", "amount": 200}]
+    assert m["privacy"] == "private"
     assert {t: s["state"] for t, s in m["targets"].items()} == {"router": "active", "records": "active"}
     token = issued["token"]
     assert issued["token_shown_once"] is True and token.startswith("sk-muse-app-")
@@ -164,6 +168,10 @@ def test_a_declined_request_is_listed_for_a_week_and_not_asked_again(home):
     declined = ok(home, HOST, "GET", "/v1/mandates/declined")
     assert declined["window_days"] == 7 and [d["card_id"] for d in declined["declined"]] == [card["id"]]
     assert declined["declined"][0]["holder"] == f"device:{HOST.name}"
+    assert declined["declined"][0]["sentence"] == draft["sentence"]  # what the person was shown
+    zh = ok(home, HOST, "GET", "/v1/mandates/declined?lang=zh-TW")["declined"][0]["sentence"]
+    assert zh != draft["sentence"] and HOST.name in zh
+    assert_error(*call(home, HOST, "GET", "/v1/mandates/declined?lang=fr"), 400, "invalid_request")
     assert ok(home, OTHER_HOST, "GET", "/v1/mandates/declined")["declined"] == []  # a host sees only its own
     assert len(ok(home, OWNER, "GET", "/v1/mandates/declined")["declined"]) == 1
     again = ok(home, HOST, "POST", "/v1/mandates/draft", host_fields(days=10), status=201)["draft"]  # other dates, same ask

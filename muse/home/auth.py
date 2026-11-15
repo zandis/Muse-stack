@@ -81,7 +81,7 @@ SCOPES = (
     "cards.read", "cards.ask", "cards.answer",
     "pause.write",
     "apps.read", "apps.write",
-    "receipts.read", "receipts.write",
+    "receipts.read", "receipts.write", "receipts.export",
     "skills.read", "skills.run",
     "mandates.read", "mandates.request", "mandates.write",
     # The app's screens (muse/home/app_api.py).

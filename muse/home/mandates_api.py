@@ -82,11 +82,10 @@ def _api() -> Any:
 
 def _compiler(home: Any) -> Any:
     from muse import permissions as P
-    from muse.compiler.core import Compiler
 
     if not P.available():
         raise _api().ApiError("unavailable", NEEDS_LIBRARY)
-    return Compiler(home.environ, clock=home.clock, record=home.record)
+    return home.compiler()
 
 
 def _iso(seconds: int) -> str:
@@ -204,12 +203,23 @@ def fingerprint(fields: Mapping[str, Any]) -> str:
     return hashlib.sha256(basis.encode("utf-8")).hexdigest()
 
 
+def facts(draft: Any) -> dict[str, Any]:
+    """What a permission allows, as plain values, so an app can write its own sentence in the person's words."""
+    return {
+        "actions": list(draft.actions),
+        "resources": [{"kind": r.kind, "value": r.value} for r in draft.resources],
+        "limits": [{"kind": l.kind, "unit": l.unit, "decimals": l.decimals, "period": l.period, "amount": l.amount}
+                   for l in draft.limits],
+        "privacy": draft.privacy,
+    }
+
+
 def entry(compiler: Any, mandate: Any, lang: str) -> dict[str, Any]:
     """One permission as the Permissions screen shows it. No token, no key."""
     return {
         "id": mandate.id, "name": mandate.id[3:15], "holder": mandate.draft.holder, "state": compiler.state_of(mandate),
-        **_words(mandate, lang), "issued_at": _iso(mandate.draft.issued_at), "not_before": _iso(mandate.not_before()),
-        "not_after": _iso(mandate.not_after()), "targets": compiler.status(mandate.id),
+        **_words(mandate, lang), **facts(mandate.draft), "issued_at": _iso(mandate.draft.issued_at),
+        "not_before": _iso(mandate.not_before()), "not_after": _iso(mandate.not_after()), "targets": compiler.status(mandate.id),
     }
 
 
@@ -412,16 +422,31 @@ def settle_ended(home: Any) -> int:
 def h_declined(home: Any, req: Any) -> tuple[int, dict[str, Any]]:
     from muse.compiler.table import Table
 
-    _api()._query(req)  # noqa: SLF001
+    _api()._query(req, "lang")  # noqa: SLF001
+    lang = _lang(req.query.get("lang"))
     settle_ended(home)
     device = None if req.device.sees_all else req.device.name
     rows = Table(home.environ, home.clock).requests(state="declined", device=device, since=home.clock() - DECLINED_WINDOW_S)
     return 200, {"window_days": DECLINED_WINDOW_S // 86400, "declined": [{
         "card_id": r["card_id"], "device": r["device"], "holder": r["fields"]["holder"], "actions": sorted(r["fields"]["actions"]),
         "resources": [{"kind": k, "value": v} for k, v in sorted(map(tuple, r["fields"]["resources"]))],
+        "sentence": _declined_sentence(home, r["fields"], lang),
         "declined_at": _iso(int(r["settled_at"] or r["created_at"])),
         "ask_again_after": _iso(int((r["settled_at"] or r["created_at"]) + DECLINED_WINDOW_S)),
     } for r in rows]}
+
+
+def _declined_sentence(home: Any, fields: Mapping[str, Any], lang: str) -> str | None:
+    """The sentence the person was shown when they declined; None when the home cannot write it (no permissions library)."""
+    from muse import permissions as P
+
+    if not P.available():
+        return None
+    try:
+        return _words(_unsigned(draft_from(fields, _compiler(home).ensure_root())), lang)["sentence"]
+    except Exception as exc:
+        log.warning("mandates: a declined request could not be described (%s)", type(exc).__name__)
+        return None
 
 
 def h_stop(home: Any, req: Any) -> tuple[int, dict[str, Any]]:

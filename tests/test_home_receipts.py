@@ -103,9 +103,52 @@ def test_filters_since_action_and_left_device(home):
     assert seqs(f"?since={when}&action=host.files&limit=1") == [2]
 
 
+def test_filter_by_the_permission_a_record_ran_under(home):
+    HomeRecords().write("files.write", "Saved a file", actor="helper", mandate="m1_" + "a" * 64, egress="none")
+    HomeRecords().write("files.write", "Saved another file", actor="helper", mandate="m1_" + "b" * 64, egress="none")
+    ok(home, HOST, "POST", "/v1/receipts", {"action": "host.files.write", "summary": "Wrote a file"}, status=201)
+    seqs = lambda query: [r["seq"] for r in ok(home, VIEWER, "GET", "/v1/receipts" + query)["records"]]  # noqa: E731
+    assert seqs("?mandate=m1_" + "a" * 64) == [0] and seqs("?mandate=m1_" + "b" * 64) == [1]
+    assert seqs("?mandate=device:bot-tools") == [2] and seqs("?mandate=m1_" + "c" * 64) == []
+    assert seqs("?mandate=device:bot-tools&action=files") == []
+
+
+def test_export_is_the_file_anyone_can_check_and_only_the_person_may_make_it(home):
+    from muse.records.seal import verify_export
+
+    assert_error(*call(home, OWNER, "POST", "/v1/receipts/export", {}), 409, "conflict")  # nothing to export yet
+    ok(home, OWNER, "POST", "/v1/pause")
+    ok(home, OWNER, "POST", "/v1/resume")
+    got = ok(home, OWNER, "POST", "/v1/receipts/export", {})
+    report = verify_export(got["export"])
+    assert report["complete"] and report["count"] == got["count"] == got["size"] == 2 and got["redacted"] == 0
+    assert got["export"]["type"] == "muse.records.export" and got["device"] == report["device"]
+    assert got["file_name"].startswith("muse-records-") and got["file_name"].endswith(".json") and got["recorded"] is True
+    assert chain()[-1]["action"] == "records.export"  # written down, after the seal
+    hidden = ok(home, OWNER, "POST", "/v1/receipts/export", {"redact_summaries": True})
+    assert hidden["redacted"] == hidden["count"] == 3 and all("summary" not in r for r in hidden["export"]["records"])
+    assert verify_export(hidden["export"])["redacted"] == 3
+    for who in (HOST, VIEWER):
+        assert_error(*call(home, who, "POST", "/v1/receipts/export", {}), 403, "forbidden")
+    for body in ({"redact_summaries": "yes"}, {"since": "2026-11-01T00:00:00Z"}):
+        assert_error(*call(home, OWNER, "POST", "/v1/receipts/export", body), 400, "invalid_request")
+
+
+def test_records_that_do_not_check_out_are_never_exported(home):
+    ok(home, OWNER, "POST", "/v1/pause")
+    ok(home, OWNER, "POST", "/v1/resume")
+    conn = sqlite3.connect(str(records_path()))
+    body = json.loads(conn.execute("SELECT body FROM records WHERE seq=0").fetchone()[0])
+    with conn:
+        conn.execute("UPDATE records SET body=? WHERE seq=0", (json.dumps({**body, "summary": "Changed afterwards"}),))
+    conn.close()
+    assert_error(*call(home, OWNER, "POST", "/v1/receipts/export", {}), 409, "conflict")
+    assert ok(home, OWNER, "GET", "/v1/receipts")["verify"] == {"ok": False, "size": 2, "kind": "summary_mismatch", "index": 0}
+
+
 @pytest.mark.parametrize("query", ["?limit=0", "?limit=201", "?limit=ten", "?limit=-1", "?before=x", "?before=-3", "?since=yesterday",
                                    "?since=2026-11-01T00:00:00", "?action=Files", "?action=a.b.c.d.e", "?action=files.", "?left_device=yes",
-                                   "?page=2", "?limit=1&limit=2"])
+                                   "?page=2", "?limit=1&limit=2", "?mandate=", "?mandate=a%20b", "?mandate=" + "m" * 129])
 def test_bad_queries_are_refused(home, query):
     assert_error(*call(home, OWNER, "GET", "/v1/receipts" + query), 400, "invalid_request")
 
