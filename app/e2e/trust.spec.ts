@@ -281,7 +281,7 @@ test('keyboard: the stop dialog can be used and left without a mouse; focus come
   const stack = await shared('normal');
   const { context, page } = await newPage(browser, stack, LAYOUTS[1], LANGS[1]);
   await page.goto('/permissions');
-  const card = await permCard(page, /Documents|documents/);
+  const card = await permCard(page, /run tasks for you/);
   await card.getByTestId('perm-stop').focus();
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('stop-dialog')).toBeVisible();

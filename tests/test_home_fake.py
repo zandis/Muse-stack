@@ -236,7 +236,7 @@ def test_records_span_several_days_and_one_has_its_text_removed(start):
     assert len(redacted) == 1 and "summary_salt" not in redacted[0]  # still part of a chain that checks out
     if P.available():
         assert any(r["action"] == "mandate.issue" for r in records) and any(r["action"] == "mandate.revoke" for r in records)
-        assert redacted[0]["mandate"] == f.home.demo_mandates["folder"]
+        assert redacted[0]["mandate"] == f.home.demo_mandates["tasks"]
         only = f.get(f"/v1/receipts?mandate={f.home.demo_mandates['program']}")["records"]
         assert only and all(r["mandate"] == f.home.demo_mandates["program"] for r in only)
 
@@ -258,9 +258,9 @@ def test_permissions_in_every_state_the_screen_must_show(start):
     f = start("normal")
     listed = {m["id"]: m for m in f.get("/v1/mandates?lang=en")["mandates"]}
     ids = f.home.demo_mandates
-    assert set(ids) == {"ended", "stopped", "folder", "spend", "program"} and set(ids.values()) == set(listed)
+    assert set(ids) == {"ended", "stopped", "tasks", "spend", "program"} and set(ids.values()) == set(listed)
     assert listed[ids["ended"]]["state"] == "expired" and listed[ids["stopped"]]["state"] == "stopped"
-    assert all(listed[ids[n]]["state"] == "active" for n in ("folder", "spend", "program"))
+    assert all(listed[ids[n]]["state"] == "active" for n in ("tasks", "spend", "program"))
     spend = listed[ids["spend"]]
     assert spend["limits"] == [{"kind": "spend", "unit": "TWD", "decimals": 2, "period": "day", "amount": 3000}]
     assert spend["targets"]["payments"]["state"] == "not_built" and len(spend["resources"]) == 3
@@ -282,7 +282,7 @@ def test_the_first_stop_of_the_program_fails_at_its_router_entry_and_the_second_
     status, again = f.client.call("POST", f"/v1/mandates/{name}/stop")
     assert status == 200 and again["complete"] is True and again["was"] == "stopped"
     assert {t: s["state"] for t, s in again["targets"].items()} == {"router": "revoked", "records": "revoked"}
-    status, other = f.client.call("POST", f"/v1/mandates/{f.home.demo_mandates['folder'][3:15]}/stop")
+    status, other = f.client.call("POST", f"/v1/mandates/{f.home.demo_mandates['tasks'][3:15]}/stop")
     assert status == 200 and other["complete"] is True  # only that one fails, once
 
 

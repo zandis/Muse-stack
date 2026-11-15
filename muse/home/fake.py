@@ -21,7 +21,7 @@ States (what the Today screen must handle, docs/spec/02-ux.md section 4.1 and 8)
 Every state but empty and error also has a history for the Records and Permissions screens (section 4.4, 4.6):
 records over several days (the person's own, a helper's, a program's; one that cost money; one whose text was
 removed, "redacted"), sealed once; and, when `biscuit-python` is installed, five permissions made by the real
-compiler: a folder for the helper, spending (whose spending limit is honestly "not built"), a program's use of the
+compiler: named tasks for the helper, spending (whose spending limit is honestly "not built"), a program's use of the
 allowances (the FIRST stop of this one fails at the router entry, so a failed target can be shown; stopping it
 again works), one that ended, and one that was stopped two days ago. Plus one request a host bot made that the
 person declined. Without the library the fake simply has no permissions, as a real home would not.
@@ -376,8 +376,9 @@ class FakeHome(api.Home):
                 api.log.warning("fake home: the sweep did not run (%s)", type(exc).__name__)
         issue(10 * DAY - 300, "stopped", {"holder": "app:chat-window", "actions": ["llm.call"], "resources": [router],
                                     "limits": [{"kind": "requests", "period": "day", "amount": 100}], "days": 90})
-        issue(6 * DAY, "folder", {"holder": "helper:home", "actions": ["files.read", "llm.call"],
-                                  "resources": [{"kind": "folder", "value": str(documents)}, router], "days": 30})
+        # Named skills, not a folder: a folder in a permission would be put on the skill-folders list, which Ask offers.
+        issue(6 * DAY, "tasks", {"holder": "helper:home", "actions": ["skills.run", "llm.call"],
+                                 "resources": [{"kind": "home", "value": "skill/files-answer"}, router], "days": 30})
         issue(5 * DAY, "spend", {"holder": "helper:home", "actions": ["pay.spend"],
                                  "resources": [{"kind": "host", "value": h} for h in SPEND_HOSTS],
                                  "limits": [{"kind": "spend", "unit": "TWD", "decimals": 2, "period": "day", "amount": 3000}],
@@ -392,9 +393,9 @@ class FakeHome(api.Home):
         write(DAY + 7200, "card.create", "Asked whether to save a file", **bot, egress="none")
         write(DAY + 7100, "card.answer", "Approved: save a file (answered on desktop)", egress="none")
         write(DAY + 7000, "host.files.write", "A host bot says it saved a file", **bot)  # its own report: it did not say
-        write(DAY + 5400, "skill.run", "Ran the skill files-answer", actor="helper", mandate=ids.get("folder"), egress="service:groq")
+        write(DAY + 5400, "skill.run", "Ran the skill files-answer", actor="helper", mandate=ids.get("tasks"), egress="service:groq")
         hidden = write(DAY + 5300, "files.write", "Saved the weekly digest to Documents", actor="helper",
-                       mandate=ids.get("folder"), egress="none")
+                       mandate=ids.get("tasks"), egress="none")
         write(DAY + 3600, "llm.call", "Answered a question with a paid service: deepseek", cost={"currency": "USD", "minor": 4},
               egress="service:deepseek")
         changed = write(7200, "llm.call", "A skill used Gemini: 3 requests", **bot, egress="service:gemini")
