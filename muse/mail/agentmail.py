@@ -492,13 +492,34 @@ class AgentMailClient:
         page_token: str | None = None,
         ascending: bool | None = None,
     ) -> dict[str, Any]:
-        """``GET /v0/inboxes``. Other inboxes are not read by this client."""
+        """``GET /v0/inboxes``, filtered to the Muse inbox.
 
-        return self.request(
-            "GET",
-            "/inboxes",
-            query={"limit": _limit(limit), "page_token": page_token, "ascending": ascending},
-        )
+        The API lists every inbox the key can see. This client drops the
+        rest, follows ``next_page_token`` until it finds
+        ``muse-aimedics@agentmail.to``, and does not return the other
+        inboxes.
+        """
+
+        token = page_token
+        seen: set[str] = set()
+        for _ in range(20):
+            payload = self.request(
+                "GET",
+                "/inboxes",
+                query={"limit": _limit(limit), "page_token": token, "ascending": ascending},
+            )
+            inboxes = payload.get("inboxes")
+            if not isinstance(inboxes, list):
+                raise AgentMailError("response missing inboxes")
+            for inbox in inboxes:
+                if isinstance(inbox, dict) and _is_muse_inbox(inbox):
+                    return {"count": 1, "inboxes": [inbox]}
+            next_token = payload.get("next_page_token")
+            if not isinstance(next_token, str) or not next_token or next_token in seen:
+                break
+            seen.add(next_token)
+            token = next_token
+        return {"count": 0, "inboxes": []}
 
     def list_messages(
         self,
@@ -705,6 +726,10 @@ class AgentMailClient:
         if set(body) - set(_UPDATE_DRAFT_FIELDS):
             raise AgentMailNotAllowed("draft field is not allowed")
         return self.request("PATCH", inbox_path("drafts", draft_id), json_body=body)
+
+
+def _is_muse_inbox(inbox: dict[str, Any]) -> bool:
+    return inbox.get("inbox_id") == DEFAULT_INBOX or inbox.get("email") == DEFAULT_INBOX
 
 
 def _compile(template: str) -> re.Pattern[str]:

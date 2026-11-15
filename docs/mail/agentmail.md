@@ -54,7 +54,7 @@ These endpoints are not called, and the guard raises if something tries:
 - `POST /v0/inboxes/{inbox_id}/drafts/{draft_id}/send` (send draft)
 - Reply, reply-all, forward, delete, and every other AgentMail route
 
-`GET /inboxes` can show other inboxes the key can see. This client will not read their messages, threads, or drafts.
+`GET /inboxes` is filtered to `muse-aimedics@agentmail.to`. If the API returns other inboxes, they are dropped and this client does not read them. The client follows `next_page_token` until it finds that inbox. `send_at` stays rejected, attachments stay out, the body cap stays 16,000 characters, and the only production host is `api.agentmail.to`.
 
 ### Fields
 

@@ -8,7 +8,7 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 import pytest
 
@@ -37,6 +37,7 @@ class FakeAPI:
     def __init__(self) -> None:
         self.requests: list[dict] = []
         self.redirect_next: str | None = None
+        self.inbox_pages: list[dict] | None = None
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
         self.server.fake = self  # type: ignore[attr-defined]
         self.server.daemon_threads = True
@@ -102,13 +103,29 @@ class _Handler(BaseHTTPRequestHandler):
             fake.redirect_next = None
             self._respond(302, None, {"Location": location})
             return
-        self._route(self.command, parsed.path, body if isinstance(body, dict) else {})
+        self._route(self.command, parsed.path, parsed.query, body if isinstance(body, dict) else {})
 
-    def _route(self, method: str, path: str, body: dict) -> None:
+    def _route(self, method: str, path: str, query: str, body: dict) -> None:
         rel = path[len("/v0") :] if path.startswith("/v0") else path
         prefix = "/inboxes/" + INBOX
+        fake: FakeAPI = self.server.fake  # type: ignore[attr-defined]
         if method == "GET" and rel == "/inboxes":
-            self._respond(200, {"count": 1, "inboxes": [{"inbox_id": DEFAULT_INBOX, "email": DEFAULT_INBOX}]})
+            pages = fake.inbox_pages
+            if pages is not None:
+                token = (parse_qs(query).get("page_token") or ["0"])[0]
+                index = int(token) if token.isdigit() and int(token) < len(pages) else 0
+                self._respond(200, pages[index])
+                return
+            self._respond(
+                200,
+                {
+                    "count": 2,
+                    "inboxes": [
+                        {"inbox_id": "other@agentmail.to", "email": "other@agentmail.to"},
+                        {"inbox_id": DEFAULT_INBOX, "email": DEFAULT_INBOX},
+                    ],
+                },
+            )
             return
         if method == "GET" and rel == prefix + "/messages":
             self._respond(
@@ -377,7 +394,8 @@ def test_allowed_routes_and_draft_creation(client: AgentMailClient, api: FakeAPI
     )
     updated = client.update_draft(created["draft_id"], text="Updated")
 
-    assert inboxes["count"] == 1
+    assert inboxes == {"count": 1, "inboxes": [{"inbox_id": DEFAULT_INBOX, "email": DEFAULT_INBOX}]}
+    assert "other@agentmail.to" not in json.dumps(inboxes)
     assert messages["trust"] == "untrusted"
     assert messages["messages"][0]["preview"] == "Hi"
     assert "leak()" not in json.dumps(messages)
@@ -410,6 +428,22 @@ def test_allowed_routes_and_draft_creation(client: AgentMailClient, api: FakeAPI
     }
     assert "send_at" not in draft_body
     assert api.requests[-1]["json"] == {"text": "Updated"}
+
+
+def test_list_inboxes_skips_other_inboxes_until_muse(client: AgentMailClient, api: FakeAPI) -> None:
+    api.inbox_pages = [
+        {
+            "count": 1,
+            "inboxes": [{"inbox_id": "other@agentmail.to", "email": "other@agentmail.to"}],
+            "next_page_token": "1",
+        },
+        {"count": 1, "inboxes": [{"inbox_id": DEFAULT_INBOX, "email": DEFAULT_INBOX}]},
+    ]
+    result = client.list_inboxes()
+    assert result == {"count": 1, "inboxes": [{"inbox_id": DEFAULT_INBOX, "email": DEFAULT_INBOX}]}
+    assert [item["path"] for item in api.requests] == ["/v0/inboxes", "/v0/inboxes"]
+    assert [item["query"] for item in api.requests] == ["", "page_token=1"]
+    assert "other@agentmail.to" not in json.dumps(result)
 
 
 def test_send_at_and_redirect_never_send(client: AgentMailClient, api: FakeAPI) -> None:
