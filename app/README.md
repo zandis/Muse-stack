@@ -138,4 +138,4 @@ Every dependency is pinned to an exact version in `package.json` and `src-tauri/
 | Wallet | Placeholder with the test-network header, hidden from the menus |
 | Tray panel | Real in the browser; the Tauri tray window is written, not seen |
 
-Not done: inside the desktop app the Rust side's link list (`src-tauri/crates/home-link`) still holds only the three subscription hosts, so a service's key page or the one-tap page opens in the browser build but not yet from Tauri.
+Links outside the app: both builds open only https pages whose host is in `src/lib/link-hosts.json`, the catalogue's own sign-up, key and one-tap pages plus the three subscription sites. The file is written from `catalogue/catalogue.v1.json` by `scripts/export_link_hosts.py` (also run by `scripts/publish_catalogue.py`, and checked by its `--check`). The desktop shell compiles it into Rust (`src-tauri/crates/home-link`) and checks every link there, so the web view cannot add a host; a Rust test derives the list from the catalogue again and compares.

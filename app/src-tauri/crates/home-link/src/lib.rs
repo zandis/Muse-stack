@@ -17,6 +17,7 @@ use serde_json::Value;
 use std::fmt;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 /// The home accepts bodies of at most 512 KiB.
@@ -30,8 +31,48 @@ pub const SOCKET_NAME: &str = "home.sock";
 pub const TOKEN_FILE: &str = "app.token";
 pub const TIMEOUT: Duration = Duration::from_secs(15);
 
-/// Outside addresses the app may open, and nothing else. The same list as src/lib/links.ts.
-pub const ALLOWED_HOSTS: [&str; 3] = ["chatgpt.com", "claude.ai", "gemini.google.com"];
+/// Outside hosts the app may open, and nothing else: the catalogue's sign-up, key and sign-in
+/// pages and the three subscription sites. The file is written from the published catalogue by
+/// scripts/export_link_hosts.py, and the web front end builds in the same file
+/// (src/lib/links.ts). It is compiled into this binary, so nothing the web view sends can add a
+/// host. A file that does not parse gives an empty list: nothing opens.
+pub const LINK_HOSTS_JSON: &str = include_str!("../../../../src/lib/link-hosts.json");
+
+/// The hosts in `LINK_HOSTS_JSON` that are plain lower-case DNS names (no wildcard, port or address).
+pub fn allowed_hosts() -> &'static [String] {
+    static HOSTS: OnceLock<Vec<String>> = OnceLock::new();
+    HOSTS.get_or_init(|| parse_hosts(LINK_HOSTS_JSON))
+}
+
+fn parse_hosts(text: &str) -> Vec<String> {
+    let Ok(doc) = serde_json::from_str::<Value>(text) else {
+        return Vec::new();
+    };
+    let Some(list) = doc.get("hosts").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    list.iter().filter_map(Value::as_str).filter(|h| is_dns_name(h)).map(str::to_string).collect()
+}
+
+/// A lower-case DNS name of at least two labels, letters only in the last one.
+pub fn is_dns_name(host: &str) -> bool {
+    if host.is_empty() || host.len() > 253 {
+        return false;
+    }
+    let labels: Vec<&str> = host.split('.').collect();
+    if labels.len() < 2 {
+        return false;
+    }
+    let ok_label = |l: &&str| {
+        !l.is_empty()
+            && l.len() <= 63
+            && l.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+            && !l.starts_with('-')
+            && !l.ends_with('-')
+    };
+    let last = labels[labels.len() - 1];
+    labels.iter().all(ok_label) && last.len() >= 2 && last.bytes().all(|b| b.is_ascii_lowercase())
+}
 
 /// What went wrong. `code()` is the short word the web view receives; it never holds detail.
 #[derive(Debug, PartialEq, Eq)]
@@ -341,7 +382,7 @@ pub fn allowed_external(url: &str) -> Option<&str> {
     if host.contains('@') || host.contains(':') || host.contains('\\') {
         return None;
     }
-    ALLOWED_HOSTS.contains(&host).then_some(url)
+    allowed_hosts().iter().any(|h| h == host).then_some(url)
 }
 
 #[cfg(test)]
@@ -589,5 +630,80 @@ mod tests {
         ] {
             assert_eq!(allowed_external(bad), None, "{bad:?}");
         }
+    }
+
+    #[test]
+    fn opens_the_catalogue_key_pages_and_the_one_tap_page() {
+        for good in [
+            "https://openrouter.ai/auth?callback_url=http%3A%2F%2Flocalhost%3A3000%2Fcb",
+            "https://openrouter.ai/keys",
+            "https://aistudio.google.com/apikey",
+            "https://console.groq.com/keys",
+            "https://cloud.cerebras.ai",
+        ] {
+            assert_eq!(allowed_external(good), Some(good), "{good:?}");
+        }
+        for bad in [
+            "http://openrouter.ai/keys",
+            "https://evil.openrouter.ai/",
+            "https://openrouter.ai.evil.example/",
+            "https://google.com/",
+            "https://openrouter.ai:443/keys",
+        ] {
+            assert_eq!(allowed_external(bad), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn the_host_list_is_exact_names_and_fails_closed() {
+        let hosts = allowed_hosts();
+        assert!(hosts.len() >= 4);
+        let mut sorted = hosts.to_vec();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(sorted, hosts, "sorted, no duplicates");
+        for h in hosts {
+            assert!(is_dns_name(h) && !h.contains('*'), "{h}");
+        }
+        for bad in ["*.example.com", "example", "127.0.0.1", "Example.com", "a..b.com", "-a.com", "a.com:443", "a.c0m", ""] {
+            assert!(!is_dns_name(bad), "{bad}");
+        }
+        assert!(parse_hosts("not json").is_empty());
+        assert!(parse_hosts(r#"{"hosts": "chatgpt.com"}"#).is_empty());
+        assert_eq!(parse_hosts(r#"{"hosts": ["chatgpt.com", "*.evil.com", "evil.com:80", 3]}"#), vec!["chatgpt.com".to_string()]);
+    }
+
+    /// The compiled-in list is exactly what the published catalogue gives: every connection's
+    /// key_url and auth_url host and every subscription's web address, https only.
+    #[test]
+    fn the_host_list_matches_the_published_catalogue() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../../catalogue/catalogue.v1.json");
+        let doc: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let mut urls: Vec<String> = Vec::new();
+        for section in ["ai_services", "other_allowances"] {
+            for entry in doc[section].as_array().unwrap() {
+                for name in ["key_url", "auth_url"] {
+                    if let Some(u) = entry["connection"][name].as_str() {
+                        urls.push(u.to_string());
+                    }
+                }
+            }
+        }
+        for entry in doc["subscriptions"].as_array().unwrap() {
+            if let Some(u) = entry["open"]["web"]["url"].as_str() {
+                urls.push(u.to_string());
+            }
+        }
+        let mut want: Vec<String> = urls
+            .iter()
+            .map(|u| {
+                let rest = u.strip_prefix("https://").unwrap_or_else(|| panic!("not https: {u}"));
+                let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+                rest[..end].to_string()
+            })
+            .collect();
+        want.sort();
+        want.dedup();
+        assert_eq!(allowed_hosts(), want.as_slice(), "run: python scripts/export_link_hosts.py");
     }
 }

@@ -3,7 +3,8 @@ import { DICTS, fill, translate } from '../src/i18n';
 import { en } from '../src/i18n/en';
 import { dayKey, fmtBytes, fmtDate, fmtDuration, fmtList, fmtLongDate, fmtMoney, fmtTime, localToUsd, pickLang, usdToLocal } from '../src/i18n/format';
 import { zhTW } from '../src/i18n/zh-TW';
-import { allowedExternal, openExternal } from '../src/lib/links';
+import linkHosts from '../src/lib/link-hosts.json';
+import { ALLOWED_HOSTS, allowedExternal, openExternal } from '../src/lib/links';
 import { fingerprint, HIDDEN, redact } from '../src/lib/redact';
 import { NOW } from './fixtures';
 
@@ -162,6 +163,21 @@ describe('external links', () => {
       'not a url',
     ]) {
       expect(allowedExternal(bad), bad).toBeNull();
+    }
+  });
+  it('holds the catalogue key pages and the one-tap page from the build, exact https hosts only', () => {
+    expect(ALLOWED_HOSTS).toEqual(linkHosts.hosts);
+    expect(Object.isFrozen(ALLOWED_HOSTS)).toBe(true);
+    for (const host of ['chatgpt.com', 'claude.ai', 'gemini.google.com', 'openrouter.ai', 'aistudio.google.com', 'console.groq.com']) {
+      expect(ALLOWED_HOSTS, host).toContain(host);
+    }
+    expect(allowedExternal('https://openrouter.ai/auth?callback_url=http%3A%2F%2Flocalhost%3A3000%2Fcb')).not.toBeNull();
+    expect(allowedExternal('https://aistudio.google.com/apikey')).not.toBeNull();
+    expect(allowedExternal('https://evil.openrouter.ai/')).toBeNull();
+    expect(allowedExternal('https://google.com/')).toBeNull();
+    expect([...ALLOWED_HOSTS].sort()).toEqual([...ALLOWED_HOSTS]);
+    for (const host of ALLOWED_HOSTS) {
+      expect(host).toMatch(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/);
     }
   });
   it('opens an allowed link, through the Rust command inside the desktop app', async () => {
