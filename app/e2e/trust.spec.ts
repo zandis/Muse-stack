@@ -171,8 +171,10 @@ test('records that do not check out: which one, and nothing is exported', async 
 });
 
 for (const state of ['empty', 'error', 'paused'] as const) {
-  test(`records and permissions in the ${state} state`, async ({ browser, shared }) => {
-    const stack = await shared(state);
+  test(`records and permissions in the ${state} state`, async ({ browser, shared, fresh }) => {
+    // The shared empty home has had its first run skipped, and a changed setting is itself a record.
+    // "No records yet" needs a home nothing has been done on, so the empty state gets its own.
+    const stack = state === 'empty' ? await fresh(state) : await shared(state);
     const { context, page, w } = await newPage(browser, stack, LAYOUTS[0], LANGS[1]);
     if (state === 'error') w.allowHomeFailures();
     await page.goto('/records');
