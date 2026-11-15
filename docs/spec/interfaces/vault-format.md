@@ -36,11 +36,13 @@ Requirements come from `docs/spec/01-architecture.md` sections 2.6, 2.10, 3.7,
 Two limits deserve their own sentences because they are easy to assume away:
 
 - **Any slot opens the whole vault.** There is one master key. A device slot
-  for the always-on VM lets the VM read everything, which is more than
+  for the always-on VM would let the VM read everything, which is more than
   architecture section 2.10 wants ("private records stay unreadable to it").
-  Version 1 has no per-kind scoping. Until that is designed (with C4 and D3),
-  give the VM a slot only if the person accepts that, or give it a second,
-  small vault of its own.
+  Version 1 has no per-kind scoping. **Decided (2026-11-15): the always-on
+  VM gets no vault slot by default.** It holds only what a job is handed
+  for that job. The person can add a slot for it explicitly later, after
+  being told plainly that a slot opens everything; a scoped slot is a later
+  design (with C4 and D3).
 - **If every device and the words are lost, nobody can open the vault.** There
   is no escrow and no reset.
 
@@ -442,12 +444,18 @@ aad       = "muse-vault/v1/word-check-box" || vault_id(16) || slot id(16) || u64
   later", `RecoveryKey::to_pending(keystore)` wraps the key with this
   device's keystore for the shell to keep **on this device only** and delete
   after confirmation.
-- **UX section 4.10 says "Recovery key: show again (after biometrics), print,
-  or make a new one." Once confirmed and the pending copy deleted, "show
-  again" is not possible in this design; "make a new one"
-  (`renew_recovery`) is.** This is deliberate (5.4) and needs the owner's
-  decision: either accept it and change that line of the UX, or accept that
-  every lost device forces new words.
+- **Decided (2026-11-15): the words are shown once, at creation, and cannot
+  be shown again.** UX section 4.10 now offers only "make a new one"
+  (`renew_recovery`, or `rotate` with `RecoveryPolicy::Renew`), from an
+  unlocked device. This is what 5.4 makes possible: the vault keeps no copy
+  of the words.
+- **Not yet in line with that decision (reported, not changed):**
+  `RecoveryKey::to_pending` / `from_pending` below still let the shell keep
+  a device-wrapped copy for "I'll do it later" and show the words again from
+  it until they are confirmed. Under the decision, "I'll do it later" should
+  lead to new words (`renew_recovery`) rather than to the old ones again;
+  whether to remove the pending copy from the core is left to the vault's
+  owner.
 - Because the device that created the words may still hold a pending copy,
   a rotation keeps the words only if that device's slot (`issuer`) is still
   in the vault. If it is the one being removed, new words are made whatever the
@@ -1116,7 +1124,9 @@ apart without editing any of them.
 - Sync document keys in use (D3); how a header changed on two devices at
   once is merged (it is one MAC'd object, so last writer wins: D3 must
   serialise header changes or re-apply them).
-- A scoped slot for the VM (section 1).
+- A scoped slot for the VM (section 1). By decision the VM has no slot by
+  default; pairing (`core/link`, `inviter_finish`) does not yet tell the VM
+  apart and adds a slot for every paired device.
 - Detection of deleted, hidden or rolled-back records (T2).
 - Files larger than 64 MiB; streaming.
 - Post-quantum slots (T11).
@@ -1124,10 +1134,15 @@ apart without editing any of them.
 - Migration from the parked `muse/trust` vault (C9). That code is prior art
   only; the formats are unrelated and nothing reads the old one.
 
-**Decisions this document asks the owner to confirm:**
+**Decided on 2026-11-15:**
 
-1. "Show the recovery words again" is not possible after confirmation
-   (section 5.5); UX section 4.10 would change to "make a new one".
-2. A VM with a device slot can read the whole vault (section 1).
+1. Recovery words are shown once, at creation, and cannot be shown again;
+   losing them means making a new recovery key from an unlocked device
+   (section 5.5). UX section 4.10 says "make a new one".
+2. The always-on VM gets no vault slot by default; the person can add one
+   explicitly later (section 1).
+
+**Decisions this document still asks the owner to confirm:**
+
 3. `export` goes only to the person's own recovery key (section 11.1).
 4. The dependency weight of `age` in the phone apps (section 17).

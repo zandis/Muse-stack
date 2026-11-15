@@ -129,7 +129,8 @@ Each module has one job, a small interface, and a named owner in the code. "Exis
 - **Design.**
   - A random master key per person. Each device holds it wrapped by that device's own key in the OS keystore.
   - Unlock by device biometrics or PIN. A passkey with the PRF extension is offered as a second way in where the platform supports it.
-  - A printed recovery key (24 words) is created in the first-run flow. Without a device or that key, nobody can open the vault, and the app says so plainly.
+  - A printed recovery key (24 words) is created in the first-run flow. Without a device or that key, nobody can open the vault, and the app says so plainly. The words are shown once, at creation, and cannot be shown again; someone who loses them makes a new recovery key from an unlocked device (decided 2026-11-15).
+  - The always-on VM gets no vault slot by default: it holds only what a job is handed. The person can add a slot for it explicitly later, knowing that a slot opens the whole vault (decided 2026-11-15).
   - Records are encrypted one by one (XChaCha20-Poly1305 or AES-256-GCM) with the record id and kind bound in as associated data. Search indexes are encrypted too.
   - Local storage is SQLite with SQLCipher. Exports and backups are age-encrypted archives.
 - **Interface.** `put(kind, record)`, `get(id)`, `search(kind, query)`, `delete(id)`, `export(recipient)`, `rotate()`. No call returns plain text off the device.
@@ -197,7 +198,7 @@ Each module has one job, a small interface, and a named owner in the code. "Exis
 - **Link.** Devices connect to each other by public key over iroh: direct when possible, relayed when not, always encrypted end to end. No open ports, no account. The VM is reached the same way.
 - **Pairing.** The first device shows a QR code holding its address and a one-time secret. The second scans it; both show a four-word check phrase; the person confirms. The new device receives the wrapped master key.
 - **Sync.** The person's data (settings, mandates, revocation list, receipts, chores, helper memory, catalogue overrides) is a set of documents merged with a CRDT library (Loro or Automerge). Each change is encrypted before it leaves the device, so a relay or the VM's disk holds ciphertext for anything marked private.
-- **What the VM may read.** Only what its own mandate allows. By default: chores, the queue, and non-private settings. Private records stay unreadable to it unless the person grants a mandate for a specific job.
+- **What the VM may read.** Only what its own mandate allows. By default: chores, the queue, and non-private settings. Private records stay unreadable to it unless the person grants a mandate for a specific job. It has no vault slot by default (section 2.6): what a job needs is handed to it for that job.
 - **Conflicts.** Settings: last writer wins per field. Revocation list and receipts: append only. Chores: merged by id.
 
 ### 2.11 Connectors (new; on the home)
