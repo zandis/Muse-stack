@@ -35,8 +35,11 @@ it: create a key on the VM (`ssh-keygen -t ed25519`) and add the public half
 under the repository's Settings, Deploy keys, without write access.
 
 Always Free note: Oracle may reclaim an instance it considers idle: over 7 days,
-CPU (95th percentile), network and memory use all under 20%. The stack's idle
-guard and what Oracle's page does and does not say about it are described in
+CPU (95th percentile), network and (on ARM) memory use all under 20%. The idle
+guard is on by default for an Always Free account and off for a paid one
+(`MUSE_ACCOUNT_TYPE`, `MUSE_IDLE_GUARD` in the VM's `vm.conf`); it keeps the
+processor's 95th percentile above 20% and never touches memory or network. How
+it works and what Oracle's page does and does not say about it are described in
 [deploy/oracle-stack/README.md](oracle-stack/README.md), "Idle guard".
 
 `./deploy/oracle-a1-setup.sh --services` also installs the background services

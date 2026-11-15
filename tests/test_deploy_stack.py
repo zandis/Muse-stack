@@ -443,7 +443,7 @@ def test_schema_is_valid_and_matches_the_variables(tf):
 SAMPLE = {
     "muse_version": "0.2.0", "release_url": "https://releases.example/muse-0.2.0.tar.gz", "release_sha256": SHA,
     "time_zone": "Asia/Taipei", "users_block": "users: []", "tester_ssh": "no", "backup": "on",
-    "backup_bucket": "muse-backups-abc123", "backup_namespace": "examplens", "backup_keep": "14", "idle_guard": "on",
+    "backup_bucket": "muse-backups-abc123", "backup_namespace": "examplens", "backup_keep": "14", "account_type": "always_free", "idle_guard": "on",
     "ocpus": "2", "memory_gb": "12", "update_manifest_url": "", "update_public_key": "",
 }
 
@@ -1395,41 +1395,73 @@ def test_updates_are_off_by_default_and_never_unverified(tmp_path):
 
 # ------------------------------------------------------- monitor, idle guard, status
 
-def test_idle_guard_holds_only_the_difference():
+def test_idle_guard_uses_the_processor_only_and_backs_off():
     monitor = load_script("muse_vm_monitor", VM / "muse-vm-monitor.py")
-    gb = 1024 ** 3
-    total = 12 * gb
-    hold = monitor.desired_hold_mb
-    # 1 GB in use by everything else, target 25% of 12 GB = 3 GB: hold about 2 GB.
-    assert 2048 <= hold(total, total - 1 * gb, 0, 25.0, 3072) <= 2048 + monitor.CHUNK_MB
-    # Already holding 2 GB (so 3 GB shows as used): keep it, do not grow.
-    assert 2048 <= hold(total, total - 3 * gb, 2048, 25.0, 3072) <= 2048 + monitor.CHUNK_MB
-    # Real work now uses 4 GB by itself: hold nothing.
-    assert hold(total, total - 4 * gb, 0, 25.0, 3072) == 0
-    assert hold(total, total - 6 * gb, 2048, 25.0, 3072) == 0
-    # Never more than the cap, and nothing when memory is tight.
-    assert hold(total, total - 0, 0, 40.0, 1024) == 1024
-    assert hold(total, int(total * 0.2), 0, 25.0, 3072) == 0
-    assert hold(0, 0, 0, 25.0, 3072) == 0
-    # The setting: on by default, off when asked, and the target stays above Oracle's 20%.
-    assert monitor.guard_settings({}) == (True, 25.0, 3072)
-    assert monitor.guard_settings({"MUSE_IDLE_GUARD": "off"})[0] is False
+    # The setting: auto by default, which is on for an Always Free account and off for a paid one.
+    on, target, why = monitor.guard_settings({})
+    assert (on, target) == (True, 25.0) and "Always Free" in why
+    assert monitor.guard_settings({"MUSE_ACCOUNT_TYPE": "always_free"})[0] is True
+    assert monitor.guard_settings({"MUSE_ACCOUNT_TYPE": "paid"})[:2] == (False, 25.0)
+    assert "paid" in monitor.guard_settings({"MUSE_ACCOUNT_TYPE": "paid"})[2]
+    assert monitor.guard_settings({"MUSE_ACCOUNT_TYPE": "paid", "MUSE_IDLE_GUARD": "on"})[0] is True
+    assert monitor.guard_settings({"MUSE_ACCOUNT_TYPE": "always_free", "MUSE_IDLE_GUARD": "off"})[0] is False
+    assert monitor.guard_settings({"MUSE_IDLE_GUARD": "auto", "MUSE_ACCOUNT_TYPE": "nonsense"})[0] is True
     assert monitor.guard_settings({"MUSE_IDLE_GUARD_TARGET_PCT": "5"})[1] == 20.5
     assert monitor.guard_settings({"MUSE_IDLE_GUARD_TARGET_PCT": "90"})[1] == 40.0
     assert monitor.ORACLE_IDLE_PCT == 20.0
-    # The reservation is real memory and is given back.
-    reservation = monitor.Reservation()
-    reservation.resize(monitor.CHUNK_MB)
-    assert reservation.held_mb == monitor.CHUNK_MB and reservation.chunks[0][4096] == 1
-    reservation.resize(0)
-    assert reservation.held_mb == 0
+    # One minute in ten: twice what a 95th percentile needs (just over 5% of minutes).
+    assert monitor.GUARD_EVERY_MIN == 10 and 1 / monitor.GUARD_EVERY_MIN >= 2 * 0.05
+    assert not monitor.guard_due(0) and not monitor.guard_due(8) and monitor.guard_due(9)
+    # Half a core on 2 OCPUs is 25% of the machine; never more than one thread can run.
+    assert monitor.guard_duty(25.0, 2) == 0.5 and monitor.guard_duty(25.0, 1) == 0.25
+    assert monitor.guard_duty(40.0, 8) == monitor.MAX_DUTY <= 1.0
+    # Other work is measured without the guard's own share, and stops a guard minute above BACK_OFF_PCT.
+    assert monitor.others_pct(50, 100, 0.5, 2, 1.0) == 25.0
+    assert monitor.others_pct(25, 100, 0.5, 2, 1.0) == 0.0
+    assert monitor.others_pct(0, 0, 0.0, 2, 1.0) == 0.0
+    assert monitor.BACK_OFF_PCT < 20.0
+    # No memory reservation of any kind, and nothing that could talk to a network.
+    text = (VM / "muse-vm-monitor.py").read_text(encoding="utf-8")
+    assert "mmap" not in text and "Reservation" not in text and "socket" not in text and "urllib" not in text
+    # A guard minute really runs and stops when asked.
+    guard = monitor.Guard(25.0, 2)
+    guard.start(5.0)
+    time.sleep(0.3)
+    guard.halt()
+    assert not guard.running() and guard.busy_s > 0
+    # The daily line says what it did and why, in one line.
+    stats = {"guard_minutes": 140, "busy_minutes": 12, "backed_off": 3}
+    line = monitor.daily_line("2026-11-14", True, why, 25.0, stats)
+    assert "\n" not in line and "140 minutes" in line and "Always Free" in line and "backed off for real work 3 times" in line
+    assert "never holds memory or sends traffic" in line
+    off = monitor.daily_line("2026-11-14", False, "MUSE_IDLE_GUARD=off", 25.0, stats)
+    assert "\n" not in off and "off (MUSE_IDLE_GUARD=off)" in off and "did nothing" in off
     # Readers.
     meminfo = monitor.parse_meminfo("MemTotal:       12000000 kB\nMemFree:  100 kB\nMemAvailable:    9000000 kB\n")
     assert round(monitor.memory_used_pct(meminfo), 1) == 25.0
     assert monitor.parse_cpu("cpu  100 0 100 700 100 0 0 0 0 0\ncpu0 1 2 3 4\n") == (200, 1000)
     assert monitor.parse_net("h1\nh2\n    lo: 500 0 0 0 0 0 0 0 500 0\n  ens3: 1000 0 0 0 0 0 0 0 2000 0 0 0 0 0 0 0\n") == 3000
     unit = "\n".join(unit_lines(UNITS / "muse-vm-monitor.service"))
-    assert "MemoryMax=4G" in unit and "OOMScoreAdjust=1000" in unit and "CPUQuota=10%" in unit, "first to go if memory runs short; no busy loop"
+    assert "MemoryMax=128M" in unit and "OOMScoreAdjust=1000" in unit, "small, and first to go if memory runs short"
+    assert "CPUQuota=100%" in unit and "CPUWeight=1" in unit and "Nice=19" in unit, "at most one core, always behind real work"
+    assert "IPAddressDeny=any" in unit and "RestrictAddressFamilies=AF_UNIX" in unit
+
+
+def test_idle_guard_default_follows_the_account_type(tf):
+    variables = {b.labels[0]: b for b in _top(tf, "variable")}
+    assert variables["account_type"].attrs["default"] == '"always_free"'
+    assert variables["idle_guard"].attrs["default"] == '"auto"' and variables["idle_guard"].attrs["type"] == "string"
+    locals_ = {k: v for b in _top(tf, "locals") for k, v in b.attrs.items()}
+    assert re.sub(r"\s+", " ", locals_["idle_guard_on"]) == 'var.idle_guard == "auto" ? var.account_type == "always_free" : var.idle_guard == "on"'
+    schema = yaml.safe_load((STACK / "schema.yaml").read_text(encoding="utf-8"))
+    assert schema["variables"]["idle_guard"]["enum"] == ["auto", "on", "off"]
+    assert schema["variables"]["account_type"]["enum"] == ["always_free", "paid"]
+    conf = yaml.safe_load(render_template(SAMPLE))["write_files"][0]["content"]
+    assert "MUSE_ACCOUNT_TYPE=always_free\n" in conf and "MUSE_IDLE_GUARD=on\n" in conf
+    paid = yaml.safe_load(render_template({**SAMPLE, "account_type": "paid", "idle_guard": "off"}))["write_files"][0]["content"]
+    assert "MUSE_ACCOUNT_TYPE=paid\n" in paid and "MUSE_IDLE_GUARD=off\n" in paid
+    setup = (ROOT / "deploy" / "oracle-a1-setup.sh").read_text(encoding="utf-8")
+    assert "MUSE_ACCOUNT_TYPE=always_free\nMUSE_IDLE_GUARD=auto\n" in setup
 
 
 def test_monitor_samples_and_status_json(tmp_path):
@@ -1439,9 +1471,10 @@ def test_monitor_samples_and_status_json(tmp_path):
     files = list((state / "samples").glob("*.jsonl"))
     assert len(files) == 1
     sample = json.loads(files[0].read_text().splitlines()[0])
-    assert set(sample) == {"t", "cpu", "mem", "net_bps", "guard_mb"} and sample["guard_mb"] == 0 and 0 <= sample["mem"] <= 100
+    assert set(sample) == {"t", "cpu", "mem", "net_bps", "guard_s"} and sample["guard_s"] == 0 and 0 <= sample["mem"] <= 100
     guard = json.loads((state / "idle-guard.json").read_text())
-    assert guard["enabled"] is False and guard["oracle_idle_threshold_pct"] == 20.0 and "MemoryUtilization" in guard["metric"]
+    assert guard["enabled"] is False and guard["oracle_idle_threshold_pct"] == 20.0 and "CpuUtilization" in guard["metric"]
+    assert guard["why"] == "MUSE_IDLE_GUARD=off" and "never memory or network" in guard["uses"]
 
     status = load_script("muse_vm_status", VM / "muse-vm-status")
     now = 1794700800.0                                   # 2026-11-15 00:00 UTC
@@ -1452,7 +1485,7 @@ def test_monitor_samples_and_status_json(tmp_path):
     samples.mkdir()
     with open(samples / "2026-11.jsonl", "w", encoding="utf-8") as handle:
         for minute in range(14 * 24 * 60):               # running since the start of the month
-            handle.write(json.dumps({"t": month_start + minute * 60, "cpu": 3.0 if minute % 100 else 60.0, "mem": 26.0, "net_bps": 20000, "guard_mb": 2048}) + "\n")
+            handle.write(json.dumps({"t": month_start + minute * 60, "cpu": 3.0 if minute % 100 else 60.0, "mem": 26.0, "net_bps": 20000, "guard_s": 0}) + "\n")
     (state / "backup").mkdir(exist_ok=True)
     (state / "backup" / "last.json").write_text(json.dumps({"result": "ok", "finished_at": "2026-11-14T18:10:00Z", "size_bytes": 1234}), encoding="utf-8")
     (tmp_path / "setup").mkdir()
@@ -1475,7 +1508,7 @@ def test_monitor_samples_and_status_json(tmp_path):
     # With the guard off and everything quiet, the status says the instance would count as idle.
     with open(samples / "2026-11.jsonl", "w", encoding="utf-8") as handle:
         for minute in range(7 * 24 * 60):
-            handle.write(json.dumps({"t": int(now) - (minute + 1) * 60, "cpu": 2.0, "mem": 9.0, "net_bps": 1000, "guard_mb": 0}) + "\n")
+            handle.write(json.dumps({"t": int(now) - (minute + 1) * 60, "cpu": 2.0, "mem": 9.0, "net_bps": 1000, "guard_s": 0}) + "\n")
     assert status.status({"MUSE_VM_STATE": str(state), "MUSE_VM_CONF": "/nonexistent"}, now=now)["last_7_days"]["oracle_idle_rule"]["would_count_as_idle"] is True
     assert status.percentile([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 95) == 10 and status.percentile([], 95) is None
     cli = run([sys.executable, str(VM / "muse-vm-status")], env={"MUSE_VM_STATE": str(state)})
@@ -1582,7 +1615,7 @@ def test_readme_states_the_facts_and_its_limits():
     readme = (STACK / "README.md").read_text(encoding="utf-8")
     for phrase in ("2 OCPU", "12 GB", "1,500 OCPU", "9,000 GB", "Not tested yet", "https://cloud.oracle.com/resourcemanager/stacks/create?zipUrl=",
                    "deploy-to-oracle-cloud.svg", "ss -tlnH", "Idle guard", "95th percentile", "docs.oracle.com", "could not confirm",
-                   "MemoryUtilization", "How to delete everything", "muse-restore.sh", "<RELEASE-ZIP-URL>"):
+                   "CpuUtilization", "How to delete everything", "muse-restore.sh", "<RELEASE-ZIP-URL>"):
         assert phrase in readme, phrase
     assert "4 OCPU" not in readme.replace("not 4 OCPU", "")
     cloud = (ROOT / "deploy" / "oracle-cloud.md").read_text(encoding="utf-8")

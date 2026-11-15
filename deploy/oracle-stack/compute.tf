@@ -10,6 +10,9 @@ locals {
 
   image_id = var.image_ocid != "" ? var.image_ocid : data.oci_core_images.ubuntu.images[0].id
 
+  # The idle guard: on for an Always Free account, off for a paid one, unless set to on or off.
+  idle_guard_on = var.idle_guard == "auto" ? var.account_type == "always_free" : var.idle_guard == "on"
+
   # Everything first boot needs, none of it secret: the instance's user data can
   # be read by any process on the VM and is kept in the stack's state.
   user_data = templatefile("${path.module}/cloud-init.yaml.tftpl", {
@@ -23,7 +26,8 @@ locals {
     backup_bucket       = local.bucket_name
     backup_namespace    = local.bucket_enabled ? data.oci_objectstorage_namespace.this.namespace : ""
     backup_keep         = var.backup_keep
-    idle_guard          = var.idle_guard ? "on" : "off"
+    account_type        = var.account_type
+    idle_guard          = local.idle_guard_on ? "on" : "off"
     ocpus               = var.ocpus
     memory_gb           = var.memory_in_gbs
     update_manifest_url = var.update_manifest_url

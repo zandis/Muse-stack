@@ -110,12 +110,28 @@ variable "backup_expire_days" {
   }
 }
 
-# Idle guard.
+# Account type and the idle guard.
+
+variable "account_type" {
+  description = "always_free: a free account (Oracle may reclaim an idle instance). paid: an upgraded (pay-as-you-go) account. Sets the idle guard's default."
+  type        = string
+  default     = "always_free"
+
+  validation {
+    condition     = contains(["always_free", "paid"], var.account_type)
+    error_message = "Choose always_free or paid."
+  }
+}
 
 variable "idle_guard" {
-  description = "Keep memory use above the level at which Oracle may reclaim an idle Always Free instance. See README.md, 'Idle guard'."
-  type        = bool
-  default     = true
+  description = "auto: on for an Always Free account, off for a paid one. on or off: override. Keeps processor use above the level at which Oracle may reclaim an idle Always Free instance. See README.md, 'Idle guard'."
+  type        = string
+  default     = "auto"
+
+  validation {
+    condition     = contains(["auto", "on", "off"], var.idle_guard)
+    error_message = "Choose auto, on or off."
+  }
 }
 
 # Early testers only. Leave both empty and no SSH access exists at all.

@@ -12,6 +12,8 @@
 # that run as you: the home control API (a Unix socket), the queue, a timer that
 # runs `muse chores tick` every minute, the weekly catalogue check, and the
 # sampler with the idle guard. Without the flag nothing extra is installed.
+# The idle guard is on for an Always Free account (this script assumes one);
+# on a paid account set MUSE_ACCOUNT_TYPE=paid in ~/.config/muse/vm.conf.
 #
 # What it does: installs Docker (or a venv), creates .env (mode 600) with a
 # generated master key, starts the proxy on 127.0.0.1:4000, installs the muse
@@ -203,7 +205,8 @@ MUSE_VM_STATE=$MUSE_HOME_DIR/vm
 MUSE_ENV_FILE=$REPO/.env
 MUSE_ROOT=$REPO
 MUSE_TZ=$TZ_NAME
-MUSE_IDLE_GUARD=on
+MUSE_ACCOUNT_TYPE=always_free
+MUSE_IDLE_GUARD=auto
 CONF
   fi
   sudo bash "$REPO/deploy/vm/install-services.sh" --user "$USER" --root "$REPO" --venv "$VENV" \

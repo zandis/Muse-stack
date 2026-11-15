@@ -142,10 +142,10 @@ These are estimates, not measurements; measuring them is on the list at the end.
 | Home API | under 0.1 GB | 512 MB | idle |
 | Queue | about 0.1 GB | 1 GB | idle between jobs |
 | Chores pass | 0.1 to 0.2 GB for a few seconds each minute | 1 GB | under 1% on average |
-| Monitor | 15 MB, plus the idle guard's reservation | 4 GB | 10% quota, far less used |
+| Monitor and idle guard | about 15 MB | 128 MB | about 2.5% on average when the guard is on; at most one core, lowest priority |
 | Nightly jobs | backup under 0.2 GB; an update's install up to about 1 GB | 1 GB, 2 GB | a few minutes |
 
-Real use at rest is therefore about 1.2 to 1.8 GB, 10% to 15% of memory, which is why the idle guard exists.
+Real use at rest is therefore about 1.2 to 1.8 GB, 10% to 15% of memory, with almost no processor or network, which is why the idle guard exists.
 
 Deliberately **not** run: local chat models (at 2 OCPU they manage a few tokens a second at best, which is too slow to be useful; estimate from `docs/ecosystem-review-2026-11.md` §3.3), Docker, Postgres spend logs, the dashboard, a reverse proxy or TLS endpoint, the LINE webhook tunnel (D6), sync and the device link (D1 to D3).
 
@@ -192,15 +192,22 @@ It fetches the latest backup from the bucket, checks its SHA-256, decrypts it, c
 
 ## Idle guard
 
-**Oracle's rule**, quoted from the Always Free page: "Idle Always Free compute instances may be reclaimed by Oracle. Oracle will deem virtual machine and bare metal compute instances as idle if, during a 7-day period, the following are true: CPU utilization for the 95th percentile is less than 20%; Network utilization is less than 20%; Memory utilization is less than 20% (applies to A1 shapes only)." All three must be true, so staying above one is enough.
+**Oracle's rule**, quoted from the Always Free page (re-read on 15 November 2026): "Idle Always Free compute instances may be reclaimed by Oracle. Oracle will deem virtual machine and bare metal compute instances as idle if, during a 7-day period, the following are true: CPU utilization for the 95th percentile is less than 20%; Network utilization is less than 20%; Memory utilization is less than 20% (applies to A1 shapes only)." All three must be true, so staying above one is enough.
 
-**What the helper does.** A router, a queue and a once-a-minute chores pass use about 10% to 15% of 12 GB and almost no CPU or network, so an honest, working helper would still be measured as idle. `muse-vm-monitor` measures what everything else uses and holds just enough otherwise unused memory to bring "memory in use" to 25%, re-checking every minute and giving it back the moment anything else needs it. If real work already uses that much (for example a small embedding model kept loaded, once local models run on the VM), it holds nothing.
+**On by default for an Always Free account, off for a paid one.** The form asks which kind of Oracle account you have (`account_type`: `always_free`, the default, or `paid`), and the guard's setting (`idle_guard`) defaults to `auto`, which follows it. Set `idle_guard` to `on` or `off` to override. On the VM the result is in `/etc/muse/vm.conf` as `MUSE_ACCOUNT_TYPE` and `MUSE_IDLE_GUARD` (`on`, `off` or `auto`); change it there and run `sudo systemctl restart muse-vm-monitor`. Oracle's page speaks of "Always Free compute instances" and does not say whether the rule still applies once an account is upgraded; off for paid accounts is this project's choice, not something the page states.
 
-**Said plainly:** this is a memory reservation, not useful work. It burns no CPU and sends no traffic, and it is the lightest way to stay above one threshold. Keeping a small model loaded for local embeddings would be genuinely useful resident work and is the better answer; it replaces the reservation automatically when it exists, and it is not part of this package.
+**What the helper does.** A router, a queue and a once-a-minute chores pass use almost no processor or network and 10% to 15% of 12 GB, so an honest, working helper would still be measured as idle. `muse-vm-monitor` uses the processor, because that part of the rule applies to every shape and a 95th percentile only needs just over 5% of the minutes to be busy:
 
-**What Oracle says about it.** The Always Free page states the rule and nothing more: it does not say whether keeping an instance above the thresholds on purpose is allowed or forbidden. I did not review Oracle's full service terms for this, so I could not confirm either way. The rule's evident purpose is to take back capacity nobody uses; a helper that runs your chores every minute is in use, though lightly. If you would rather not hold memory for this reason, turn it off: "Keep the helper from being reclaimed as idle" in the form, or `MUSE_IDLE_GUARD=off` in `/etc/muse/vm.conf`. Oracle may then reclaim the instance after 7 quiet days; the backup is what brings it back.
+- It watches each wall-clock minute. When no minute in the last ten reached 25% by itself, it runs the processor at about 25% of the machine (half a core on 2 OCPU) for one minute and a few seconds past it. That is one minute in ten, twice what the 95th percentile needs, and adds about 2.5% to the week's average processor use.
+- Real work comes first. Any minute that reaches 25% on its own restarts the count, so a busy helper never triggers it. During its minute it measures everything else once a second and stops at once when other work uses more than 10% of the processor. It runs at the lowest priority (`Nice=19`, `CPUWeight=1`) and can never use more than one core.
+- It never holds memory and never sends traffic: the unit has a 128 MB memory ceiling and no network at all.
+- Once a day it writes one plain line to the journal (`journalctl -u muse-vm-monitor`) saying whether it was on and why, how many minutes it ran, how many minutes real work reached 25% by itself, and how many times it backed off.
 
-**The metric and how to verify it.** The target is the instance's **MemoryUtilization** in the `oci_computeagent` metric namespace. In the Oracle Console: Compute, Instances, `muse-helper`, Metrics, "Memory Utilization"; it should sit at about 25%. On the VM, `sudo muse-vm-status --pretty` shows the last 7 days and `oracle_idle_rule.would_count_as_idle`. The helper computes memory in use as `(MemTotal - MemAvailable) / MemTotal`; that Oracle's agent computes it the same way is an assumption to check against the Console graph.
+**Said plainly:** this is deliberate processor use to stay above a threshold, not useful work. It is the cheapest honest way we found: a few watts on a machine that is otherwise free, with nothing hidden. Real work that keeps the machine busy (for example local embeddings, once they run on the VM) replaces it automatically, because those minutes count.
+
+**What Oracle says about it.** The Always Free page states the rule and nothing more: it does not say whether keeping an instance above the thresholds on purpose is allowed or forbidden. I did not review Oracle's full service terms for this, so I could not confirm either way. The rule's evident purpose is to take back capacity nobody uses; a helper that runs your chores every minute is in use, though lightly. If you would rather not do this, turn it off: "Keep the helper from being reclaimed as idle" set to `off` in the form, or `MUSE_IDLE_GUARD=off` in `/etc/muse/vm.conf`. Oracle may then reclaim the instance after 7 quiet days; the backup is what brings it back.
+
+**The metric and how to verify it.** The target is the instance's **CpuUtilization** in the `oci_computeagent` metric namespace. In the Oracle Console: Compute, Instances, `muse-helper`, Metrics, "CPU Utilization"; on a quiet helper it should show a short step to about 25% every ten minutes. On the VM, `sudo muse-vm-status --pretty` shows the last 7 days, the guard's state and `oracle_idle_rule.would_count_as_idle`. That Oracle's agent measures in one-minute buckets on the wall clock is an assumption to check against the Console graph; the few extra seconds of each guard minute are there in case the two clocks differ slightly.
 
 ## The status card
 
@@ -274,7 +281,7 @@ Read on 13 November 2026.
 | Fact | Source |
 |---|---|
 | A1 Flex is free for the first 1,500 OCPU hours and 9,000 GB hours a month, "equivalent to 2 OCPUs and 12 GB of memory" | [Always Free Resources](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm) |
-| The idle rule quoted above; nothing on that page about keeping an instance busy | same |
+| The idle rule quoted above (re-read on 15 November 2026); nothing on that page about keeping an instance busy, or about upgraded accounts | same |
 | 200 GB of block and boot volume in total, 5 volume backups; a new instance gets a 50 GB boot volume. The page gives the minimum boot volume as 47 GB in one place and 50 GB in another | same |
 | 20 GB of Object Storage and 50,000 API requests a month | same |
 | Ubuntu is an Always Free image for A1; free compute and free block volumes must be in the home region; free tenancies get up to 2 VCNs and 10 TB of outbound data a month; "out of host capacity" means try another availability domain or later | same |
@@ -298,7 +305,7 @@ Read on 13 November 2026.
 - Whether a NAT gateway is free (hence the public-subnet design).
 - That a security list may be saved with zero rules, and that `oci_core_default_security_list` with no rule blocks empties the default list. Both follow from the pages but are not stated.
 - Whether stateful rules also let path-MTU ICMP messages back in (hence TCP MTU probing).
-- How Oracle computes memory and network utilization, and whether the idle rule applies to an upgraded (pay-as-you-go) account.
+- How Oracle computes memory and network utilization, the length of its CPU metric's buckets, and whether the idle rule applies to an upgraded (pay-as-you-go) account.
 - Whether Oracle's terms address keeping an instance above the idle thresholds on purpose.
 - Which Terraform versions Resource Manager runs, and whether it can fetch provider `9.12.1`.
 - Whether the button accepts a release-asset address.
@@ -315,6 +322,6 @@ Nothing was deployed. `terraform` was not available where this was written, so t
 5. With the security lists as created: do apt, the release download and provider calls work; is anything reachable from outside (scan the public address); are both lists at 0 ingress rules?
 6. Do the dynamic group, the policy and the lifecycle rule get created by a free account's administrator, in order, and does the first upload from `oci_object.py` succeed? Then a restore on a second VM.
 7. Do the hardened units start under systemd (LiteLLM under `ProtectSystem=strict`, the `IPAddressDeny` units reaching `127.0.0.1:4000`)? Does anything else on Oracle's image listen on TCP and trip the health check?
-8. Real memory and CPU of each service, to replace the estimates above; the idle guard's effect on the Console's Memory Utilization graph over 7 days.
+8. Real memory and CPU of each service, to replace the estimates above; the idle guard's effect on the Console's CPU Utilization graph over 7 days (a step to about 25% every ten minutes on a quiet helper).
 9. An unattended-upgrades reboot; a Muse update and a forced rollback, once a manifest and key exist.
 10. Destroy: does it remove everything once the bucket is empty?
