@@ -344,6 +344,16 @@ def task_problems(task: Any, tasks_dir: Path, skill: str) -> list[str]:
     return out
 
 
+def fixture_text(path: Path) -> tuple[str | None, str]:
+    """(the text of a fixture file, problem). A PDF fixture is checked without a PDF parser: its bytes must be what
+    scripts/pdf_fixtures.py builds from the source text kept there, and that source text is what is searched."""
+    if path.suffix.lower() != ".pdf":
+        return path.read_text(encoding="utf-8"), ""
+    import pdf_fixtures  # scripts/, standard library only
+
+    return pdf_fixtures.source_text(path)
+
+
 def fixture_problems(task: Mapping[str, Any], tasks_dir: Path) -> list[str]:
     """Expected facts that are not in the file they should come from: such a task could not be answered."""
     out: list[str] = []
@@ -357,7 +367,12 @@ def fixture_problems(task: Mapping[str, Any], tasks_dir: Path) -> list[str]:
             found = [p for p in found if p.is_file()]
             if not found:
                 out.append(f"fact {number}: source file {name} is not in the task's folders")
-            texts += [p.read_text(encoding="utf-8") for p in found]
+            for path in found:
+                text, problem = fixture_text(path)
+                if problem:
+                    out.append(f"fact {number}: {problem}")
+                if text is not None:
+                    texts.append(text)
         if texts and not any(fact_in(fact, text) for text in texts):
             out.append(f"fact {number} is not in {' or '.join(names)}")
     return out

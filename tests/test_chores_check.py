@@ -97,6 +97,64 @@ def test_task_problems_and_fixture_problems_catch_bad_definitions(tmp_path):
     assert len(found["s"]) == 1 and problems == ["s/tasks.jsonl line 2: not JSON", "s/tasks.jsonl line 3: duplicate id x-1"]
 
 
+PDF_FOLDERS = {"harbour-pdf-en", "songyuan-pdf-zh"}
+
+
+def test_pdf_tasks_cover_both_languages_and_cross_language_questions():
+    found, problems = cc.load_tasks(cc.TASKS_DIR)
+    assert problems == []
+    pdf_tasks = [t for t in found["files-answer"] if set(t["folders"]) & PDF_FOLDERS]
+    assert len(pdf_tasks) >= 6
+    assert {t["lang"] for t in pdf_tasks} == {"en", "zh"} and sum(t["kind"] == "cross-lang" for t in pdf_tasks) >= 2
+    sources = {name for t in pdf_tasks for f in t["expect"].get("facts", []) for name in cc.sources_of(f)}
+    assert sources and all(name.endswith(".pdf") for name in sources)
+    for folder in PDF_FOLDERS:  # every document says it is invented (the scan has no text; the locked file is a stand-in)
+        import pdf_fixtures
+        for name, spec in pdf_fixtures.FIXTURE_SPECS[folder].items():
+            text = spec.text()
+            assert not text or "fictional" in text or "虛構" in text or "protected" in text, name
+
+
+def test_the_guard_checks_a_pdf_fixture_against_its_source_without_parsing_it(tmp_path):
+    import pdf_fixtures
+
+    folder = tmp_path / "fixtures" / "harbour-pdf-en"
+    folder.mkdir(parents=True)
+    spec = pdf_fixtures.FIXTURE_SPECS["harbour-pdf-en"]["mooring-lease.pdf"]
+    (folder / "mooring-lease.pdf").write_bytes(pdf_fixtures.build(spec))
+    (folder / "stray.pdf").write_bytes(b"%PDF-1.7 a PDF nobody wrote a source for")
+    task = {"id": "x-2", "skill": "s", "kind": "numeric", "lang": "en", "folders": ["harbour-pdf-en"], "inputs": {"question": "q"},
+            "expect": {"facts": [{"amount": 380, "source": "mooring-lease.pdf"}]}}
+    assert cc.fixture_problems(task, tmp_path) == []
+    assert cc.fixture_problems({**task, "expect": {"facts": [{"amount": 381, "source": "mooring-lease.pdf"}]}}, tmp_path) == \
+        ["fact 1 is not in mooring-lease.pdf"]
+    data = bytearray((folder / "mooring-lease.pdf").read_bytes())
+    data[data.index(b"stream\n") + 9] ^= 0x01  # one changed byte inside the compressed page text
+    (folder / "mooring-lease.pdf").write_bytes(bytes(data))
+    assert cc.fixture_problems(task, tmp_path) == [
+        "fact 1: mooring-lease.pdf differs from its source in scripts/pdf_fixtures.py (run it with --write)"]
+    stray = {**task, "expect": {"facts": [{"amount": 380, "source": "stray.pdf"}]}}
+    assert cc.fixture_problems(stray, tmp_path) == ["fact 1: stray.pdf has no source in scripts/pdf_fixtures.py"]
+
+
+def test_what_the_skill_reads_from_each_pdf_fixture_holds_the_expected_facts():
+    pytest.importorskip("pypdf")
+    from muse.skills import loader
+
+    pdf = loader.import_skill(loader.find("files-answer"), "pdf")
+    found, _ = cc.load_tasks(cc.TASKS_DIR)
+    checked = 0
+    for task in found["files-answer"]:
+        for fact in task["expect"].get("facts", []):
+            for name in cc.sources_of(fact):
+                if name.endswith(".pdf"):
+                    data = (cc.TASKS_DIR / "fixtures" / task["folders"][0] / name).read_bytes()
+                    text = "\n\n".join(t for _, _, t in pdf.read(data).paragraphs())
+                    assert cc.fact_in(fact, text), (task["id"], fact)
+                    checked += 1
+    assert checked >= 6
+
+
 # ================================================================ the scorer and the interval
 
 
