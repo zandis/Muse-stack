@@ -22,7 +22,7 @@ Before the heavy call the verified claims are handed to the runner with
 router's choices AND the claims by sub-question, with a prompt they can paste
 into their own app. The same partial result is what a budget stop returns.
 
-index.py, retrieve.py, textwork.py, answer.py, quotes.py and recover.py are
+index.py, pdf.py, retrieve.py, textwork.py, answer.py, quotes.py and recover.py are
 byte-for-byte copies of the files in skills/files-answer: a skill is imported as
 a private package from its own hashed bytes, so one skill cannot import another's
 modules. A test fails when the copies drift.
@@ -36,7 +36,7 @@ import hashlib
 import time
 from typing import Any
 
-from . import extract, gather, plan, quotes, recover, report
+from . import extract, gather, index, plan, quotes, recover, report
 from .textwork import mostly_chinese, weight
 
 MAX_QUESTION_CHARS = 2000
@@ -108,7 +108,7 @@ def _sources(passages: list[dict[str, Any]], claims: list[dict[str, Any]], zh: b
         hit = quotes.paragraph_of(p, claim["start"])
         numbers = [hit] if hit else list(range(p["paragraph"], p["paragraph_end"] + 1))
         out.append({"n": claim["id"], "passage": p["n"], "path": p["path"], "paragraphs": numbers,
-                    "label": gather.label(p["shown"], numbers, zh), "quote": claim["quote"]})
+                    "label": gather.label(p["shown"], numbers, zh, index.places_of(p)), "quote": claim["quote"]})
     return out
 
 

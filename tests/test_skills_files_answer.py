@@ -570,7 +570,7 @@ def test_pdfs_are_skipped_with_a_note_when_no_reader_is_installed(env, proxy, do
     proxy.push(*chat(answer_json("The rent is 18,500 dollars [1].", [("The monthly rent is 18,500 dollars", [1])]), task="everyday"))
     result = ask(env, "How much is the monthly rent?", docs)
     assert result.status == "partial" and result.exit_code == 3 and result.check["status"] == "passed"
-    assert result.notes == ["1 PDF file(s) were not read: no PDF reader is installed with Muse."]
+    assert result.notes == ["PDF reading is not installed; 1 PDF(s) were skipped: scan.pdf."]
 
 
 def test_pdfs_are_read_when_a_reader_is_already_installed(env, proxy, docs, monkeypatch):
@@ -578,7 +578,8 @@ def test_pdfs_are_read_when_a_reader_is_already_installed(env, proxy, docs, monk
     monkeypatch.setattr(module("index"), "pdf_reader", lambda: (lambda data: "The parking space costs 900 dollars a month."))
     proxy.push(*chat(answer_json("Parking costs 900 dollars [1].", [("The parking space costs 900 dollars", [1])]), task="everyday"))
     result = ask(env, "What does the parking space cost?", docs, top_k=1)
-    assert result.status == "done" and result.output["citations"][0]["label"] == "scan.pdf › paragraph 1"
+    assert result.status == "done" and result.output["citations"][0]["label"] == "scan.pdf › page 1, paragraph 1"
+    assert result.output["citations"][0]["pages"] == [1] and result.output["citations"][0]["page_paragraphs"] == [1]
 
 
 def test_caps_make_the_result_partial_and_say_so(env, proxy, docs):

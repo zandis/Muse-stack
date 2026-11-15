@@ -19,7 +19,7 @@ from test_skills_support import chat, env, proxy  # noqa: F401  (fixtures)
 CANARY = "CANARY-FILE-CONTENT-7a31be"
 CANARY_REPLY = "CANARY-MODEL-REPLY-c09d44"
 ROOT = Path(__file__).resolve().parents[1]
-SHARED = ("index.py", "retrieve.py", "textwork.py", "answer.py", "quotes.py", "recover.py")
+SHARED = ("index.py", "pdf.py", "retrieve.py", "textwork.py", "answer.py", "quotes.py", "recover.py")
 
 
 def module(name: str, skill: str = "research-report"):

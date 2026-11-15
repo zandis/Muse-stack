@@ -6,7 +6,8 @@ person named (`from_folders`): the same index, BM25 and embedding fusion as the
 files-answer skill. A later source (pages fetched through a sandboxed tool) only
 has to return the same passage dictionaries; nothing after this step changes.
 
-A passage: {"n", "path", "shown", "paragraph", "paragraph_end", "paragraphs", "text", "label", "subs": [sub numbers]}
+A passage: {"n", "path", "shown", "paragraph", "paragraph_end", "paragraphs", "text", "label", "subs": [sub numbers],
+"places": for a PDF, [page, paragraph on the page] for each of `paragraphs`, else None}
 """
 
 from __future__ import annotations
@@ -46,8 +47,11 @@ def shown(path: str, roots: list[str]) -> str:
     return path
 
 
-def label(name: str, numbers: list[int], zh: bool) -> str:
-    """`file › paragraph 3`. Several paragraphs: `3, 5`; a run of them: `3-5`."""
+def label(name: str, numbers: list[int], zh: bool, places: dict[int, Any] | None = None) -> str:
+    """`file › paragraph 3`. Several paragraphs: `3, 5`; a run of them: `3-5`. A PDF: `file › page 3, paragraph 2`."""
+    on_page = index.place_label(numbers, places or {}, zh)
+    if on_page:
+        return f"{name} › {on_page}"
     numbers = sorted(set(numbers))
     run = len(numbers) > 2 and numbers[-1] - numbers[0] == len(numbers) - 1
     span = f"{numbers[0]}-{numbers[-1]}" if run else ("、" if zh else ", ").join(str(n) for n in numbers)
@@ -55,8 +59,8 @@ def label(name: str, numbers: list[int], zh: bool) -> str:
 
 
 def notes(ctx: Any, stats: index.Stats) -> None:
-    if stats.pdf_skipped:
-        ctx.note(f"{stats.pdf_skipped} PDF file(s) were not read: no PDF reader is installed with Muse.", incomplete=True)
+    for line in index.pdf_notes(stats):  # PDFs not read, or not read whole: counted and named, never silent
+        ctx.note(line, incomplete=True)
     if stats.large:
         ctx.note(f"{stats.large} file(s) were too large to read (over {index.MAX_FILE_BYTES // 1_000_000} MB each).", incomplete=True)
     if stats.unreadable:
@@ -164,7 +168,9 @@ def from_folders(ctx: Any, question: str, subs: list[str], zh: bool, keep_reques
                 out.passages.append({
                     "n": numbers[i], "path": c.path, "shown": name, "paragraph": c.para_start, "paragraph_end": c.para_end,
                     "paragraphs": list(c.paras), "text": c.text, "subs": [],
-                    "label": label(name, list(range(c.para_start, c.para_end + 1)), zh)})
+                    "places": [list(p) if p else None for p in c.places] if c.places else None,
+                    "label": label(name, list(range(c.para_start, c.para_end + 1)), zh,
+                                   dict(zip(c.paras, c.places)) if c.places else None)})
             out.passages[numbers[i] - 1]["subs"].append(number)
             mine.append(numbers[i])
         out.by_sub[number] = mine
