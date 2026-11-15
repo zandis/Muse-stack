@@ -505,3 +505,63 @@ def test_no_running_proxy_keeps_the_old_answer(h, monkeypatch):
     monkeypatch.delitem(sys.modules, "litellm.proxy.proxy_server", raising=False)
     with pytest.raises(MusePrivacyError):
         filt(h, [], req())
+
+
+# ---------------------------------------------------------------- cassette mode
+
+
+def test_live_mode_leaves_the_provider_base_url_alone(h):
+    kwargs = {**req("local"), "model_info": L_FAST["model_info"], "api_base": "https://api.example.test/v1"}
+    assert run(h.async_pre_call_deployment_hook(kwargs, None)) is None
+    assert kwargs["api_base"] == "https://api.example.test/v1"
+    assert "x-muse-cassette-upstream" not in (kwargs.get("extra_headers") or {})
+
+
+def test_replay_mode_returns_the_rewritten_call(db, tmp_path):
+    from muse import cassette
+
+    hook = MuseHook(ledger=db, clock=lambda: NOW, environ={
+        "MUSE_PROVIDER_MODE": "replay", "MUSE_CASSETTE_DIR": str(tmp_path),
+    })
+    kwargs = {
+        **req("local"),
+        "model_info": L_FAST["model_info"],
+        "api_base": "https://api.example.test/v1",
+        "litellm_params": {"api_base": "https://api.example.test/v1"},
+    }
+    try:
+        out = run(hook.async_pre_call_deployment_hook(kwargs, None))
+        assert out is kwargs
+        assert out["api_base"].startswith("http://127.0.0.1:") and out["api_base"].endswith("/v1")
+        assert out["litellm_params"]["api_base"] == out["api_base"]
+        assert out["extra_headers"]["x-muse-cassette-upstream"] == "https://api.example.test/v1"
+    finally:
+        cassette.stop_proxy()
+
+
+def _stream_error():
+    frame = 'data: {"error":{"message":"You exceeded your quota","code":429}}'
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=frame))],
+        _hidden_params={},
+        usage=None,
+    )
+
+
+def test_a_200_success_does_not_classify_an_error_frame(h, db):
+    """What the hook does today: the success path never calls classify_failure."""
+    run(h.async_log_success_event(success_kwargs(Q_FAST["model_info"]), _stream_error(), None, None))
+    assert "groq:groq/q" not in db.active_blocks()
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "An error object inside an HTTP 200 stream is logged as a success, so classify_failure "
+        "never sees it and the upstream stays eligible. Left open until a captured stream shows "
+        "the frame the hook should read. docs/reviews/2026-11-13-dsh-our-free-model-ideas.md gap 3."
+    ),
+)
+def test_a_200_stream_error_frame_opens_the_breaker(h, db):
+    run(h.async_log_success_event(success_kwargs(Q_FAST["model_info"]), _stream_error(), None, None))
+    assert "groq:groq/q" in db.active_blocks()

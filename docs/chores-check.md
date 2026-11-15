@@ -38,7 +38,11 @@ Each command prints what it will send and waits for `y`. Add `--yes` for an unat
 
 The worst case is each skill's own budget times the runs: 12 requests and 60,000 tokens for `files-answer`, 40 and 150,000 for `research-report`. It is a ceiling, not an estimate. Measured on 2026-11-13 (the old router): files-answer 2.2 requests and 2,313 tokens a run; research-report 11.7 requests and 8,916 tokens a run. research-report now makes one extraction call per sub-question (offline: 5.6 requests a run instead of 8.3).
 
-Options: `--only files-answer`, `--only-kinds date,numeric`, `--max-requests N` (a run is not started when its budget could take the batch over N; the report prints the requests used against the cap), `--runs N`, `--sample K`, `--seed S`, `--privacy private`, `--delay SECONDS` (default 2), `--max-wait SECONDS` (longest `Retry-After` to sit out, default 60), `--stop-after N` (stop a skill after N deferred runs in a row, default 5), `--keep-failures`, `--keep-outputs`, `--report PATH`, `--csv PATH`.
+Options: `--only files-answer`, `--only-kinds date,numeric`, `--max-requests N` (a run is not started when its budget could take the batch over N; the report prints the requests used against the cap), `--runs N`, `--sample K`, `--seed S`, `--privacy private`, `--delay SECONDS` (default 2), `--max-wait SECONDS` (longest `Retry-After` to sit out, default 60), `--stop-after N` (stop a skill after N deferred runs in a row, default 5), `--keep-failures`, `--keep-outputs`, `--report PATH`, `--csv PATH`, `--record DIR`, `--replay DIR`.
+
+## Offline
+
+`--record DIR` writes a cassette for each exchange with the router while the check still uses that router. `--replay DIR` answers the same calls from those cassettes: the router is not contacted, and no provider quota is used. Record on a machine that has the keys, review the files (they hold response text, never the prompt and never a key), then replay that directory for a later run of the same sample. The two flags together are refused. The workflow, and how a replay can guard a no-regression check, is in [testing/fidelity-and-replay.md](testing/fidelity-and-replay.md).
 
 ## What it does to stay free and polite
 
@@ -134,5 +138,4 @@ Exit codes: 0 every skill met the G1 line; 1 one did not, or the router was unre
 - **The fixtures are small and clean**: fourteen short documents. Real folders are harder to search.
 - **The expected facts are lenient in one way**: an answer that mentions the right value in a wrong sentence scores as right. Typed facts are strict on values, so a wrong date in another form is still wrong.
 - **The router-build check can say `unknown`** for a whole batch answered by models without a floor or reasoning setting.
-- **Allowances change.** Compare nights with the CSV.
-- **Not run here against real providers.** The changes of 2026-11-13 were tested with the fake router only.
+- **Allowances change.** Compare nights with the CSV. The full run of 2026-11-13 is in `docs/reviews/gate1-full-2026-11-13.md` (about 900 requests, and the free allowances ran out). Repeat a recorded sample with `--replay` so a later check of the same tasks spends nothing.

@@ -594,14 +594,14 @@ def scenario_min_output_tokens() -> None:
 
 
 def scenario_reasoning() -> None:
-    """`reasoning` is rendered as model_info.muse_reasoning only where declared, and only where LiteLLM passes it on."""
+    """`reasoning` is rendered as model_info.muse_reasoning only where declared.
+
+    Whether LiteLLM actually forwards that parameter is checked where LiteLLM is
+    installed (`tests/integration/test_reasoning_param_supported.py`). This script stays runnable with PyYAML alone,
+    which is what the validate job and the unit job have.
+    """
     import copy
     from datetime import date
-
-    try:  # the keyless config check runs with PyYAML alone; the LiteLLM half runs wherever LiteLLM is installed
-        import litellm
-    except ImportError:
-        litellm = None
 
     from muse import catalog as catalog_mod
 
@@ -609,18 +609,12 @@ def scenario_reasoning() -> None:
     keys = {str(p["env"]): "k" for p in catalog["providers"] if p.get("env")}
     keys.update({str(n): "a" * 32 for p in catalog["providers"] for n in p.get("also_env") or []})
     config, _ = render(catalog, env_with(MUSE_ALLOW_PAID_FALLBACK="true", **keys))
-    declared = {str(d["id"]): (p, d, catalog_mod.reasoning_for(d)) for p in catalog["providers"] for d in p.get("deployments") or []}
-    check(any(r for _, _, r in declared.values()), "no shipped deployment declares reasoning")
+    declared = {str(d["id"]): catalog_mod.reasoning_for(d) for p in catalog["providers"] for d in p.get("deployments") or []}
+    check(any(declared.values()), "no shipped deployment declares reasoning")
     for entry in config["model_list"]:
         info = entry["model_info"]
-        _, _, want = declared[str(info["id"]).split("__")[0]]
+        want = declared[str(info["id"]).split("__")[0]]
         check(info.get("muse_reasoning") == want, f"{info['id']}: muse_reasoning {info.get('muse_reasoning')!r}, the catalogue says {want!r}")
-    for dep_id, (provider, dep, want) in declared.items():
-        if not want or litellm is None:
-            continue
-        route, _, model = str(dep["model"]).partition("/")
-        supported = litellm.get_supported_openai_params(model=model, custom_llm_provider=route) or []
-        check(want["param"] in supported, f"{dep_id}: LiteLLM drops {want['param']} for {route}/, so the setting would do nothing")
     broken = copy.deepcopy(catalog)
     target = next(p for p in broken["providers"] if p["id"] == "cohere")
     for bad in ({"param": "thinking", "light": "low"}, {"param": "reasoning_effort"}, {"param": "reasoning_effort", "light": "none"},

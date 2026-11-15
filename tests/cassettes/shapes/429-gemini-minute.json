@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "match": "34733776adf0784cd01b5176e104fff631cd6b59673ef9d937105382283c39e6",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "body_sha256": "c0cdc9a6f3eb754ae70f4fee92a630f4ce65ba918f3e58e8b35bce6d14a711be",
+    "model": "gemini-minute",
+    "max_tokens": 32,
+    "messages": 1
+  },
+  "response": {
+    "status": 429,
+    "elapsed_ms": 0,
+    "headers": [
+      [
+        "server",
+        "BaseHTTP/0.6 Python/3.12.3"
+      ],
+      [
+        "date",
+        "Fri, 13 Nov 2026 16:41:16 GMT"
+      ],
+      [
+        "content-type",
+        "application/json"
+      ],
+      [
+        "retry-after",
+        "7"
+      ]
+    ],
+    "body": "{\"error\": {\"code\": 429, \"status\": \"RESOURCE_EXHAUSTED\", \"message\": \"quota\", \"details\": [{\"violations\": [{\"quotaId\": \"GenerateRequestsPerMinutePerProjectPerModel-FreeTier\"}]}, {\"@type\": \"type.googleapis.com/google.rpc.RetryInfo\", \"retryDelay\": \"7s\"}]}}"
+  }
+}

@@ -409,6 +409,15 @@ def classify_cases() -> list[tuple[str, Any, Any, list[tuple[str, Any]] | None, 
         ("generic epoch-ms reset", "novita", 429, {"x-ratelimit-reset": ms(90)}, ""),
         ("bare 429", "deepseek", 429, {}, ""),
         ("unicode body", "gemini", 429, {}, "配额已用尽 ١٢"),
+        # unclassified 429: "quota" or "limit", and no clock, waits out the day.
+        # A bare 429 and a word that only looks like those stay at 60s.
+        ("unclassified quota, no clock", "groq", 429, {}, "You exceeded your quota"),
+        ("unclassified limit, no clock", "deepseek", 429, {}, "account limit reached"),
+        ("unclassified quota is pacific for gemini", "gemini", 429, {}, "quota exceeded"),
+        ("quota word with a clock stays short", "groq", 429, {}, "quota exceeded, please try again in 2s"),
+        ("rate limit with retry-after stays short", "groq", 429, {"retry-after": "4"}, "rate limit reached"),
+        ("unlimited is not the word limit", "x", 429, {}, "unlimited plan"),
+        ("quotaId is not the word quota", "gemini", 429, {}, "quotaId: nope"),
         # the other tests in that file
         ("groq RPD text, estimated", "groq", 429, {}, "you hit requests per day (RPD)"),
         ("401 with no body", "groq", 401, {}, ""),

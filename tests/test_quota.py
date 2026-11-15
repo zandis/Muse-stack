@@ -183,6 +183,13 @@ COHERE_TRIAL = ("You are using a Trial key, which is limited to 1000 API calls /
         ("generic epoch-ms reset", "novita", 429, {"x-ratelimit-reset": str(int((NOW + 90) * 1000))}, "", "upstream", "cooldown", NOW + 90),
         ("bare 429", "deepseek", 429, {}, "", "upstream", "cooldown", NOW + 60),
         ("unicode body", "gemini", 429, {}, "配额已用尽 ١٢", "upstream", "cooldown", NOW + 60),
+        ("unclassified quota", "groq", 429, {}, "You exceeded your quota", "upstream", "exhausted", ts("2026-11-13T00:00:00")),
+        ("unclassified limit", "deepseek", 429, {}, "account limit reached", "upstream", "exhausted", ts("2026-11-13T00:00:00")),
+        ("unclassified quota gemini pacific", "gemini", 429, {}, "quota exceeded", "upstream", "exhausted", ts("2026-11-12T08:00:00")),
+        ("quota with a clock stays short", "groq", 429, {}, "quota exceeded, please try again in 2s", "upstream", "cooldown", NOW + 2),
+        ("unlimited is not limit", "x", 429, {}, "unlimited plan", "upstream", "cooldown", NOW + 60),
+        ("quotaId is not the word", "gemini", 429, {}, "quotaId: nope", "upstream", "cooldown", NOW + 60),
+        ("per-minute wording with no clock", "cohere", 429, {}, "Trial key rate limit: 20 per minute", "upstream", "exhausted", ts("2026-11-13T00:00:00")),
     ],
 )
 def test_classify_failure(case, provider, status, headers, body, scope, kind, until):
@@ -203,6 +210,28 @@ def test_estimated_resets_say_so():
     other = classify_failure("groq", 429, {}, "you hit requests per day (RPD)", NOW)
     assert "estimated" in other.reason and other.until == ts("2026-11-13T00:00:00")
     assert "key" in classify_failure("groq", 401, {}, "", NOW).reason
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "Gemini PerDay is still scoped to one upstream, so one model's daily cap leaves the other "
+        "Gemini deployments eligible. The catalogue says the limit is per project and per model, and "
+        "no captured response shows it is project-wide. Widen to provider scope only after a cassette "
+        "shows that. docs/reviews/2026-11-13-dsh-our-free-model-ideas.md gap 2."
+    ),
+)
+def test_gemini_per_day_blocks_every_gemini_deployment():
+    block = classify_failure("gemini", 429, {}, GEMINI_DAY, NOW)
+    assert block is not None and block.scope == "provider"
+
+
+def test_http_200_is_not_classified_even_when_the_body_is_an_error_frame():
+    """Gap 3, the classifier half: status 200 never becomes a block. The frame would, at 429."""
+    frame = 'data: {"error":{"message":"You exceeded your quota","code":429}}'
+    assert classify_failure("groq", 200, {}, frame, NOW) is None
+    block = classify_failure("groq", 429, {}, frame, NOW)
+    assert block is not None and block.kind == "exhausted" and block.until == ts("2026-11-13T00:00:00")
 
 
 def test_block_key():

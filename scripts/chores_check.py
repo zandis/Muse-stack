@@ -969,7 +969,8 @@ def run(args: argparse.Namespace, env: dict[str, str]) -> int:
         "privacy": args.privacy, "paid_usd": 0, "app": "skills",
         "options": {"runs": args.runs, "sample": args.sample, "seed": args.seed, "only": sorted(only), "delay": args.delay,
                     "max_wait": args.max_wait, "resume": bool(args.resume), "keep_outputs": bool(args.keep_outputs),
-                    "keep_failures": bool(args.keep_failures), "only_kinds": sorted(kinds_wanted), "max_requests": args.max_requests},
+                    "keep_failures": bool(args.keep_failures), "only_kinds": sorted(kinds_wanted), "max_requests": args.max_requests,
+                    "replay": args.replay, "record": args.record},
         "skills": {}, "skipped": [], "runs": dict(kept), "stopped": None, "verdict": {},
         "router": {"build": "unknown", "warned": False}, "allowance": {"start": allowance(env), "end": None},
         "requests_used": 0,
@@ -1000,8 +1001,53 @@ def run(args: argparse.Namespace, env: dict[str, str]) -> int:
             "version": skill.version, "tasks": len(chosen), "set": set_hash(chosen, tasks_dir),
             "budget": {"requests": skill.budget.requests, "tokens": skill.budget.tokens, "seconds": skill.budget.seconds}}
 
-    print("Muse chores check: what this will send")
+    replay_proxy = None
+    record_post = None
+    if args.replay:
+        from muse import cassette
+
+        replay_dir = Path(args.replay)
+        if not replay_dir.is_dir():
+            print(f"No cassette directory: {replay_dir}", file=sys.stderr)
+            return EXIT_USAGE
+        try:
+            replay_proxy = cassette.Proxy("replay", replay_dir).start()
+        except OSError as exc:
+            print(f"The replay proxy did not start ({type(exc).__name__}).", file=sys.stderr)
+            return EXIT_USAGE
+        env = dict(env)
+        env["MUSE_PROXY_URL"] = replay_proxy.origin
+        env["MUSE_PROVIDER_MODE"] = "replay"
+        env["MUSE_CASSETTE_DIR"] = str(replay_dir)
+    if args.record:
+        from muse import cassette
+        from muse.skills.llm import http_post
+
+        record_dir = Path(args.record)
+        store = cassette.Store(record_dir)
+
+        def record_post(url: str, headers: Mapping[str, str], body: bytes, timeout: float, _post=http_post, _store=store):  # type: ignore[no-redef]
+            started = time.perf_counter()
+            reply = _post(url, headers, body, timeout)
+            if reply.status != 0:
+                path = url.split("://", 1)[-1]
+                path = "/" + path.split("/", 1)[1] if "/" in path else "/"
+                _store.save_call("POST", path, body, reply.status, reply.headers, reply.body, int((time.perf_counter() - started) * 1000))
+            return reply
+
+    def _close(code: int) -> int:
+        if replay_proxy is not None:
+            replay_proxy.stop()
+        return code
+
+    if args.replay:
+        print(f"Muse chores check: replaying cassettes from {args.replay}")
+        print("  no provider is called, and nothing is added to a free-tier quota")
+    else:
+        print("Muse chores check: what this will send")
     print(f"  router: {runner.proxy_url(env)}   app: skills (never paid)   privacy: {args.privacy}")
+    if args.record:
+        print(f"  recording each router exchange to {args.record} (request fingerprints and responses; no API key, no auth header)")
     total_runs = total_requests = total_tokens = 0
     for name, todo in work.items():
         budget = report["skills"][name]["budget"]
@@ -1029,14 +1075,14 @@ def run(args: argparse.Namespace, env: dict[str, str]) -> int:
         print("  free allowance today (from the local ledger): " + allowance_line(start))
     if total_runs == 0:
         print("Nothing to run.")
-        return finish(report, report_path, planned, found, {}, env)
+        return _close(finish(report, report_path, planned, found, {}, env))
     if not args.yes:
         if not sys.stdin.isatty():
             print("Not a terminal: pass --yes to confirm.", file=sys.stderr)
-            return EXIT_USAGE
+            return _close(EXIT_USAGE)
         if input("Proceed? [y/N] ").strip().lower() not in ("y", "yes"):
             print("Nothing was sent.")
-            return EXIT_OK
+            return _close(EXIT_OK)
     print()
 
     # ---- the runs: one at a time
@@ -1049,14 +1095,14 @@ def run(args: argparse.Namespace, env: dict[str, str]) -> int:
                 report["stopped"] = "request-cap"
                 print(f"  stopped: {report['requests_used']} of the {args.max_requests}-request cap used; the next run could "
                       f"take up to {entry['budget']['requests']} more. --resume continues later.")
-                return finish(report, report_path, planned, found, work, env)
+                return _close(finish(report, report_path, planned, found, work, env))
             if not first and args.delay > 0:
                 _sleep(args.delay)
             first = False
             folders = [tasks_dir / FIXTURES / folder for folder in task.get("folders", [])]
             began = time.monotonic()
             result = runner.run(name, task["inputs"], folders=folders, privacy=args.privacy, budget={"paid_usd": 0},
-                                environ=env, wait_up_to=args.max_wait)
+                                environ=env, wait_up_to=args.max_wait, **({"post": record_post} if record_post else {}))
             record = record_of(task, repeat, result, time.monotonic() - began, args.keep_outputs)
             report["runs"][key_of(task, repeat)] = record
             report["requests_used"] += record["requests"]
@@ -1087,21 +1133,21 @@ def run(args: argparse.Namespace, env: dict[str, str]) -> int:
                 print("!! `skills` app (it must not be allowed to pay) before running this again.", file=sys.stderr)
                 print("!" * 78, file=sys.stderr)
                 finish(report, report_path, planned, found, work, env)
-                return EXIT_SPENT
+                return _close(EXIT_SPENT)
             deferred_streak = deferred_streak + 1 if record["outcome"] == "deferred" else 0
             unreachable_streak = unreachable_streak + 1 if record["outcome"] == "no-router" else 0
             if unreachable_streak >= UNREACHABLE_STOP:
                 report["stopped"] = "no-router"
                 print("\nThe router could not be reached. Start it with `muse up`, then run this again with --resume.", file=sys.stderr)
                 finish(report, report_path, planned, found, work, env)
-                return EXIT_NOT_MET
+                return _close(EXIT_NOT_MET)
             if deferred_streak >= args.stop_after:
                 entry["stopped"] = f"{deferred_streak} runs in a row were deferred; the free allowance for this skill is used up for now"
                 print(f"  {name}: stopped after {deferred_streak} deferred runs in a row; --resume continues it later.")
                 break
             if index % 5 == 0:
                 write_report(report, report_path)
-    return finish(report, report_path, planned, found, work, env)
+    return _close(finish(report, report_path, planned, found, work, env))
 
 
 def finish(report: dict[str, Any], path: Path, planned: Mapping[str, int], found: Mapping[str, list[dict[str, Any]]],
@@ -1154,6 +1200,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tasks-dir", metavar="DIR", help="read task files and fixtures from here instead of evals/chores")
     parser.add_argument("--check-tasks", action="store_true", help="only validate the task files against the fixtures; sends nothing")
     parser.add_argument("--quiet", action="store_true", help="no line per run")
+    parser.add_argument("--replay", metavar="DIR", help="answer every model call from cassettes in DIR; no provider and no router is called")
+    parser.add_argument("--record", metavar="DIR", help="write a cassette for each router exchange into DIR, then continue against the live router")
     return parser
 
 
@@ -1170,6 +1218,9 @@ def main(argv: list[str] | None = None, environ: Mapping[str, str] | None = None
         return EXIT_USAGE
     if args.max_requests is not None and args.max_requests < 1:
         print("--max-requests must be 1 or more.", file=sys.stderr)
+        return EXIT_USAGE
+    if args.replay and args.record:
+        print("Pass either --replay or --record, not both. Record first, then replay that directory.", file=sys.stderr)
         return EXIT_USAGE
     return run(args, merged_env(environ))
 

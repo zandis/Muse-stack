@@ -36,6 +36,18 @@ Fixed the same day, kept here as a record of what local testing missed:
 - The home and dashboard servers answered a badly broken request with no status line on Python 3.12.
 - Deployment scripts had warnings from a checker that was not installed locally.
 
+## Router classification (13 November 2026)
+
+From the review on PR #8 (`docs/reviews/2026-11-13-dsh-our-free-model-ideas.md`). The checks are in `tests/test_quota.py`, `tests/test_router_fidelity.py`, `tests/test_hook_unit.py` and `tests/integration/test_fakeprov_router.py`. How to capture a real response and replay it is in `docs/testing/fidelity-and-replay.md`.
+
+| Gap | Where it stands |
+|---|---|
+| A 429 whose text says "quota" or "limit" and names no clock | Fixed. The upstream is exhausted until the estimated daily reset (midnight Pacific for Gemini, UTC midnight otherwise). A bare 429, with neither word, stays a 60 second cooldown. |
+| Gemini PerDay blocks only the model that returned it | Open. The catalogue says the limit is per project and per model. The block stays on that one upstream until a cassette shows the cap is project-wide. The desired test is `xfail(strict=True)`. |
+| An error frame inside an HTTP 200 SSE stream | Open. The failure hook is the only place that classifies, and a 200 never arrives there, so the upstream stays eligible and the fallback is not taken. The desired test is `xfail(strict=True)`. |
+
+A 403 whose message says the quota is used up is still the bad-key rule: the whole provider, for 15 minutes. Empty visible text from a reasoning model with a small `max_tokens` is the output floor in `muse/hook.py` (1,024 on the gpt-oss deployments); the fake provider covers that shape.
+
 ## Never verified against the real thing
 
 Each of these is tested only against a stand-in. They are gaps until a real run says otherwise; `docs/vm-test-plan.md` says how.
