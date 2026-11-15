@@ -324,9 +324,9 @@ test('first run with the one-tap flow: welcome → connect → try it → the an
     for (const layout of LAYOUTS) {
       const { context, page, w } = await newPage(browser, stack, layout, lang);
       if (first) {
-        // Nothing is connected yet: Today's "Connect your first service" leads into the first run.
+        // A fresh home with nothing connected: opening the app goes straight into the first run.
         await page.goto('/today');
-        await page.getByTestId('nothing-connected').getByRole('link').click();
+        await expect(page).toHaveURL(/\/welcome$/);
         first = false;
       } else {
         await page.goto('/welcome');
@@ -355,6 +355,30 @@ test('first run with the one-tap flow: welcome → connect → try it → the an
       await context.close();
     }
   }
+  expect((await stack.home('GET', '/v1/settings')).body.settings.first_run).toBe('done');
+});
+
+test('first run opens by itself once; "Skip for now" is remembered on the home, and Today keeps its empty state', async ({ browser, fresh }) => {
+  const stack = await fresh('empty');
+  expect((await stack.home('GET', '/v1/settings')).body.settings.first_run).toBe('pending');
+  const one = await newPage(browser, stack, LAYOUTS[0], LANGS[1]);
+  await one.page.goto('/today');
+  await expect(one.page).toHaveURL(/\/welcome$/);
+  await expect(one.page.getByTestId('first-run')).toHaveAttribute('data-step', 'welcome');
+  await one.page.getByTestId('fr-skip').click();
+  await expect(one.page.getByTestId('nothing-connected')).toBeVisible();
+  await expect.poll(async () => (await stack.home('GET', '/v1/settings')).body.settings.first_run).toBe('skipped');
+  await check(one.page, one.w);
+  await one.context.close();
+  // A new browser (nothing in its storage) on the same home: Today, not the first run.
+  const two = await newPage(browser, stack, LAYOUTS[1], LANGS[1]);
+  await two.page.goto('/today');
+  await expect(two.page.getByTestId('nothing-connected')).toBeVisible();
+  await two.page.waitForTimeout(500);
+  await expect(two.page).toHaveURL(/\/today$/);
+  await expect(two.page.getByTestId('first-run')).toHaveCount(0);
+  await check(two.page, two.w);
+  await two.context.close();
 });
 
 test('For apps: the address, a new program, its key copied and never shown', async ({ browser, fresh }) => {

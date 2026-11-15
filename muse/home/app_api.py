@@ -1256,7 +1256,18 @@ def _settings(home: Any) -> dict[str, Any]:
         "currencies": list(app_money.CURRENCIES), "languages": list(LANGS),
         "privacy_choices": ["standard", "private", "local"],
         "restart_pending": bool(b._restart_pending),  # noqa: SLF001
+        "first_run": first_run_state(env),
     }
+
+
+FIRST_RUN_NAME = "MUSE_FIRST_RUN"
+FIRST_RUN_ENDS = ("done", "skipped")
+
+
+def first_run_state(env: Mapping[str, str]) -> str:
+    """`pending` until the first-run flow is finished (`done`) or skipped (`skipped`); it never goes back."""
+    value = str(env.get(FIRST_RUN_NAME, "") or "").strip().lower()
+    return value if value in FIRST_RUN_ENDS else "pending"
 
 
 def h_settings_get(home: Any, req: Any) -> tuple[int, dict[str, Any]]:
@@ -1268,7 +1279,7 @@ def h_settings_patch(home: Any, req: Any) -> tuple[int, dict[str, Any]]:
     """Change settings. Written to the home's settings file; a provider key is never written here."""
     body = req.body
     api._fields(body, {"daily_limit_local": (int, float, str), "default_privacy": str, "language": str, "currency": str,
-                       "usd_rate": (int, float, str)})
+                       "usd_rate": (int, float, str), "first_run": str})
     if not body:
         raise api.ApiError("invalid_request", "Send at least one setting to change.")
     b = backend(home)
@@ -1311,6 +1322,12 @@ def h_settings_patch(home: Any, req: Any) -> tuple[int, dict[str, Any]]:
             raise api.ApiError("invalid_request", f"language must be one of {', '.join(LANGS)}.")
         writes.append(("MUSE_LANG", body["language"]))
         changed.append("language")
+    if "first_run" in body:
+        if body["first_run"] not in FIRST_RUN_ENDS:
+            raise api.ApiError("invalid_request", "first_run must be done or skipped; it cannot be started again.")
+        if first_run_state(env) == "pending":  # finished or skipped once is final: the first value stays
+            writes.append((FIRST_RUN_NAME, body["first_run"]))
+        changed.append("first_run")
     try:
         for name, value in writes:
             b.write_setting(name, value)

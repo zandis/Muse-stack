@@ -2836,6 +2836,13 @@ components:
         languages: {type: array, items: {type: string}}
         privacy_choices: {type: array, items: {type: string}}
         restart_pending: {type: boolean}
+        first_run:
+          type: string
+          enum: [pending, done, skipped]
+          description: |
+            Whether the first-run flow (docs/spec/02-ux.md section 3) has been finished or skipped on this home.
+            The app opens it by itself only while this is `pending` and no service is connected. Once `done`
+            or `skipped`, it stays so.
 
     SettingsReply:
       type: object
@@ -2856,6 +2863,7 @@ components:
         language: {type: string, enum: [en, zh-TW]}
         currency: {type: string, enum: [TWD, USD, JPY, KRW]}
         usd_rate: {type: [number, string], description: Units of the currency per US dollar.}
+        first_run: {type: string, enum: [done, skipped], description: The first-run flow was finished or skipped. The first value sent is kept.}
 
     Memory:
       type: object

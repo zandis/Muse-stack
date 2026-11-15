@@ -750,6 +750,24 @@ def test_settings_are_read_and_changed_through_the_settings_file(home, tmp_path)
     assert_error(*call(home, "PATCH", "/v1/settings", {"language": "en"}, VIEWER), 403, "forbidden")
 
 
+def test_first_run_is_remembered_on_the_home_and_never_starts_again(home, tmp_path):
+    assert ok(home, "GET", "/v1/settings")["settings"]["first_run"] == "pending"
+    got = ok(home, "PATCH", "/v1/settings", {"first_run": "skipped"})
+    assert got["changed"] == ["first_run"] and got["restart"]["needed"] is False and got["settings"]["first_run"] == "skipped"
+    assert "MUSE_FIRST_RUN=skipped" in (tmp_path / "settings.env").read_text()
+    # Finishing later does not change it back, and it can never be started again through the API.
+    assert ok(home, "PATCH", "/v1/settings", {"first_run": "done"})["settings"]["first_run"] == "skipped"
+    for body in ({"first_run": "pending"}, {"first_run": ""}, {"first_run": True}):
+        assert_error(*call(home, "PATCH", "/v1/settings", body), 400, "invalid_request")
+    assert ok(home, "GET", "/v1/settings")["settings"]["first_run"] == "skipped"
+    assert_error(*call(home, "PATCH", "/v1/settings", {"first_run": "done"}, VIEWER), 403, "forbidden")
+
+
+def test_first_run_done(home):
+    assert ok(home, "PATCH", "/v1/settings", {"first_run": "done"})["settings"]["first_run"] == "done"
+    assert app_api.first_run_state({"MUSE_FIRST_RUN": "nonsense"}) == "pending"
+
+
 def test_memory_is_an_honest_stub_and_forget_erases_the_conversations(home):
     script(home, reply(200, {"x-muse-provider": "groq"}, text="hi"))
     ok(home, "POST", "/v1/ask", {"text": CANARY})
