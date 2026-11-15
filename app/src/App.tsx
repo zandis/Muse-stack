@@ -49,10 +49,10 @@ function Routes() {
   );
 }
 
-export function App({ client, appClient }: { client: HomeClient; appClient: AppClient }) {
+export function App({ client, appClient, now }: { client: HomeClient; appClient: AppClient; now?: () => number }) {
   return (
     <I18nProvider>
-      <StoreProvider client={client}>
+      <StoreProvider client={client} {...(now !== undefined ? { now } : {})}>
         <AppClientProvider client={appClient}>
           <RouterProvider>
             <Routes />
