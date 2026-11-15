@@ -424,3 +424,22 @@ def test_validator_refuses_an_unpinned_compose_image(tmp_path, monkeypatch):
     (tmp_path / "docker-compose.yml").write_text(f"services:\n  litellm:\n    image: ghcr.io/berriai/litellm:main-stable@{AMD}\n")
     with pytest.raises(vc.Failure, match="floating"):
         vc.scenario_supply_chain()
+
+
+def test_validator_holds_the_pdf_extra_to_its_hash_locked_pin(tmp_path, monkeypatch):
+    pytest.importorskip("yaml")
+    import validate_config as vc
+
+    vc.scenario_optional_extras()  # the repo as it stands passes
+    (tmp_path / "requirements").mkdir()
+    lock = (ROOT / "requirements" / "pdf.lock").read_text(encoding="utf-8")
+    (tmp_path / "requirements" / "pdf.lock").write_text(lock, encoding="utf-8")
+    monkeypatch.setattr(vc, "ROOT", tmp_path)
+    (tmp_path / "pyproject.toml").write_text('[project.optional-dependencies]\npdf = ["pypdf>=4"]\n', encoding="utf-8")
+    with pytest.raises(vc.Failure, match="exactly one"):
+        vc.scenario_optional_extras()
+    (tmp_path / "pyproject.toml").write_text('[project.optional-dependencies]\npdf = ["pypdf==7.0.1"]\n', encoding="utf-8")
+    vc.scenario_optional_extras()
+    (tmp_path / "requirements" / "pdf.lock").write_text(lock.replace("--hash=sha256:", "--nohash="), encoding="utf-8")
+    with pytest.raises(vc.Failure, match="no hash"):
+        vc.scenario_optional_extras()

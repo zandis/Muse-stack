@@ -769,6 +769,54 @@ def scenario_supply_chain() -> None:
                     check(version == pins[0], f"{rel} installs litellm=={version}, but requirements/proxy.lock pins {pins[0]}")
 
 
+def lock_hash_problems(lock_text: str) -> list[str]:
+    """Requirements in a lock file without a `--hash=sha256:` line: `pip install --require-hashes` would refuse them."""
+    problems = []
+    for block in re.split(r"\n(?=[A-Za-z0-9])", lock_text):
+        first = block.splitlines()[0] if block.strip() else ""
+        if first and not first.startswith("#") and "--hash=sha256:" not in block:
+            problems.append(first.split()[0])
+    return problems
+
+
+def extra_pin_problems(pyproject_text: str, lock_text: str, extra: str, package: str) -> list[str]:
+    """An optional extra must pin its package exactly, to the version its lock file holds, with hashes."""
+    line = re.search(rf"^{re.escape(extra)}\s*=\s*\[(.*)\]\s*$", pyproject_text, re.MULTILINE)
+    if line is None:
+        return [f"pyproject.toml has no `{extra}` extra"]
+    specs = re.findall(r"""["']([^"']+)["']""", line.group(1))
+    pinned = [m.group(1) for spec in specs if (m := re.fullmatch(rf"{re.escape(package)}==(\d[\w.]*)", spec.strip()))]
+    if len(pinned) != 1 or len(specs) != 1:
+        return [f"the `{extra}` extra must be exactly one `{package}==<version>`, got {specs}"]
+    locked = re.findall(rf"^{re.escape(package)}==(\S+)", lock_text, re.MULTILINE)
+    if locked != [pinned[0]]:
+        return [f"the `{extra}` extra pins {package}=={pinned[0]} but its lock file pins {locked or 'nothing'}"]
+    return [f"lock file: {name} has no hash" for name in lock_hash_problems(lock_text)]
+
+
+def scenario_optional_extras() -> None:
+    """Optional dependencies follow the same rule as LiteLLM: an exact version, hash-locked, one version everywhere.
+
+    pypdf (the `pdf` extra) parses PDFs from the person's folders, which are untrusted input; a moved version could
+    bring a parser nobody here has read the licence of or tested.
+    """
+    check(extra_pin_problems('pdf = ["pypdf>=4"]', "pypdf==7.0.1 \\\n    --hash=sha256:aa\n", "pdf", "pypdf"),
+          "the extra rule accepted an open range")
+    check(extra_pin_problems('pdf = ["pypdf==7.0.0"]', "pypdf==7.0.1 \\\n    --hash=sha256:aa\n", "pdf", "pypdf"),
+          "the extra rule accepted a version the lock does not hold")
+    check(extra_pin_problems('pdf = ["pypdf==7.0.1"]', "pypdf==7.0.1\n", "pdf", "pypdf"), "the extra rule accepted a lock without hashes")
+    check(not extra_pin_problems('pdf = ["pypdf==7.0.1"]', "# c\npypdf==7.0.1 \\\n    --hash=sha256:aa\n", "pdf", "pypdf"),
+          "the extra rule refused a good pin")
+    for lock in sorted((ROOT / "requirements").glob("*.lock")):
+        missing = lock_hash_problems(lock.read_text(encoding="utf-8"))
+        check(not missing, f"requirements/{lock.name}: no hash for " + ", ".join(missing[:5]))
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    pdf_lock = ROOT / "requirements" / "pdf.lock"
+    check(pdf_lock.is_file(), "requirements/pdf.lock is missing")
+    problems = extra_pin_problems(pyproject, pdf_lock.read_text(encoding="utf-8"), "pdf", "pypdf")
+    check(not problems, "; ".join(problems))
+
+
 def main() -> int:
     steps = [
         scenario_hook_callback,
@@ -791,6 +839,7 @@ def main() -> int:
         scenario_reasoning,
         scenario_native_retry_after,
         scenario_supply_chain,
+        scenario_optional_extras,
     ]
     for step in steps:
         try:
