@@ -55,12 +55,11 @@ if str(ROOT) not in sys.path:
 from muse import catalog  # noqa: E402
 
 # --------------------------------------------------------------------------
-# THE ONE LICENCE SETTING. The repository has no licence file and the owner has
-# not chosen one for the catalogue. Leave this as None until they do; then set
-# it to one of the SPDX ids in LICENCE_OPTIONS. `--release` refuses to run
-# while it is None, so the files can be generated and reviewed but not released
-# by accident.
-LICENCE_SPDX: str | None = None
+# THE ONE LICENCE SETTING. Chosen by the owner on 2026-11-15: the published
+# catalogue is CC BY 4.0 (text in catalogue/LICENSE); the code is Apache-2.0
+# (LICENSE at the repository root). Setting this back to None makes
+# `--release` refuse to run.
+LICENCE_SPDX: str | None = "CC-BY-4.0"
 # --------------------------------------------------------------------------
 
 LICENCE_UNDECIDED = "licence to be chosen by the owner before publication"

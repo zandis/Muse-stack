@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "How the Muse app reaches the home: HTTP/1.1 over the home's private Unix socket, with the device token added here and never shown to the web view. No Tauri, no system libraries, so it builds and tests anywhere."
 publish = false
+license = "Apache-2.0"
 
 [dependencies]
 # Pinned exactly; the lock file (../../Cargo.lock) pins everything below these.

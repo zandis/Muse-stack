@@ -254,19 +254,27 @@ def test_guard_refuses_internal_field_names():
 # ------------------------------------------------------------------ licence
 
 
-def test_licence_is_undecided_and_said_plainly():
-    assert pub.LICENCE_SPDX is None and not any((ROOT / n).exists() for n in ("LICENSE", "LICENCE", "LICENSE.md", "LICENCE.md", "COPYING"))
+def test_the_chosen_licence_is_stated_and_its_texts_are_in_the_repository():
+    """The owner chose on 2026-11-15: the published catalogue is CC BY 4.0, the code Apache-2.0."""
+    assert pub.LICENCE_SPDX == "CC-BY-4.0"
+    assert "Apache License" in (ROOT / "LICENSE").read_text(encoding="utf-8")[:200]
+    assert (OUT / "LICENSE").read_text(encoding="utf-8").startswith("Attribution 4.0 International")
     licence = DOC["licence"]
-    assert licence["status"] == "undecided" and licence["spdx"] is None
-    assert licence["statement"] == "licence to be chosen by the owner before publication"
+    assert licence["status"] == "chosen" and licence["spdx"] == "CC-BY-4.0" and licence["statement"] == "Licensed under CC-BY-4.0."
     assert [o["spdx"] for o in licence["options"]] == ["CC0-1.0", "CC-BY-4.0"] and all(o["summary"] for o in licence["options"])
     doc = (ROOT / "docs" / "catalogue.md").read_text(encoding="utf-8")
-    assert "licence to be chosen by the owner before publication" in doc.lower() and "CC0-1.0" in doc and "CC BY 4.0" in doc
-    assert DOC["release"] == {"status": "draft", "released_on": None}
+    assert "CC BY 4.0" in doc and "catalogue/LICENSE" in doc and "Apache-2.0" in doc
+    assert "## Licence" in (ROOT / "README.md").read_text(encoding="utf-8")
+    assert DOC["release"] == {"status": "draft", "released_on": None}  # choosing a licence is not releasing
     assert not (OUT / pub.RELEASES).exists()
 
 
-def test_release_is_refused_while_the_licence_is_undecided(tmp_path):
+def test_an_undecided_licence_is_said_plainly_and_release_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(pub, "LICENCE_SPDX", None)
+    monkeypatch.setattr(cli, "_publisher", lambda: pub)  # the command line loads its own copy of the script
+    licence = pub.licence_block()
+    assert licence["status"] == "undecided" and licence["spdx"] is None
+    assert licence["statement"] == "licence to be chosen by the owner before publication"
     lines: list[str] = []
     assert pub.run(out_dir=tmp_path, release=True, say=lines.append) == 2
     assert "refusing to release" in lines[0] and "licence to be chosen by the owner" in lines[0] and "LICENCE_SPDX" in lines[0]

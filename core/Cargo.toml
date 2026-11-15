@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Portable core of Muse: the pure quota, pacing and cache-key rules, kept in step with the Python implementation by a conformance suite."
 publish = false
+license = "Apache-2.0"
 
 [lib]
 name = "muse_core"

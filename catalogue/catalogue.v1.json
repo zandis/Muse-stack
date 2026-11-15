@@ -8,9 +8,9 @@
     "released_on": null
   },
   "licence": {
-    "status": "undecided",
-    "spdx": null,
-    "statement": "licence to be chosen by the owner before publication",
+    "status": "chosen",
+    "spdx": "CC-BY-4.0",
+    "statement": "Licensed under CC-BY-4.0.",
     "options": [
       {
         "spdx": "CC0-1.0",

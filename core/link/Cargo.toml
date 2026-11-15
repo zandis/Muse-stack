@@ -5,6 +5,7 @@ edition = "2021"
 rust-version = "1.91"
 description = "The Muse device link: devices of one person reach each other by public key over iroh (no open ports), and a new device is paired with a QR code, a one-time secret and a four-word check. Networking lives here so that muse-core stays pure."
 publish = false
+license = "Apache-2.0"
 
 # Its own workspace root, with its own lock file (core/link/Cargo.lock).
 # The pure core (core/Cargo.toml, core/Cargo.lock) does not know this crate

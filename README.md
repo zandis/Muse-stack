@@ -615,3 +615,10 @@ Every test gets its own `MUSE_HOME` and temporary folders and binds port 0, and 
 | `docker-compose.spend.yml` | Optional Postgres |
 | `.env.example` | Every variable and the page that issues the key |
 | `deploy/oracle-cloud.md` | Always Free ARM VM in us-sanjose-1 |
+
+## Licence
+
+- **Code and documentation:** Apache License 2.0. See `LICENSE`.
+- **The published service catalogue** (the files under `catalogue/`): Creative Commons Attribution 4.0 International. See `catalogue/LICENSE` and `docs/catalogue.md`. Credit it as "Muse Stack service catalogue" with a link to this repository, and say what you changed.
+
+Third-party software keeps its own licence; the pinned versions are listed in `requirements/`, `core/Cargo.lock`, `core/link/Cargo.lock` and `app/pnpm-lock.yaml`. Names of AI services belong to their owners and are used only to describe them.

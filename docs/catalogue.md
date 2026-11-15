@@ -6,16 +6,9 @@ The decision to publish it was taken on 2026-11-13 (work package A15). No mainta
 
 ## Licence
 
-**Licence to be chosen by the owner before publication.** The repository has no licence file, and none has been invented here. Until the owner decides, the files can be generated and reviewed, but `--release` refuses to run.
+The published catalogue (the files under `catalogue/`) is licensed **CC BY 4.0**, chosen by the owner on 2026-11-15. The text is in `catalogue/LICENSE`. Anyone may copy and adapt it, provided they credit the source ("Muse Stack service catalogue", with a link to this repository) and say what they changed. The rest of the repository, including the code that builds the catalogue, is Apache-2.0 (`LICENSE` at the root).
 
-The two obvious options:
-
-| Option | What it means |
-|---|---|
-| CC0-1.0 | A public-domain dedication. Anyone may copy and reuse the facts with no conditions. The usual choice for plain facts. |
-| CC BY 4.0 | Free to copy and adapt, provided the source is credited and changes are indicated. |
-
-To choose, set `LICENCE_SPDX` at the top of `scripts/publish_catalogue.py` to `CC0-1.0` or `CC-BY-4.0`, add the matching licence file to the repository, and regenerate. The JSON carries the same statement in its `licence` field.
+The setting is `LICENCE_SPDX` at the top of `scripts/publish_catalogue.py`; the JSON carries the same statement in its `licence` field. The catalogue states facts read from providers' own pages on the dates given; it is not advice, and providers change their terms.
 
 ## The files
 
