@@ -1,0 +1,4 @@
+# Input for requirements/pdf.lock: the optional PDF reader of the files skills (pip install -e ".[pdf]").
+# Pure Python, BSD-3-Clause (the LICENSE file in the 7.0.1 wheel and sdist was read), no dependencies on
+# Python 3.11 and later. Muse works without it and says how many PDFs were skipped.
+pypdf==7.0.1
