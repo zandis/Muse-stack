@@ -412,6 +412,41 @@ def test_the_shipped_files_answer_skill_gives_the_same_result_sandboxed(env, pro
 
 
 @posix
+def test_pdfs_are_read_the_same_way_sandboxed_and_hostile_ones_end_no_run(env, proxy, tmp_path):  # noqa: F811
+    """PDF parsing runs in the skill, so in the locked-down child: the same pages, labels, notes and events as in process."""
+    pytest.importorskip("pypdf")
+    import pdf_fixtures as pf
+
+    specs = pf.specs()
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "lease.pdf").write_bytes(pf.build(specs[("harbour-pdf-en", "mooring-lease.pdf")]))
+    (docs / "合約.pdf").write_bytes(pf.build(specs[("songyuan-pdf-zh", "活動中心租借合約.pdf")]))
+    (docs / "scan.pdf").write_bytes(pf.build(specs[("harbour-pdf-en", "old-notice-scan.pdf")]))
+    (docs / "locked.pdf").write_bytes(pf.build(specs[("songyuan-pdf-zh", "locked-minutes.pdf")]))
+    (docs / "cut.pdf").write_bytes(pf.truncated(pf.build(specs[("harbour-pdf-en", "fuel-prices.pdf")]), 0.05))
+    (docs / "bomb.pdf").write_bytes(pf.build(pf.Spec([pf.Page([("p", "Bomb.")])]), bomb_bytes=100_000_000))
+    answer = json.dumps({"answer": "The monthly mooring fee is 380 dollars [1].",
+                         "claims": [{"quote": "The monthly mooring fee is 380 dollars", "n": 1,
+                                     "says": "The monthly mooring fee is 380 dollars"}], "not_found": False})
+    results = []
+    for mode in ("off", "require" if caps().can_require else "auto"):
+        shutil.rmtree(Path(env["MUSE_HOME"]) / "skills-data", ignore_errors=True)
+        proxy.push(*chat(answer))
+        result, report = sandbox.run_skill("files-answer", {"question": "What is the monthly mooring fee?", "embeddings": "off",
+                                                            "top_k": 1}, roots=[docs], mode=mode, environ=env)
+        results.append(plain(result))
+    first = results[0]
+    assert first["status"] == "partial" and first["check"]["status"] == "passed", first["check"]
+    assert first["output"]["claims"][0]["source"] == "lease.pdf › page 2, paragraph 2"
+    assert sorted(first["notes"]) == sorted(["1 PDF(s) scanned (no text layer), not read: scan.pdf.",
+                                             "1 PDF(s) locked (a password is needed), not read: locked.pdf.",
+                                             "2 PDF(s) could not be read (damaged or not really a PDF): bomb.pdf, cut.pdf."])
+    assert results[1] == first and report.ran == "sandboxed"
+    assert len(proxy.requests) == 2 and proxy.requests[0]["messages"] == proxy.requests[1]["messages"]
+
+
+@posix
 def test_the_shipped_research_report_recovers_empty_answers_the_same_way_sandboxed(env, proxy, tmp_path):  # noqa: F811
     docs = tmp_path / "docs"
     docs.mkdir()
