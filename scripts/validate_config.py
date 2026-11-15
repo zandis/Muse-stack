@@ -598,7 +598,10 @@ def scenario_reasoning() -> None:
     import copy
     from datetime import date
 
-    import litellm
+    try:  # the keyless config check runs with PyYAML alone; the LiteLLM half runs wherever LiteLLM is installed
+        import litellm
+    except ImportError:
+        litellm = None
 
     from muse import catalog as catalog_mod
 
@@ -613,7 +616,7 @@ def scenario_reasoning() -> None:
         _, _, want = declared[str(info["id"]).split("__")[0]]
         check(info.get("muse_reasoning") == want, f"{info['id']}: muse_reasoning {info.get('muse_reasoning')!r}, the catalogue says {want!r}")
     for dep_id, (provider, dep, want) in declared.items():
-        if not want:
+        if not want or litellm is None:
             continue
         route, _, model = str(dep["model"]).partition("/")
         supported = litellm.get_supported_openai_params(model=model, custom_llm_provider=route) or []
