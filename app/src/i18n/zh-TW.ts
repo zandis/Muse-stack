@@ -410,7 +410,6 @@ export const zhTW: Dict = {
   st_limit_b: '小幫手一天花的錢不會超過這個數字。設為 0 就永遠不花錢。',
   st_limit_usd: '約 {0}',
   st_limit_bad: '請輸入 0 以上的金額。',
-  st_limit_router: '小幫手重新啟動後才會用新的上限，在那之前上限是 {0}。',
   st_save: '儲存',
   st_saved: '已儲存。',
   st_failed: '沒有成功，沒有任何改變。',

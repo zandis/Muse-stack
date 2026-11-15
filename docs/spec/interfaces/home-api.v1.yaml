@@ -2355,10 +2355,11 @@ components:
       description: |
         The paid total in the person's currency. The rate is a setting, not a lookup:
         `rate_source` is always `fixed setting`. `daily_limit.source` is `default` until a limit
-        is saved; the default is NT$30 (US$0.9375 at 32). `daily_limit.router_usd` is the cap the
-        router enforces for the same settings, and `in_step` says whether the two agree: they
-        differ on a home that has never stored a key or saved a limit, where the router's own
-        default of US$1.00 still applies to other programs.
+        is saved; the default is NT$30 (US$0.9375 at the fixed rate of 32), which is also the
+        router's own default, so a new home is in step from the start and nothing is written for
+        it. `daily_limit.router_usd` is the cap the router enforces for the same settings, and
+        `in_step` says whether the two agree (a saved limit reaches the router at its next
+        start; see `restart_pending`).
       required: [currency, rate, rate_source, rate_date, spent_today, daily_limit]
       properties:
         currency: {type: string, enum: [TWD, USD, JPY, KRW]}

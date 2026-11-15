@@ -79,37 +79,49 @@ def script(home, *replies: app_ask.RouterReply) -> list[dict]:
 # ---------------------------------------------------------------- money
 
 
-def test_a_new_home_shows_nt30_and_says_the_router_still_has_its_own_default(home):
+def test_a_new_home_shows_nt30_and_the_router_agrees_from_the_start(home):
     money = ok(home, "GET", "/v1/status")["money"]
     assert money["currency"] == "TWD" and money["rate"] == "32" and money["rate_source"] == "fixed setting"
     assert money["rate_date"] == app_money.DEFAULT_RATE_DATE
     assert money["spent_today"] == {"usd": "0.03", "local": "1", "approx": True}  # NT$0.96, shown as about NT$1
-    assert money["daily_limit"] == {"usd": "0.9375", "local": "30", "approx": False, "source": "default", "router_usd": "1.00",
-                                    "in_step": False}
+    assert money["daily_limit"] == {"usd": "0.9375", "local": "30", "approx": False, "source": "default", "router_usd": "0.9375",
+                                    "in_step": True}
 
 
-def test_the_router_default_is_unchanged_and_nothing_is_written_by_reading(home, tmp_path):
-    from muse.ration import parse_paid_cap
+def test_the_router_default_is_the_same_constant_and_nothing_is_written_by_reading(home, tmp_path):
+    from muse.ration import DEFAULT_PAID_CAP_USD, Settings, parse_paid_cap
 
-    assert parse_paid_cap(None) == Decimal("1.00") and parse_paid_cap("") == Decimal("1.00")
+    assert DEFAULT_PAID_CAP_USD == Decimal("30") / Decimal("32") == Decimal("0.9375")
+    assert parse_paid_cap(None) == DEFAULT_PAID_CAP_USD and parse_paid_cap("") == DEFAULT_PAID_CAP_USD
+    assert Settings().paid_cap_usd == Settings.from_env({}).paid_cap_usd == DEFAULT_PAID_CAP_USD
+    assert app_money.DEFAULT_LIMIT_USD is DEFAULT_PAID_CAP_USD and app_money.DEFAULT_RATES["TWD"] == Decimal("32")
     ok(home, "GET", "/v1/status")
     ok(home, "GET", "/v1/settings")
     assert not (tmp_path / "settings.env").exists()  # a GET never writes a setting
 
 
-def test_storing_the_first_key_writes_the_default_limit_for_the_router(home, tmp_path):
+def test_storing_the_first_key_writes_no_limit_and_stays_in_step(home, tmp_path):
     got = ok(home, "POST", "/v1/keys/groq", {"key": "gsk_" + "a1B2" * 8})
-    assert got["limit_written"] is True and got["restart"]["needed"] is True
-    text = (tmp_path / "settings.env").read_text()
-    assert "MUSE_DAILY_PAID_CAP_USD=0.9375" in text
+    assert "limit_written" not in got and got["restart"]["needed"] is True
+    text = (tmp_path / "settings.env").read_text() if (tmp_path / "settings.env").exists() else ""
+    assert "MUSE_DAILY_PAID_CAP_USD" not in text  # the home never writes a limit the person did not save
     limit = ok(home, "GET", "/v1/status")["money"]["daily_limit"]
-    assert limit["local"] == "30" and limit["source"] == "setting" and limit["in_step"] is True and limit["router_usd"] == "0.9375"
-    assert ok(home, "POST", "/v1/keys/groq", {"key": "gsk_" + "c3D4" * 8})["limit_written"] is False  # only once
+    assert limit["local"] == "30" and limit["source"] == "default" and limit["in_step"] is True and limit["router_usd"] == "0.9375"
+
+
+def test_another_currency_or_rate_shows_the_same_dollar_default(home, monkeypatch):
+    monkeypatch.setenv("MUSE_CURRENCY", "USD")
+    limit = ok(home, "GET", "/v1/status")["money"]["daily_limit"]
+    assert limit["usd"] == "0.9375" and limit["in_step"] is True and limit["source"] == "default"
+    monkeypatch.setenv("MUSE_CURRENCY", "TWD")
+    monkeypatch.setenv("MUSE_USD_RATE", "31")
+    limit = ok(home, "GET", "/v1/status")["money"]["daily_limit"]
+    assert limit["usd"] == "0.9375" and limit["local"] == "29" and limit["approx"] is True and limit["in_step"] is True
 
 
 def test_a_limit_someone_set_is_never_overwritten(home, monkeypatch):
     monkeypatch.setenv("MUSE_DAILY_PAID_CAP_USD", "5")
-    assert ok(home, "POST", "/v1/keys/groq", {"key": "gsk_" + "a1B2" * 8})["limit_written"] is False
+    assert "limit_written" not in ok(home, "POST", "/v1/keys/groq", {"key": "gsk_" + "a1B2" * 8})
     limit = ok(home, "GET", "/v1/status")["money"]["daily_limit"]
     assert limit["usd"] == "5.00" and limit["local"] == "160" and limit["approx"] is False and limit["in_step"] is True
     monkeypatch.setenv("MUSE_DAILY_PAID_CAP_USD", "0")
@@ -126,7 +138,7 @@ def test_amounts_are_decimal_strings_and_say_when_they_are_rounded(usd, local, a
 
 def test_other_currencies_and_a_bad_rate(home, monkeypatch):
     assert app_money.amount("1.5", {"MUSE_CURRENCY": "USD"}) == {"usd": "1.50", "local": "1.50", "approx": False}
-    assert app_money.daily_limit({"MUSE_CURRENCY": "USD"})["usd"] == "1.00"  # no NT$30 rule outside TWD: the router's own default
+    assert app_money.daily_limit({"MUSE_CURRENCY": "USD"})["usd"] == "0.9375"  # the one default, shown in dollars
     assert app_money.rate({"MUSE_USD_RATE": "abc"})[0] == Decimal("32") and app_money.rate({"MUSE_USD_RATE": "-3"})[0] == Decimal("32")
     assert app_money.amount("1", {"MUSE_USD_RATE": "31.5"})["local"] == "32" and app_money.amount("1", {"MUSE_USD_RATE": "31.5"})["approx"]
 
@@ -661,7 +673,7 @@ def test_one_tap_on_the_same_computer_listens_exchanges_and_stores(home, oauth, 
     assert done["restart"]["needed"] is True and ISSUED_KEY not in json.dumps(done)
     assert _wait_for(home, started["state_id"], "failed")["reason"] == "bad_callback"
     text = (tmp_path / "settings.env").read_text()
-    assert f"OPENROUTER_API_KEY={ISSUED_KEY}" in text and "MUSE_DAILY_PAID_CAP_USD=0.9375" in text
+    assert f"OPENROUTER_API_KEY={ISSUED_KEY}" in text and "MUSE_DAILY_PAID_CAP_USD" not in text  # no limit written for the person
     sent = _Exchange.seen[-1]
     assert sent["code"] == "good-code" and sent["code_challenge_method"] == "S256" and len(sent["code_verifier"]) >= 43
     records = ok(home, "GET", "/v1/receipts")["records"]

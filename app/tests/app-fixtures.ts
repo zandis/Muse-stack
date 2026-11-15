@@ -9,7 +9,7 @@ export const APP_REPLIES: Record<string, unknown> = {
   'GET /v1/services': { connected: [], add: [], resources: [], subscriptions: [], local_runtime: false, restart_pending: false },
   'GET /v1/settings': {
     settings: {
-      daily_limit: { usd: '0.9375', local: '30', approx: false, source: 'default', router_usd: '1.00', in_step: false },
+      daily_limit: { usd: '0.9375', local: '30', approx: false, source: 'default', router_usd: '0.9375', in_step: true },
       default_privacy: 'standard',
       language: 'en',
       language_set: false,

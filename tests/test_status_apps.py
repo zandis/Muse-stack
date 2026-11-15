@@ -49,7 +49,7 @@ def test_snapshot_apps_paid_queue_paused(_isolated_muse_home):
     assert by["notes"]["daily_requests"] == 10 and by["notes"]["priority"] == "background" and by["notes"]["note"] == "n"
     assert by["notes"]["deferrals"] == {"defer:yield": 1} and by["notes"]["last_used_at"] == "2026-11-12T06:59:30Z"
     assert by["ghost"]["note"].startswith("not registered") and by["ghost"]["deferrals"] == {"refuse:app-tokens": 1}
-    assert snap["paid"] == {"cap_usd": 1.0, "spent_usd": 0.03, "held_usd": 0.0, "calls": 2, "unknown_cost_calls": 1,
+    assert snap["paid"] == {"cap_usd": 0.9375, "spent_usd": 0.03, "held_usd": 0.0, "calls": 2, "unknown_cost_calls": 1,
                             "resets_at": "2026-11-13T00:00:00Z"}
     assert snap["queue"]["waiting"] == 1 and snap["queue"]["counts"]["queued"] == 1 and snap["paused"] is True
     assert "SECRET-PROMPT" not in json.dumps(snap)

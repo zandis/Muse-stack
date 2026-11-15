@@ -10,16 +10,17 @@ Settings (in the home's settings file, read through `Home.settings_env`):
   MUSE_CURRENCY             ISO code of the person's currency. Default TWD.
   MUSE_USD_RATE             how many units of it one US dollar is. Default 32.
   MUSE_USD_RATE_DATE        the day that rate was set (written by PATCH /v1/settings).
-  MUSE_DAILY_PAID_CAP_USD   the router's own daily cap (muse/ration.py). Unset there means US$1.00.
+  MUSE_DAILY_PAID_CAP_USD   the router's own daily cap (muse/ration.py). Unset there means
+                            muse.ration.DEFAULT_PAID_CAP_USD, US$0.9375.
 
-The daily limit a new user sees. The owner's decision is NT$30. When
-`MUSE_DAILY_PAID_CAP_USD` is unset and the currency is TWD, the home's limit is
-30 units of local currency, i.e. US$0.9375 at the default rate. The home holds
-its own paid requests (Ask) to that figure at once. The router's default stays
-US$1.00 (`muse/ration.py` is unchanged), so `daily_limit.in_step` is false until
-the converted figure has been written to the settings file, which the home does
-the first time it stores a service's key through the API or the limit is saved
-in Settings (`adopt_default_limit`). The router reads it at its next start.
+The daily limit a new user sees. The owner's decision is NT$30. There is one
+constant for it, `muse.ration.DEFAULT_PAID_CAP_USD` (NT$30 at the fixed rate of
+32, i.e. US$0.9375), and it is both the router's own default cap and the home's
+default limit. So with `MUSE_DAILY_PAID_CAP_USD` unset the two agree from the
+first start (`daily_limit.in_step` is true), and the home never writes a limit
+the person did not save. In another currency, or at another rate, the same
+dollar figure is shown converted. A limit saved in Settings is written to the
+settings file; the router reads it at its next start (`restart_pending`).
 """
 
 from __future__ import annotations
@@ -28,14 +29,15 @@ import re
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any, Mapping
 
+from muse import ration
+
 DEFAULT_CURRENCY = "TWD"
-DEFAULT_RATES = {"TWD": Decimal("32"), "USD": Decimal("1"), "JPY": Decimal("150"), "KRW": Decimal("1400")}
+DEFAULT_RATES = {"TWD": ration.FIXED_USD_RATE_TWD, "USD": Decimal("1"), "JPY": Decimal("150"), "KRW": Decimal("1400")}
 DEFAULT_RATE_DATE = "2026-11-13"  # the day the built-in rates above were written down
 RATE_SOURCE = "fixed setting"
 ZERO_DECIMALS = frozenset({"TWD", "JPY", "KRW"})  # shown without cents
 CURRENCIES = ("TWD", "USD", "JPY", "KRW")
-DEFAULT_LIMIT_LOCAL = {"TWD": Decimal("30")}  # the owner's decision: a new user sees NT$30
-ROUTER_DEFAULT_USD = Decimal("1.00")  # muse/ration.py when MUSE_DAILY_PAID_CAP_USD is unset
+DEFAULT_LIMIT_USD = ration.DEFAULT_PAID_CAP_USD  # NT$30 at 32: the router's own default, the same constant
 MAX_RATE = Decimal("100000")
 CAP_NAME = "MUSE_DAILY_PAID_CAP_USD"
 _CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
@@ -92,9 +94,7 @@ def amount(usd: Any, env: Mapping[str, str]) -> dict[str, Any]:
 
 def router_cap_usd(env: Mapping[str, str]) -> Decimal:
     """What the router enforces for this environment: muse/ration.py's own reading of the setting."""
-    from muse.ration import parse_paid_cap
-
-    return parse_paid_cap(env.get(CAP_NAME))
+    return ration.parse_paid_cap(env.get(CAP_NAME))
 
 
 def cap_is_set(env: Mapping[str, str]) -> bool:
@@ -105,10 +105,7 @@ def limit_usd(env: Mapping[str, str]) -> tuple[Decimal, str]:
     """(the home's daily limit in dollars, "setting" | "default")."""
     if cap_is_set(env):
         return router_cap_usd(env), "setting"
-    code = currency(env)
-    if code in DEFAULT_LIMIT_LOCAL:
-        return DEFAULT_LIMIT_LOCAL[code] / rate(env)[0], "default"
-    return ROUTER_DEFAULT_USD, "default"
+    return DEFAULT_LIMIT_USD, "default"
 
 
 def daily_limit(env: Mapping[str, str]) -> dict[str, Any]:

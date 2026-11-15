@@ -90,24 +90,6 @@ class AppBackend:
 
         keys.set_key(name, value, backend="dotenv", force=True, environ=self.home.environ)
 
-    def adopt_default_limit(self) -> bool:
-        """Write the home's default daily limit for the router to read, when none is set. True when it wrote.
-
-        Called when the home first stores a service's key: before that the router has nothing it could pay."""
-        env = self.env()
-        if app_money.cap_is_set(env):
-            return False
-        usd, _ = app_money.limit_usd(env)
-        if usd == app_money.router_cap_usd(env):
-            return False
-        try:
-            self.write_setting(app_money.CAP_NAME, app_money.cap_setting_text(usd))
-        except Exception as exc:
-            log.warning("settings: the default daily limit could not be written (%s)", type(exc).__name__)
-            return False
-        self._restart_pending = True
-        return True
-
     # ---- money
 
     def today(self) -> str:
@@ -245,7 +227,6 @@ class AppBackend:
 
     def _flow_key(self, provider: Any, key: str) -> None:
         self.home.save_key(str(provider.env), key)
-        self.adopt_default_limit()
         self._restart_pending = True
         self.home.record("key.store", f"Stored a key for the service {api._word(provider.id)}", egress="none", actor="person")
 
@@ -405,10 +386,11 @@ def h_status(home: Any, req: Any) -> tuple[int, dict[str, Any]]:
 
 
 def h_keys(home: Any, req: Any) -> tuple[int, dict[str, Any]]:
-    """`POST /v1/keys/{provider}` as before; a home that now has a service also gets its default daily limit written."""
+    """`POST /v1/keys/{provider}` as before, with how the app can restart the router.
+
+    No daily limit is written here: the router's default and the home's are the same constant."""
     status, reply = api.h_keys(home, req)
     b = backend(home)
-    reply["limit_written"] = b.adopt_default_limit()
     b._restart_pending = True  # noqa: SLF001
     managed, _ = b.manages_proxy()
     reply["restart"]["managed"] = managed

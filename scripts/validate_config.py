@@ -360,10 +360,21 @@ def scenario_paid_cap_zero_is_unchanged() -> None:
 
 
 def scenario_paid_cap_default() -> None:
-    """Default cap ($1.00): paid joins the aliases, strictly after every free, trial and local deployment."""
+    """Default cap (unset: US$0.9375, NT$30 at 32): paid joins the aliases, strictly after every free, trial and local deployment."""
     catalog = load_catalog(CATALOG_PATH)
     config, enabled = render(catalog, env_with(**PAID_KEYS, GROQ_API_KEY="q", OPENROUTER_API_KEY="o", COHERE_API_KEY="c"))
     check(paid_fallback_enabled({}), "the default cap should let paid join")
+    # One default for the router and the app: NT$30 at the fixed rate of 32 (muse.ration; standard library only).
+    from decimal import Decimal
+
+    from muse import ration
+    from muse.home import app_money
+
+    check(ration.DEFAULT_PAID_CAP_USD == Decimal("30") / Decimal("32") > 0, "the router's default cap should be NT$30 at 32")
+    check(ration.parse_paid_cap(None) == ration.DEFAULT_PAID_CAP_USD == ration.Settings.from_env({}).paid_cap_usd,
+          "the router should read an unset cap as its one default")
+    check(app_money.limit_usd({}) == (ration.DEFAULT_PAID_CAP_USD, "default") and app_money.daily_limit({})["in_step"] is True,
+          "the app's default limit should be the router's default cap, in step from the first start")
     for alias in ("fast", "cheap", "smart", "long-context"):
         entries = [e for e in config["model_list"] if e["model_name"] == alias]
         free = [e["litellm_params"]["order"] for e in entries if not _paid(e)]

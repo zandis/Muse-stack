@@ -67,7 +67,6 @@ function LimitForm({ s, onSaved }: { s: SettingsData; onSaved: (s: SettingsData,
       <p id={`${id}-usd`} className="small muted" data-testid="limit-usd">
         {usd !== null ? t('st_limit_usd', fmtMoney(usd, 'USD', lang)) : t('st_limit_bad')}
       </p>
-      {s.daily_limit.in_step === false ? <p className="small muted">{t('st_limit_router', `US$${s.daily_limit.router_usd ?? ''}`)}</p> : null}
       <p className="small okline" role="status" data-testid="limit-note">
         {msg ? t(msg) : null}
       </p>

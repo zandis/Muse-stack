@@ -90,12 +90,21 @@ REFUSE = "refuse"
 
 # ---------------------------------------------------------------- settings
 
+# The daily paid limit a new person starts with: the owner's decision is NT$30
+# a day, at the fixed rate of 32 NT$ to the US dollar. The router counts in
+# dollars, so its own default cap is that figure in dollars, and the home's
+# default limit (muse/home/app_money.py) is this same constant: the two agree
+# from the first start, with nothing written on the person's behalf.
+DEFAULT_DAILY_LIMIT_TWD = Decimal("30")
+FIXED_USD_RATE_TWD = Decimal("32")
+DEFAULT_PAID_CAP_USD = DEFAULT_DAILY_LIMIT_TWD / FIXED_USD_RATE_TWD  # 0.9375
+
 
 @dataclass(frozen=True, slots=True)
 class Settings:
     """Ration settings from the environment. See Settings.from_env for names and defaults."""
 
-    paid_cap_usd: Decimal = Decimal("1.00")
+    paid_cap_usd: Decimal = DEFAULT_PAID_CAP_USD
     active_window_s: float = 120.0
     reserve_background: float = 0.30
     reserve_normal: float = 0.10
@@ -154,9 +163,10 @@ class Settings:
 
 
 def parse_paid_cap(raw: Any, warnings: list[str] | None = None) -> Decimal:
-    """MUSE_DAILY_PAID_CAP_USD: unset -> 1.00; "0" -> never; anything unparsable or negative -> 0."""
+    """MUSE_DAILY_PAID_CAP_USD: unset -> DEFAULT_PAID_CAP_USD (0.9375, NT$30 at 32); "0" -> never;
+    anything unparsable or negative -> 0."""
     if raw is None or not str(raw).strip():
-        return Decimal("1.00")
+        return DEFAULT_PAID_CAP_USD
     text = str(raw).strip().lstrip("$").strip()
     try:
         value = Decimal(text)

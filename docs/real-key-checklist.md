@@ -102,7 +102,7 @@ What could cost money, and what stops it:
 
 | Risk | Why it should not happen | Protection |
 | --- | --- | --- |
-| A paid provider answers a check call | Paid deployments are only used by apps allowed to, and only inside the daily cap | `MUSE_DAILY_PAID_CAP_USD` (default 1.00; 0 turns paid use off). The temporary apps are not allowed to use paid providers at all. |
+| A paid provider answers a check call | Paid deployments are only used by apps allowed to, and only inside the daily cap | `MUSE_DAILY_PAID_CAP_USD` (default 0.9375, NT$30 at 32; 0 turns paid use off). The temporary apps are not allowed to use paid providers at all. |
 | The owner key calls a paid deployment by name | Step 2 calls each configured provider once by deployment name, using the owner key, which is allowed to pay | Cost is a few tokens (well under a cent) and counts against the daily cap. Remove the paid key first if you want zero risk. |
 | A trial key runs out | Cohere trial keys have 1,000 calls a month | The check uses about 5 calls on it. |
 | The 429 probe | It spends free quota on purpose | It stops at the first 429 and never sends more than `--burst` requests. It does not spend money on a free-tier key. |
