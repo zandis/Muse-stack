@@ -7,6 +7,7 @@ each one stops by itself. The rule for skills that are NOT shipped (always `requ
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import sys
 from pathlib import Path
@@ -89,6 +90,12 @@ def attempt(box: Any, what: str, layer: str = "all", **inputs: Any):
     `policy=` and `budget=` are options of the run; every other keyword is an input for the skill.
     """
     options = {key: inputs.pop(key) for key in ("policy", "budget") if key in inputs}
+    if what == "shell" and "policy" not in options:
+        # A shell attempt must get as far as starting a process: these tests are about what that process
+        # may do, not about the process limit (which has its own test). Outside a user namespace the limit
+        # counts every process and thread of the person, so on a busy machine (parallel test workers) the
+        # default of 64 fails the fork itself with EAGAIN before any layer is asked.
+        options["policy"] = dataclasses.replace(LAYERS[layer], processes=1 << 20)
     result, report = run(box, "escape", {"attempt": what, **inputs}, layer, **options)
     return (result.output if isinstance(result.output, dict) else None), result, report
 
