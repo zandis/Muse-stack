@@ -9,7 +9,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const FAKE_TOKEN = 'fake-home-token'; // fixed, and only ever works on a fake home
-export const STATES = ['normal', 'used', 'paused', 'cards', 'empty', 'error'];
+export const STATES = ['normal', 'used', 'paused', 'cards', 'empty', 'error', 'mismatch'];
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 export function freePort() {

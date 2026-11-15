@@ -6,7 +6,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { test as base, expect, type Page } from '@playwright/test';
 import { callHome, FAKE_TOKEN, freePort, startFakeHome } from '../scripts/fake-home.mjs';
 
-export type FakeState = 'normal' | 'used' | 'paused' | 'cards' | 'empty' | 'error';
+export type FakeState = 'normal' | 'used' | 'paused' | 'cards' | 'empty' | 'error' | 'mismatch';
 export const STATES: readonly FakeState[] = ['normal', 'used', 'paused', 'cards', 'empty', 'error'];
 export const PHONE = { width: 390, height: 844 };
 export const DESKTOP = { width: 1280, height: 800 };

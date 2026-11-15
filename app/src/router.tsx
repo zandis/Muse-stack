@@ -24,10 +24,12 @@ export function pathOf(route: Route): string {
 
 interface Router {
   route: Route;
+  /** The query string of the address ("?permission=…" on Records), or "". */
+  search: string;
   /** Counts navigations made inside the app, so the layout can move focus to the new screen's heading. */
   moves: number;
   /** `replace` swaps the current history entry (used for redirects) and does not move focus. */
-  go: (route: Route, replace?: boolean) => void;
+  go: (route: Route, replace?: boolean, search?: string) => void;
 }
 
 const Ctx = createContext<Router | null>(null);
@@ -35,6 +37,7 @@ const Ctx = createContext<Router | null>(null);
 export function RouterProvider({ children }: { children: ReactNode }) {
   const [route, setRoute] = useState<Route>(() => parseRoute(window.location.pathname));
   const [moves, setMoves] = useState(0);
+  const [search, setSearch] = useState(() => window.location.search);
   const shown = useRef(route);
 
   useEffect(() => {
@@ -44,22 +47,25 @@ export function RouterProvider({ children }: { children: ReactNode }) {
       if (next !== shown.current) setMoves((n) => n + 1);
       shown.current = next;
       setRoute(next);
+      setSearch(window.location.search);
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  const go = useCallback((next: Route, replace = false) => {
-    if (window.location.pathname !== pathOf(next)) {
-      if (replace) window.history.replaceState(null, '', pathOf(next));
-      else window.history.pushState(null, '', pathOf(next));
+  const go = useCallback((next: Route, replace = false, query = '') => {
+    const target = pathOf(next) + query;
+    if (window.location.pathname + window.location.search !== target) {
+      if (replace) window.history.replaceState(null, '', target);
+      else window.history.pushState(null, '', target);
     }
     shown.current = next;
     setRoute(next);
+    setSearch(query);
     if (!replace) setMoves((n) => n + 1);
   }, []);
 
-  const value = useMemo(() => ({ route, moves, go }), [route, moves, go]);
+  const value = useMemo(() => ({ route, search, moves, go }), [route, search, moves, go]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
@@ -70,15 +76,15 @@ export function useRouter(): Router {
 }
 
 /** A real link (it has an address, opens in a new tab, works with a screen reader) that navigates in place. */
-export function Link({ to, className, children, current, label }: { to: Route; className?: string; children: ReactNode; current?: boolean; label?: string }) {
+export function Link({ to, className, children, current, label, search = '', testId }: { to: Route; className?: string; children: ReactNode; current?: boolean; label?: string; search?: string; testId?: string }) {
   const { go } = useRouter();
   const onClick = (e: MouseEvent<HTMLAnchorElement>) => {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
-    go(to);
+    go(to, false, search);
   };
   return (
-    <a href={pathOf(to)} className={className} onClick={onClick} aria-current={current ? 'page' : undefined} aria-label={label}>
+    <a href={pathOf(to) + search} className={className} onClick={onClick} aria-current={current ? 'page' : undefined} aria-label={label} data-testid={testId}>
       {children}
     </a>
   );

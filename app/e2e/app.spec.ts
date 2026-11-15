@@ -459,7 +459,7 @@ test.describe('navigation', () => {
     await page.locator('.tabbar a[href="/records"]').focus();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Records');
-    await page.getByRole('link', { name: 'Ask something' }).focus();
+    await page.locator('.tabbar a[href="/ask"]').focus(); // Records has records now: its empty-state link is gone
     await page.keyboard.press('Enter');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Ask');
     expect(w.problems).toEqual([]);

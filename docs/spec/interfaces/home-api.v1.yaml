@@ -79,8 +79,8 @@ x-error-codes:
 # Which scopes each role holds (muse/home/auth.py::ROLE_SCOPES). Checked by tests/test_home_openapi.py.
 x-role-scopes:
   owner: [status.read, catalogue.read, connect.write, keys.write, jobs.read, jobs.write, cards.read, cards.ask,
-          cards.answer, pause.write, apps.read, apps.write, receipts.read, receipts.write, skills.read, skills.run,
-          mandates.read, mandates.request, mandates.write, ask.write, chores.read, chores.write, settings.read,
+          cards.answer, pause.write, apps.read, apps.write, receipts.read, receipts.write, receipts.export, skills.read,
+          skills.run, mandates.read, mandates.request, mandates.write, ask.write, chores.read, chores.write, settings.read,
           settings.write, home.admin]
   host: [status.read, catalogue.read, jobs.read, jobs.write, cards.read, cards.ask, receipts.write, skills.read,
          skills.run, mandates.request]
@@ -584,6 +584,10 @@ paths:
           in: query
           description: "`true`: only records whose content left the person's devices (`egress` is `service:...` or `host:...`). Records that do not say are not among them."
           schema: {enum: ["true", "false"], default: "false"}
+        - name: mandate
+          in: query
+          description: "Only records made under this permission: its full id as the record's `mandate` member holds it (from `GET /v1/mandates`), or `device:<name>` for a helper's own reports. The Permissions screen links each permission to its records this way."
+          schema: {type: string, pattern: "^[A-Za-z0-9._:-]{1,128}$"}
         - name: limit
           in: query
           schema: {type: integer, minimum: 1, maximum: 200, default: 50}
@@ -659,6 +663,63 @@ paths:
         "400": {$ref: "#/components/responses/Invalid"}
         "429":
           description: "`too_many_requests`: this device added too many records in the last hour."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/receipts/export:
+    post:
+      operationId: exportReceipts
+      x-scope: receipts.export
+      x-roles: [owner]
+      summary: Seal, then hand over every record as one file anyone can check.
+      description: |
+        The Records screen's Export (ux section 4.4), the same file `muse records export` writes:
+        a complete export as record-format.md section 8 defines it (`type`
+        `muse.records.export`), sealed by a checkpoint made just now. Anyone can check it with
+        nothing but the file (`muse records check-file FILE`); what a successful check means is in
+        that section.
+
+        The home never hands out a file that does not check: when the records do not check out
+        the answer is `conflict` (409) and nothing is exported; the file is also checked again
+        before it leaves. `redact_summaries: true` leaves each record's text out (record-format.md
+        section 9); every record still checks. The person's own device only: sealing writes a
+        checkpoint, and the file holds every record. More than 20,000 records is refused
+        (`invalid_request`): export those on the home. The export itself is written down as a
+        record (`records.export`), after the seal, so it is not in the file.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                redact_summaries: {type: boolean, default: false}
+      responses:
+        "200":
+          description: The export, and what is in it.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [export, file_name, count, size, redacted, device, recorded]
+                properties:
+                  export:
+                    type: object
+                    description: The export object (record-format.md section 8). Save it as it is.
+                    required: [type, format, spec, device, checkpoint, complete, records]
+                  file_name: {type: string, examples: ["muse-records-2026-11-15.json"]}
+                  count: {type: integer, description: Records in the file.}
+                  size: {type: integer, description: Records the seal covers.}
+                  redacted: {type: integer, description: Records whose text is left out.}
+                  device: {type: string, description: "The home's signing key (64 hex): give it to whoever checks the file, another way."}
+                  recorded: {type: boolean}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "409":
+          description: "`conflict`: there are no records yet, or they do not check out, so nothing was exported."
           content:
             application/json:
               schema: {$ref: "#/components/schemas/Error"}
@@ -942,6 +1003,10 @@ paths:
       description: |
         So a helper does not ask again: `POST /v1/mandates` refuses the same request from the same
         device until `ask_again_after`. A device that is not an `owner` sees only its own.
+        `sentence` is what the person was shown, in the language asked for; null when the home
+        cannot write it (no `biscuit-python`).
+      parameters:
+        - {name: lang, in: query, required: false, schema: {enum: [en, zh-TW], default: en}}
       responses:
         "200":
           description: The declined requests, newest first.
@@ -956,13 +1021,14 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: [card_id, device, holder, actions, resources, declined_at, ask_again_after]
+                      required: [card_id, device, holder, actions, resources, sentence, declined_at, ask_again_after]
                       properties:
                         card_id: {type: string}
                         device: {type: string}
                         holder: {type: string}
                         actions: {type: array, items: {type: string}}
                         resources: {type: array, items: {$ref: "#/components/schemas/MandateResource"}}
+                        sentence: {type: [string, "null"]}
                         declined_at: {$ref: "#/components/schemas/Time"}
                         ask_again_after: {$ref: "#/components/schemas/Time"}
         default: {$ref: "#/components/responses/Error"}
@@ -1891,7 +1957,8 @@ components:
 
     Mandate:
       type: object
-      required: [id, name, holder, state, sentence, lines, issued_at, not_before, not_after, targets]
+      required: [id, name, holder, state, sentence, lines, actions, resources, limits, privacy, issued_at, not_before, not_after,
+                 targets]
       properties:
         id: {type: string, pattern: "^m1_[0-9a-f]{64}$"}
         name: {type: string, pattern: "^[0-9a-f]{12}$", description: "The short name; usable as the id in a path."}
@@ -1899,6 +1966,20 @@ components:
         state: {enum: [active, stopped, expired, not_yet_valid]}
         sentence: {type: string}
         lines: {type: array, items: {type: string}}
+        actions: {type: array, items: {type: string}, description: "What it allows, as plain values (permission-token.md), so an app can write the sentence in its own words."}
+        resources: {type: array, items: {$ref: "#/components/schemas/MandateResource"}}
+        limits:
+          type: array
+          items:
+            type: object
+            required: [kind, unit, decimals, period, amount]
+            properties:
+              kind: {type: string, examples: [spend, requests]}
+              unit: {type: string, description: "A currency code for `spend`, such as TWD; empty otherwise."}
+              decimals: {type: integer}
+              period: {type: string, examples: [day, month]}
+              amount: {type: integer, description: "In minor units: NT$30 with 2 decimals is 3000."}
+        privacy: {type: string, examples: [private]}
         issued_at: {$ref: "#/components/schemas/Time"}
         not_before: {$ref: "#/components/schemas/Time"}
         not_after: {$ref: "#/components/schemas/Time"}

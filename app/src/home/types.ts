@@ -4,6 +4,7 @@
 import type { ActivityItem, MoneyInfo } from './types-app';
 
 export type * from './types-app';
+export type * from './types-trust';
 
 export type ErrorCode =
   | 'invalid_request'

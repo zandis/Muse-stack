@@ -427,3 +427,362 @@ button.ln:hover {
 .turn .a > .cardx {
   margin-top: 0;
 }
+
+/* ---------- Records and Permissions (ux sections 4.4, 4.6; the mock-up's classes) ---------- */
+.mono {
+  font-family: var(--mono);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+.g6 {
+  gap: 6px;
+}
+.g16 {
+  gap: 16px;
+}
+.sect {
+  font-size: 1.25rem;
+  font-weight: 750;
+  margin: 10px 2px 0;
+}
+.sect .btn.link {
+  font-size: inherit;
+  font-weight: inherit;
+  padding-left: 0;
+}
+.btn.danger {
+  background: var(--surface);
+  border-color: var(--bad);
+  color: var(--bad);
+}
+.badline {
+  color: var(--bad);
+  font-weight: 600;
+}
+.chk input {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  accent-color: var(--accent);
+}
+.chip {
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: 999px;
+  min-height: 44px;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 550;
+  line-height: 1.3;
+  cursor: pointer;
+}
+.chip:hover {
+  border-color: var(--accent);
+}
+.chip[aria-pressed='true'] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 750;
+}
+.chip[aria-pressed='true']::before {
+  content: '\2713\00a0';
+}
+.rtools {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+.rtools select {
+  min-height: 44px;
+  padding: 6px 10px;
+}
+.rtools label span {
+  color: var(--muted);
+  font-weight: 600;
+}
+.desktop .rtools .chips {
+  width: 100%;
+}
+.errc.inline {
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  background: transparent;
+}
+.logday {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--muted);
+  margin: 8px 2px 0;
+  letter-spacing: 0.02em;
+}
+.logitem {
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+}
+.logitem .tm {
+  flex: none;
+  width: 3.2em;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--muted);
+  padding-top: 2px;
+}
+.logitem .tx {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.logitem .tx .w {
+  font-size: 1.03rem;
+  line-height: 1.45;
+  font-weight: 600;
+}
+.logitem .tx small {
+  font-size: 0.9375rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.rbtn {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.rbtn:hover {
+  border-color: var(--accent);
+}
+.logitem.badrow,
+.rt tr.badrow td {
+  background: var(--bad-soft);
+}
+.logitem.badrow {
+  border-color: var(--bad);
+}
+.tag.bad {
+  background: var(--bad-soft);
+  border-color: var(--bad);
+  color: var(--bad);
+}
+.tblc {
+  padding: 4px 12px;
+  overflow-x: auto;
+}
+table.rt {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+  line-height: 1.4;
+}
+.rt th,
+.rt td {
+  padding: 10px 8px;
+  text-align: left;
+  border-top: 1px solid var(--line);
+  vertical-align: top;
+}
+.rt thead th {
+  border-top: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.rt .dayrow th {
+  background: var(--surface2);
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.rt .tm,
+.rt .cost {
+  white-space: nowrap;
+  font-weight: 700;
+  color: var(--muted);
+}
+.rt tr.sel td {
+  background: var(--accent-soft);
+}
+.rt .tag {
+  margin-top: 4px;
+  margin-right: 4px;
+}
+.rlink {
+  border: 0;
+  background: transparent;
+  padding: 2px 0;
+  text-align: left;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  line-height: 1.4;
+  min-height: 28px;
+  cursor: pointer;
+}
+.rsplit {
+  grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+}
+.pane {
+  position: sticky;
+  top: 0;
+}
+.rdh {
+  font-size: 1.2rem;
+  line-height: 1.4;
+  font-weight: 750;
+}
+.permc {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.permc h3 {
+  font-size: 1.125rem;
+  line-height: 1.45;
+}
+.permc h3:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+}
+.permc.stopped h3 {
+  color: var(--muted);
+}
+.permc.cur {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-line);
+}
+.pmks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.pmk {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 12px;
+  border: 1.5px solid var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.875rem;
+  line-height: 1.3;
+}
+.pmk svg.i {
+  width: 1.1em;
+  height: 1.1em;
+}
+.pmk.off,
+.pmk.grey {
+  border-color: var(--line);
+  background: var(--surface2);
+  color: var(--muted);
+}
+.pmk.off b {
+  text-decoration: line-through;
+}
+.pmk.grey {
+  border-style: dashed;
+}
+.pmk.wait {
+  border-style: dashed;
+  border-color: var(--warn);
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.pmk.fail {
+  border-color: var(--bad);
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+.mini {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--line);
+}
+.mini:first-child {
+  border-top: 0;
+}
+.mini .t {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.35;
+  min-width: 0;
+}
+.mini .t small {
+  font-size: 0.9375rem;
+  color: var(--muted);
+}
+.mini .ico {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: var(--surface2);
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.stp {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1.5px solid var(--line);
+  line-height: 1.4;
+}
+.stp svg.i {
+  flex: none;
+  margin-top: 2px;
+}
+.stp.done {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+.stp.done svg.i {
+  color: var(--accent);
+}
+.stp.wait {
+  color: var(--muted);
+  border-style: dashed;
+}
+.stp.fail {
+  border-color: var(--bad);
+  background: var(--bad-soft);
+}
+.stp.fail svg.i {
+  color: var(--bad);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .stp {
+    transition:
+      background 0.3s,
+      border-color 0.3s;
+  }
+}

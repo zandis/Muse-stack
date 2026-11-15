@@ -56,6 +56,7 @@ MAX_KEY_CHARS = 512
 MAX_JSON_DEPTH = 8
 MAX_RECEIPTS_PAGE = 200  # records in one reply of GET /v1/receipts
 DEFAULT_RECEIPTS_PAGE = 50
+MAX_EXPORT_RECORDS = 20_000  # records in one export through the API; more is a job for `muse records export` on the home
 MAX_RECORDS_PER_HOUR = 600  # records one device may add with POST /v1/receipts; they are kept for ever
 # Action families only the home itself writes; POST /v1/receipts refuses them (record-format.md section 1.3).
 HOME_ACTIONS = ("home", "card", "app", "key", "job", "skill", "mandate", "records")
@@ -398,6 +399,12 @@ class Home:
         except Exception as exc:
             log.warning("records: no record was written for home.%s (%s)", "pause" if paused else "resume", type(exc).__name__)
             return None
+
+    def compiler(self) -> Any:
+        """The permission compiler over this home (muse/compiler). The fake home hands out one that can be told to fail."""
+        from muse.compiler.core import Compiler
+
+        return Compiler(self.environ, clock=self.clock, record=self.record)
 
     def records_state(self) -> dict[str, Any]:
         """Every well-formed record, whether the chain checks out, and the last seal. Raises what the store raises.
@@ -1017,6 +1024,7 @@ def _record_app(home: Home, req: Request, action: str, words: str, name: str) ->
 
 
 _ACTION_FILTER = re.compile(r"[a-z][a-z0-9_]{0,31}(?:\.[a-z][a-z0-9_]{0,31}){0,3}\Z")
+_MANDATE_FILTER = re.compile(r"[A-Za-z0-9._:-]{1,128}\Z")  # the record format's alphabet for `mandate`
 
 
 def _records_unavailable(exc: Exception) -> ApiError:
@@ -1037,7 +1045,7 @@ def h_receipts_list(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
     """A page of the home's records, newest first, with whether the chain checks out and the last seal."""
     from muse.records.commands import make_filter
 
-    _query(req, "since", "action", "limit", "before", "left_device")
+    _query(req, "since", "action", "limit", "before", "left_device", "mandate")
     q = req.query
     limit = _number(q["limit"], "limit", 1, MAX_RECEIPTS_PAGE) if "limit" in q else DEFAULT_RECEIPTS_PAGE
     before = _number(q["before"], "before", 0, 2**53 - 1) if "before" in q else None
@@ -1056,12 +1064,16 @@ def h_receipts_list(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
     if q.get("left_device", "false") not in ("true", "false"):
         raise ApiError("invalid_request", "left_device must be true or false.")
     left = q.get("left_device") == "true"
+    mandate = q.get("mandate")
+    if mandate is not None and not _MANDATE_FILTER.match(mandate):
+        raise ApiError("invalid_request", "mandate must be the id of a permission, as the record format writes it.")
     try:
         state = home.records_state()
     except Exception as exc:
         raise _records_unavailable(exc) from None
     keep = make_filter(since_ms, action, False, left)
-    matching = [r for r in reversed(state["records"]) if (before is None or r["seq"] < before) and (keep is None or keep(r))]
+    matching = [r for r in reversed(state["records"]) if (before is None or r["seq"] < before) and (keep is None or keep(r))
+                and (mandate is None or r.get("mandate") == mandate)]
     page = matching[:limit]
     return 200, {
         "records": page,
@@ -1111,6 +1123,40 @@ def h_receipts_add(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
     except Exception as exc:
         raise _records_unavailable(exc) from None
     return 201, {"record": record, "hash": fmt.record_hash(record), "recorded": True}
+
+
+def h_receipts_export(home: Home, req: Request) -> tuple[int, dict[str, Any]]:
+    """Seal, then hand over every record as one file anyone can check (record-format.md section 8).
+
+    Never hands out a file that does not check: a chain that does not verify is refused, and the file is checked
+    again before it leaves. The person chooses whether the summaries' text goes with it."""
+    from muse.records.errors import RecordError
+    from muse.records.seal import verify_export
+
+    _fields(req.body, {"redact_summaries": bool})
+    redact = bool(req.body.get("redact_summaries", False))
+    try:
+        count = len(home.records().records())
+        if count == 0:
+            raise ApiError("conflict", "There are no records to export yet.")
+        if count > MAX_EXPORT_RECORDS:
+            raise ApiError("invalid_request", f"There are more than {MAX_EXPORT_RECORDS:,} records. Export them on the home with "
+                                              "`muse records export`.")
+        obj = home.records().export(redact_summaries=redact)
+        report = verify_export(obj)
+    except ApiError:
+        raise
+    except RecordError as exc:
+        log.warning("records: an export was refused because the records do not check out (%s)", exc.kind)
+        raise ApiError("conflict", "The records do not check out, so nothing was exported. Run `muse records verify` "
+                                   "on the home.") from None
+    except Exception as exc:
+        raise _records_unavailable(exc) from None
+    day = datetime.fromtimestamp(home.clock(), tz=timezone.utc).strftime("%Y-%m-%d")
+    record = home.record("records.export", "Exported the records" + (" without their summaries" if redact else ""),
+                         egress="none", **_who(req.device))
+    return 200, {"export": obj, "file_name": f"muse-records-{day}.json", "count": report["count"], "size": report["size"],
+                 "redacted": report["redacted"], "device": report["device"], "recorded": record is not None}
 
 
 # ---------------------------------------------------------------- handlers: skills
@@ -1223,6 +1269,7 @@ ROUTES: tuple[Route, ...] = (
     _r("POST", "/apps/{name}/rotate", "apps.write", h_app_rotate),
     _r("GET", "/receipts", "receipts.read", h_receipts_list),
     _r("POST", "/receipts", "receipts.write", h_receipts_add),
+    _r("POST", "/receipts/export", "receipts.export", h_receipts_export),
     _r("GET", "/skills", "skills.read", h_skills_list),
     _r("POST", "/skills/{name}/run", "skills.run", h_skill_run),
     _r("GET", "/skills/runs/{id}", "skills.read", h_skill_run_get),

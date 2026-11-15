@@ -14,11 +14,9 @@ import { Link, type Screen } from '../router';
 import { computeGauge } from '../state/gauge';
 import { useAppState } from '../state/store';
 
-type PlaceholderScreen = Exclude<Screen, 'today' | 'more' | 'settings' | 'services' | 'wallet' | 'ask' | 'chores' | 'apps'>;
+type PlaceholderScreen = Exclude<Screen, 'today' | 'more' | 'settings' | 'services' | 'wallet' | 'ask' | 'chores' | 'apps' | 'records' | 'permissions'>;
 
 const EMPTY: Record<PlaceholderScreen, { icon: IconName; title: Key; body: Key }> = {
-  records: { icon: 'records', title: 're_t', body: 're_b' },
-  permissions: { icon: 'permissions', title: 'perms_empty_t', body: 'perms_empty_b' },
   devices: { icon: 'devices', title: 'devices_empty_t', body: 'devices_empty_b' },
 };
 
@@ -33,15 +31,9 @@ function Page({ screen, children }: { screen: Screen; children: ReactNode }) {
 export function Placeholder({ screen }: { screen: PlaceholderScreen }) {
   const { t } = useI18n();
   const e = EMPTY[screen];
-  const action =
-    screen === 'records' ? (
-      <Link to="ask" className="btn primary">
-        {t('re_btn')}
-      </Link>
-    ) : undefined;
   return (
     <Page screen={screen}>
-      <EmptyBox icon={e.icon} title={t(e.title)} body={t(e.body)} note={t('later_build')} {...(action ? { action } : {})} />
+      <EmptyBox icon={e.icon} title={t(e.title)} body={t(e.body)} note={t('later_build')} />
     </Page>
   );
 }

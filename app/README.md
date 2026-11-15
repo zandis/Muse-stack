@@ -1,16 +1,16 @@
 # Muse app
 
-The real app's front end, and the desktop shell around it. This build is work packages **B1** (app shell) and **B3** (Today and the tray panel) from `docs/spec/04-execution-plan.md`, with the navigation skeleton for the rest. The specification is `docs/spec/02-ux.md`; the look is the approved mock-up, `docs/mockups/index.html`.
+The real app's front end, and the desktop shell around it. This build is work packages **B1** (app shell), **B3** (Today and the tray panel) and **B7** (Records and Permissions) from `docs/spec/04-execution-plan.md`, with the navigation skeleton for the rest. The specification is `docs/spec/02-ux.md`; the look is the approved mock-up, `docs/mockups/index.html`.
 
 ## Run it against the fake home
 
-You need Node 22, pnpm 10, and a Python that can run this repository (`pip install -e .` in a virtualenv).
+You need Node 22, pnpm 10, and a Python that can run this repository (`pip install -e .` in a virtualenv). For the Permissions screen the fake home also needs `biscuit-python==0.4.0` in that virtualenv (`pip install 'muse-stack[permissions]'`); without it the home answers `GET /v1/mandates` with 503 and the screen says it cannot show permissions. The end-to-end tests expect it.
 
 ```bash
 cd app
 pnpm install --frozen-lockfile
 MUSE_PYTHON=/path/to/venv/bin/python pnpm dev      # fake home + Vite on http://127.0.0.1:5173
-MUSE_FAKE_STATE=cards pnpm dev                     # normal | used | paused | cards | empty | error
+MUSE_FAKE_STATE=cards pnpm dev                     # normal | used | paused | cards | empty | error | mismatch
 ```
 
 `pnpm dev` starts `python -m muse.home --fake` on a free port and the Vite dev server with its proxy pointed at it. `MUSE_PYTHON` defaults to `python3`.
@@ -72,6 +72,24 @@ Errors become the UX §8 pattern (what happened, what Muse will do, one button):
 - No secret is in the bundle: an end-to-end test scans `dist/` for the fake token and for `sk-…`.
 - What is stored on the device: the language choice, when the home was last seen, and which tip was shown today.
 
+### Records (`/records`, UX 4.4)
+
+- **Data.** `GET /v1/receipts` (pages of 100, "Show older records" for the next), `?mandate=<permission id>` when opened from a permission (`/records?permission=…`). Each record is the signed record of `record-format.md`; the app writes the sentence itself from its facts (`src/screens/trust-words.ts`): who (`actor`, and the permission's holder), what (the action name, mapped to a plain verb; an unknown one says so), under which permission (the permission's own sentence from `GET /v1/mandates`), what it cost (`cost` in minor units, shown in the person's currency at the stated rate with the US-dollar figure behind Details), and where the content went (`egress`, with the service's privacy badge from `GET /v1/services`). Action names, ids and signatures appear only behind Details. What the home wrote (`summary`) is shown in the record; a redacted record says the text was removed on purpose and still checks out.
+- **Proof.** Every `GET /v1/receipts` makes the home check the whole chain (it keeps the answer until the file changes). The top card says "All N records check out" or "Record N does not match the ones around it" with why (from `verify.kind`); each record says whether it is sealed, not sealed yet, the one that does not match, or cannot be confirmed because an earlier one does not. "Check my records" asks again. Record numbers shown are `seq + 1`.
+- **Filters.** Chips (left my devices, cost money, changed something, by a helper or program), Who, When. They filter what is loaded. There is no "By chore" chip: records do not name the chore that made them.
+- **Export.** `POST /v1/receipts/export` (new; owner only): the home seals, builds the complete export of `record-format.md` §8, checks it, and the app saves it as a file. Option to leave out what each record says. Refused, with a plain sentence, when the records do not check out.
+- **Not done:** Undo (the home has no undo call), the "Vault locked" state (no vault yet), and a device filter (the home's records are one device's chain).
+- **Layout.** Phone: lines grouped by day, a record opens in a sheet. Desktop: a table with the same columns and a pane for the selected record.
+
+### Permissions (`/permissions`, UX 4.6)
+
+- **Data.** `GET /v1/mandates?lang=` (each permission with its facts: actions, resources, limits, privacy, and the compiler's per-place state), `GET /v1/mandates/declined?lang=`, the waiting `grant_permission` cards from the store, and `GET /v1/receipts?limit=200` for "Used N times" and when it was stopped.
+- **The sentence** is written by the app ("Your helper may spend up to NT$30 a day on 3 services, until 30 Nov."); when a permission allows something the app has no words for, the home's own sentence is shown. The home's lines are behind "In the home's own words".
+- **Marks.** One per place the compiler made something (helper tasks, using your allowances, records; spending limit, mail and calendar, health are grey "not built yet", never green). A mark that is not green says why.
+- **Stop.** Stop → "Stop this permission?" → Stop (two taps). The dialog then shows "Permission withdrawn" and each place turning off one at a time (450 ms apart; at once with reduced motion) from the home's answer to `POST /v1/mandates/{name}/stop`. A place that could not be turned off is shown as failed, with what Muse does by itself and Try again. A place that was never built is never called "turned off". Focus returns to Stop on Cancel, and to the stopped permission (now under "Stopped or ended") after a stop.
+- **Adding a permission.** Not in this build. UX 4.6 describes "Add" (type what to allow, approve with a passkey), but the home has no call that turns a sentence into a draft and no passkey check yet (`person_confirmed` is the owner role). Permissions arise from cards (section 5) and from For apps; the screen says so.
+- **Layout.** Phone: cards in one column. Desktop: cards on the left, the selected permission's history on the right.
+
 ## The desktop shell (Tauri v2)
 
 ```
@@ -112,8 +130,8 @@ MUSE_PYTHON=/path/to/venv/bin/python pnpm e2e
 (cd src-tauri && cargo test --workspace)
 ```
 
-- **Unit (Vitest):** the client and both transports, the reducer, the gauge and spending, polling, the tip rule, formatting, both dictionaries (every key, same placeholders, only the plain words of UX §1), the card for each kind, Today in every state, navigation, and rules about the source (no bare strings, no HTML from strings, one `fetch`, no secrets).
-- **End to end (Playwright):** Today in every fake-home state × phone (390×844) and desktop (1280×800) × zh-TW and English × light and dark, each with axe-core (no serious or critical violation), no console errors, no request to anything but the app, no sideways scrolling. Then loading, a home that goes away and comes back, approve / decline / always (checked on the fake home itself), rollback, pause and resume, every route, keyboard and focus, the language switch, the tray panel, time zones, text at 200%, reduced motion, and the security checks.
+- **Unit (Vitest):** the client and both transports, the reducer, the gauge and spending, polling, the tip rule, formatting, both dictionaries (every key, same placeholders, only the plain words of UX §1), the card for each kind, Today in every state, navigation, Records and Permissions (`tests/trust.test.tsx`: the sentences, money, proof per record, filters, export, Stop one by one and a failed place, focus, both languages, with a fixed clock), and rules about the source (no bare strings, no HTML from strings, one `fetch`, no secrets).
+- **End to end (Playwright):** Today in every fake-home state × phone (390×844) and desktop (1280×800) × zh-TW and English × light and dark, each with axe-core (no serious or critical violation), no console errors, no request to anything but the app, no sideways scrolling. Then loading, a home that goes away and comes back, approve / decline / always (checked on the fake home itself), rollback, pause and resume, every route, keyboard and focus, the language switch, the tray panel, time zones, text at 200%, reduced motion, and the security checks. `e2e/trust.spec.ts`: Records and Permissions in both layouts and languages (light and dark) with axe; filters, Check my records, export (the downloaded file is checked), the `mismatch` state, empty/error/paused, Stop with a place that fails once and Try again, the link from a permission to its records, keyboard and focus.
 - **CI** (`.github/workflows/ci.yml`, job `app`): install from the lock file, types, lint, unit tests, build, and the Rust bridge tests. The end-to-end tests are not in CI yet: they need this repository's Python environment and a browser download on the runner. Run them locally.
 - Screenshots: `MUSE_SHOTS_DIR=/some/folder pnpm e2e screenshots`.
 
@@ -134,7 +152,9 @@ Every dependency is pinned to an exact version in `package.json` and `src-tauri/
 | Settings (`/settings`) | Real: daily limit in the person's currency, default privacy, language, currency and its fixed rate, memory (honest: nothing is remembered; "Forget everything" erases kept conversations), About with the supply-chain check. Recovery key and export say they come later (`features.recovery: false`) |
 | First run (`/welcome`) | Real: welcome, one-tap OpenRouter with its two facts, try it, the answer with its grey line. The recovery-key step is hidden until the vault is wired in. Opens by itself from Today on a home with nothing connected whose `settings.first_run` is `pending`; finishing or "Skip for now" is written to the home (`PATCH /v1/settings {first_run}`), so it opens once. After a skip Today shows its empty state |
 | For apps (`/apps`, desktop) | Real: the address with Copy, the programs, add a program from a preset; its key is copied to the clipboard on a tap and never shown |
-| Records, Permissions, Devices | Placeholder |
+| Records (`/records`) | Real: sentences grouped by day, filters, the record with its proof, Check my records, Export, by permission. No Undo, no vault lock |
+| Permissions (`/permissions`) | Real: sentences, marks, limits, end dates, use counts linked to Records, Stop with each place turning off, waiting cards, stopped/ended, declined. No Add (see above) |
+| Devices | Placeholder |
 | Wallet | Placeholder with the test-network header, hidden from the menus |
 | Tray panel | Real in the browser; the Tauri tray window is written, not seen |
 

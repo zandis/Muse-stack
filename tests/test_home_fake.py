@@ -14,8 +14,12 @@ from pathlib import Path
 import pytest
 
 from home_fakes import ROOT, assert_error, card_schema, running, schema_errors
+from muse import permissions as P
 from muse.home import api, cards, fake
 from muse.home.client import HomeClient
+
+# The demo cards hold one declined card; with biscuit-python the fake also has a permission request the person declined.
+DECLINED = 2 if P.available() else 1
 
 
 class Fake:
@@ -53,7 +57,7 @@ def left(snap) -> list[int]:
 
 
 def test_the_states_are_the_ones_the_app_must_handle():
-    assert fake.STATES == ("normal", "used", "paused", "cards", "empty", "error")
+    assert fake.STATES == ("normal", "used", "paused", "cards", "empty", "error", "mismatch")
     with pytest.raises(ValueError, match="state must be one of"):
         fake.FakeHome("broken")
 
@@ -99,7 +103,7 @@ def test_normal_has_allowance_left_services_connected_and_one_card_waiting(start
     assert "gemini" in cat["connected"] and "cerebras" not in cat["connected"]
     pending = f.get("/v1/cards?status=pending")["cards"]
     assert len(pending) == 1 and pending[0]["kind"] == "save_file" and pending[0]["title"] == "Save a file"  # the Today mock-up
-    assert f.get("/v1/cards")["counts"] == {"pending": 1, "approved": 1, "declined": 1, "expired": 1}
+    assert f.get("/v1/cards")["counts"] == {"pending": 1, "approved": 1, "declined": DECLINED, "expired": 1}
     assert {j["status"] for j in f.get("/v1/jobs")["jobs"]} == {"queued", "running", "deferred", "done"}
     assert {a["name"] for a in f.get("/v1/apps")["apps"]} >= {"cline", "notes-batch"}
 
@@ -129,7 +133,7 @@ def test_cards_state_has_one_waiting_card_of_each_kind(start):
     listed = f.get("/v1/cards")
     pending = [c for c in listed["cards"] if c["status"] == "pending"]
     assert sorted(c["kind"] for c in pending) == sorted(cards.KINDS)
-    assert listed["counts"] == {"pending": 7, "approved": 1, "declined": 1, "expired": 1}
+    assert listed["counts"] == {"pending": 7, "approved": 1, "declined": DECLINED, "expired": 1}
     by_kind = {c["kind"]: c for c in pending}
     assert by_kind["save_file"]["cost"] == {"nothing": True} and by_kind["save_file"]["under"]["text"] == "Weekly digest chore"
     assert "See all" not in by_kind["message"]["extra"]["preview"] and by_kind["message"]["extra"]["preview"]
@@ -214,6 +218,72 @@ def test_it_needs_no_proxy_ledger_or_keys_and_leaves_the_real_home_alone(start, 
     root = f.home.root
     f.home.close()
     assert not root.exists()
+
+
+def test_records_span_several_days_and_one_has_its_text_removed(start):
+    pytest.importorskip("cryptography")
+    f = start("normal")
+    shown = f.get("/v1/receipts?limit=200")
+    records = shown["records"]
+    assert shown["verify"]["ok"] is True and shown["sealed"]["size"] == len(records)
+    days = {r["time"] // 86_400_000 for r in records}
+    assert len(days) >= 4  # today, yesterday, and permissions given days and weeks ago
+    assert [r["seq"] for r in records] == sorted((r["seq"] for r in records), reverse=True)
+    assert any(r["cost"] and r["cost"]["minor"] > 0 for r in records)
+    assert any(str(r.get("egress", "")).startswith("service:") for r in records)
+    assert any(r["actor"] == "helper" for r in records) and any(r["actor"] == "person" for r in records)
+    redacted = [r for r in records if "summary" not in r]
+    assert len(redacted) == 1 and "summary_salt" not in redacted[0]  # still part of a chain that checks out
+    if P.available():
+        assert any(r["action"] == "mandate.issue" for r in records) and any(r["action"] == "mandate.revoke" for r in records)
+        assert redacted[0]["mandate"] == f.home.demo_mandates["tasks"]
+        only = f.get(f"/v1/receipts?mandate={f.home.demo_mandates['program']}")["records"]
+        assert only and all(r["mandate"] == f.home.demo_mandates["program"] for r in only)
+
+
+def test_mismatch_state_has_one_record_that_does_not_check_out(start):
+    pytest.importorskip("cryptography")
+    f = start("mismatch")
+    shown = f.get("/v1/receipts?limit=200")
+    assert shown["verify"]["ok"] is False and shown["verify"]["kind"] == "summary_mismatch"
+    bad = next(r for r in shown["records"] if r["seq"] == shown["verify"]["index"])
+    assert bad["summary"] == "A skill used Gemini: 300 requests"  # changed after it was written
+    assert_error(*f.client.call("POST", "/v1/receipts/export", {}), 409, "conflict")
+    assert f.get("/v1/status")["paused"] is False  # otherwise it is the normal state
+
+
+def test_permissions_in_every_state_the_screen_must_show(start):
+    if not P.available():
+        pytest.skip("biscuit-python is not installed")
+    f = start("normal")
+    listed = {m["id"]: m for m in f.get("/v1/mandates?lang=en")["mandates"]}
+    ids = f.home.demo_mandates
+    assert set(ids) == {"ended", "stopped", "tasks", "spend", "program"} and set(ids.values()) == set(listed)
+    assert listed[ids["ended"]]["state"] == "expired" and listed[ids["stopped"]]["state"] == "stopped"
+    assert all(listed[ids[n]]["state"] == "active" for n in ("tasks", "spend", "program"))
+    spend = listed[ids["spend"]]
+    assert spend["limits"] == [{"kind": "spend", "unit": "TWD", "decimals": 2, "period": "day", "amount": 3000}]
+    assert spend["targets"]["payments"]["state"] == "not_built" and len(spend["resources"]) == 3
+    assert {t: s["state"] for t, s in listed[ids["program"]]["targets"].items()} == {"router": "active", "records": "active"}
+    assert all(s["state"] == "revoked" for s in listed[ids["stopped"]]["targets"].values())
+    declined = f.get("/v1/mandates/declined?lang=zh-TW")["declined"]
+    assert len(declined) == 1 and declined[0]["device"] == fake.HOST_BOT and "openmausbot-tools" in declined[0]["sentence"]
+    assert len(f.get("/v1/cards?status=pending")["cards"]) == 1  # the request was answered: nothing more waits
+
+
+def test_the_first_stop_of_the_program_fails_at_its_router_entry_and_the_second_works(start):
+    if not P.available():
+        pytest.skip("biscuit-python is not installed")
+    f = start("normal")
+    name = f.home.demo_mandates["program"][3:15]
+    status, first = f.client.call("POST", f"/v1/mandates/{name}/stop")
+    assert status == 200 and first["complete"] is False and first["recorded"] is True
+    assert first["targets"]["router"]["state"] == "failed" and first["targets"]["records"]["state"] == "revoked"
+    status, again = f.client.call("POST", f"/v1/mandates/{name}/stop")
+    assert status == 200 and again["complete"] is True and again["was"] == "stopped"
+    assert {t: s["state"] for t, s in again["targets"].items()} == {"router": "revoked", "records": "revoked"}
+    status, other = f.client.call("POST", f"/v1/mandates/{f.home.demo_mandates['tasks'][3:15]}/stop")
+    assert status == 200 and other["complete"] is True  # only that one fails, once
 
 
 def test_only_the_fixed_token_signs_in(start):
