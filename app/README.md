@@ -4,7 +4,7 @@ The real app's front end, and the desktop shell around it. This build is work pa
 
 ## Run it against the fake home
 
-You need Node 22, pnpm 10, and a Python that can run this repository (`pip install -e .` in a virtualenv). For the Permissions screen the fake home also needs `biscuit-python==0.4.0` in that virtualenv (`pip install 'muse-stack[permissions]'`); without it the home answers `GET /v1/mandates` with 503 and the screen says it cannot show permissions. The end-to-end tests expect it.
+You need Node 22, pnpm 10, and a Python that can run this repository (`pip install -e .` in a virtualenv). For the Records and Permissions screens the fake home also needs the signature and permissions libraries in that virtualenv (`pip install -e '.[records,permissions]'` from the repository root); without it the home answers `GET /v1/mandates` with 503 and the screen says it cannot show permissions. The end-to-end tests expect it.
 
 ```bash
 cd app
