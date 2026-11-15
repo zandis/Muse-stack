@@ -148,12 +148,20 @@ def test_tools_that_touch_approval_or_permission_say_what_muse_does_not_control(
 
 
 def test_allowance_status_is_the_snapshot_reduced_to_what_a_bot_needs(rig):
-    got = rig.call("allowance_status")
+    # The fake home moves its canned times to "now", to the second. Take the snapshot on both sides of the
+    # call and keep a round in which the clock did not tick, so the two can be compared exactly.
+    for _ in range(20):
+        before = rig.phone.call("GET", "/v1/status")[1]
+        got = rig.call("allowance_status")
+        snap = rig.phone.call("GET", "/v1/status")[1]
+        if before["generated_at"] == snap["generated_at"]:
+            break
+    else:
+        pytest.fail("the clock ticked during every one of 20 rounds")
     assert got["paused"] is False and got["services_connected"] == len(got["services"]) > 0
     gemini = next(s for s in got["services"] if s["id"] == "gemini")
     assert gemini["state"] == "ok" and gemini["local"] is False
     day = next(lim for lim in gemini["limits"] if lim["window"] == "day" and lim["counts"] == "requests")
-    snap = rig.phone.call("GET", "/v1/status")[1]  # the fake home moves its canned times to "now"
     source = next(lim for p in snap["providers"] if p["id"] == "gemini" for lim in p["limits"]
                   if lim["window"] == "day" and lim["metric"] == "requests")
     assert day == {"window": "day", "counts": "requests", "left": 1388, "of": 1500, "refills_at": source["reset_at"], "estimate": True}

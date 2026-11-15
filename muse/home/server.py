@@ -424,8 +424,26 @@ def serve_in_thread(server: HomeServer) -> threading.Thread:
     return thread
 
 
-def _stop_request(signum: int, frame: Any) -> None:
-    raise KeyboardInterrupt
+_stop_asked = False
+
+
+def _note_stop(signum: int, frame: Any) -> None:
+    global _stop_asked
+    _stop_asked = True
+
+
+def accept_stop_requests() -> None:
+    """Call before `make_server`: from here on an interrupt or a terminate request is remembered.
+
+    Without this there is a moment, after the socket exists and before `serve` runs, in which a
+    terminate request kills the program with its socket left behind, and an interrupt is lost
+    altogether when the program was started detached (SIGINT inherited as ignored).
+    """
+    import signal
+
+    if threading.current_thread() is threading.main_thread():
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            signal.signal(signum, _note_stop)
 
 
 def serve(server: HomeServer, banner: str = "Muse home") -> None:
@@ -434,17 +452,31 @@ def serve(server: HomeServer, banner: str = "Muse home") -> None:
     Both an interrupt and a terminate request stop it cleanly. They are set
     here on purpose: a service manager stops a program with SIGTERM, and a
     program started detached (`nohup`, a background job) inherits SIGINT
-    ignored, so neither default can be relied on.
+    ignored, so neither default can be relied on. A request that arrived
+    after `accept_stop_requests` and before this point is honoured at once.
+
+    The handler does not raise: an exception raised from a signal handler can
+    land inside code that discards it (a finaliser, a callback), and the
+    request would be lost. It asks the server to stop from another thread,
+    which `serve_forever` notices within its polling interval.
     """
     import signal
+
+    asked = threading.Event()
+
+    def stop(signum: int, frame: Any) -> None:
+        if not asked.is_set():
+            asked.set()
+            threading.Thread(target=server.shutdown, name="muse-home-stop", daemon=True).start()
 
     previous = {}
     if threading.current_thread() is threading.main_thread():
         for signum in (signal.SIGINT, signal.SIGTERM):
-            previous[signum] = signal.signal(signum, _stop_request)
+            previous[signum] = signal.signal(signum, stop)
     print(f"{banner}: {server.where}  (Ctrl-C to stop)", flush=True)
     try:
-        server.serve_forever()
+        if not _stop_asked:
+            server.serve_forever(poll_interval=0.1)
     except KeyboardInterrupt:
         pass
     finally:

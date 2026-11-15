@@ -189,7 +189,11 @@ COHERE_TRIAL = ("You are using a Trial key, which is limited to 1000 API calls /
         ("quota with a clock stays short", "groq", 429, {}, "quota exceeded, please try again in 2s", "upstream", "cooldown", NOW + 2),
         ("unlimited is not limit", "x", 429, {}, "unlimited plan", "upstream", "cooldown", NOW + 60),
         ("quotaId is not the word", "gemini", 429, {}, "quotaId: nope", "upstream", "cooldown", NOW + 60),
-        ("per-minute wording with no clock", "cohere", 429, {}, "Trial key rate limit: 20 per minute", "upstream", "exhausted", ts("2026-11-13T00:00:00")),
+        # A per-minute limit reported with no clock must not take the service out until midnight.
+        ("per-minute wording with no clock", "cohere", 429, {}, "Trial key rate limit: 20 per minute", "upstream", "cooldown", NOW + 60),
+        ("rate limit exceeded with no clock", "mistral", 429, {}, "Rate limit exceeded", "upstream", "cooldown", NOW + 60),
+        ("too many requests naming a limit", "x", 429, {}, "Too many requests: limit hit", "upstream", "cooldown", NOW + 60),
+        ("rate limit that also names a quota", "x", 429, {}, "Rate limit: quota used up", "upstream", "exhausted", ts("2026-11-13T00:00:00")),
     ],
 )
 def test_classify_failure(case, provider, status, headers, body, scope, kind, until):

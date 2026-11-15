@@ -780,5 +780,37 @@ fn names_quota_or_limit(text: &str) -> bool {
     fn is_word_byte(b: u8) -> bool {
         b.is_ascii_alphanumeric() || b == b'_'
     }
-    word(text, "quota") || word(text, "limit")
+    word(text, "quota") || (word(text, "limit") && !names_a_short_limit(text))
+}
+
+/// Python `\brate[ _-]?limit|too many requests|per[ -]minute|\b[rt]pm\b` on the
+/// already-lowercased body: the wording of a per-minute limit. A 429 that says
+/// this and names no clock waits 60 seconds, not a day.
+fn names_a_short_limit(text: &str) -> bool {
+    fn is_word_byte(b: u8) -> bool {
+        b.is_ascii_alphanumeric() || b == b'_'
+    }
+    // `needle` with a word boundary before it (and after it, when `closed`).
+    fn at_boundary(text: &str, needle: &str, closed: bool) -> bool {
+        let bytes = text.as_bytes();
+        let n = needle.as_bytes();
+        let mut i = 0;
+        while i + n.len() <= bytes.len() {
+            if &bytes[i..i + n.len()] == n {
+                let before = i == 0 || !is_word_byte(bytes[i - 1]);
+                let after = !closed || i + n.len() == bytes.len() || !is_word_byte(bytes[i + n.len()]);
+                if before && after {
+                    return true;
+                }
+            }
+            i += 1;
+        }
+        false
+    }
+    ["ratelimit", "rate limit", "rate_limit", "rate-limit"].iter().any(|n| at_boundary(text, n, false))
+        || text.contains("too many requests")
+        || text.contains("per minute")
+        || text.contains("per-minute")
+        || at_boundary(text, "rpm", true)
+        || at_boundary(text, "tpm", true)
 }

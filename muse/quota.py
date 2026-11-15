@@ -323,6 +323,8 @@ def _signals(body_text: str) -> _Signals:
 
 
 _TRY_AGAIN = re.compile(r"(?:please )?try again in ([0-9hms.]+)", re.ASCII)
+# Wording of a short (per-minute) limit. A 429 that says this and names no clock waits 60 seconds, not a day.
+_SHORT_LIMIT_TEXT = re.compile(r"\brate[ _-]?limit|too many requests|per[ -]minute|\b[rt]pm\b")
 _DAILY_TEXT = re.compile(
     r"per[ -]day|\(tpd\)|\(rpd\)|daily (?:limit|quota)|free-models-per-day|requests per day|tokens per day"
 )
@@ -462,7 +464,10 @@ def classify_failure(
     # estimated daily reset. A daily cap whose wording matches nothing above
     # was being retried every minute. A bare 429, with neither word, stays
     # at 60 seconds: an RPM blip must not freeze the upstream until midnight.
-    if re.search(r"\b(?:quota|limit)\b", text):
+    # The word "limit" alone is not enough: "Rate limit exceeded" and "Too many
+    # requests" are how providers report a per-minute limit, and several send
+    # them with no clock at all. Those keep the 60 second wait.
+    if re.search(r"\bquota\b", text) or (re.search(r"\blimit\b", text) and not _SHORT_LIMIT_TEXT.search(text)):
         return _block(
             "upstream", "exhausted", _daily_reset(provider_id, now),
             "429 mentions quota or limit but names no clock; reset time estimated "

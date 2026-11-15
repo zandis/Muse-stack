@@ -23,11 +23,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.fake:
             home = fake.FakeHome(args.state)
             sock = args.socket or (None if args.tcp is not None else home.root / server.SOCKET_NAME)
+            server.accept_stop_requests()
             srv = server.make_server(home, fake.fake_verifier(), socket_path=sock, tcp_port=args.tcp)
             print(f"FAKE home, state '{args.state}'. Canned data; nothing here is real and nothing is kept.")
             print(f"  Token : {fake.FAKE_TOKEN}   (send as  Authorization: Bearer {fake.FAKE_TOKEN})")
             server.serve(srv, banner="  Listen")
         else:
+            server.accept_stop_requests()
             srv = server.make_server(socket_path=Path(args.socket) if args.socket else None, tcp_port=args.tcp)
             server.serve(srv)
     except (ValueError, OSError) as exc:

@@ -59,6 +59,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
     from muse.home import auth, server
 
     try:
+        server.accept_stop_requests()
         srv = server.make_server(socket_path=Path(args.socket) if args.socket else None, tcp_port=args.tcp)
     except (ValueError, OSError) as exc:
         _err(f"Could not start the home: {exc}")
