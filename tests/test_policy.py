@@ -474,10 +474,12 @@ ADVERSARIAL = [
 
 @pytest.mark.parametrize("payload", ADVERSARIAL, ids=[str(i) for i in range(len(ADVERSARIAL))])
 def test_redos_one_megabyte(payload):
-    start = time.perf_counter()
+    # Processor time of this thread, not the wall clock: the bound is on the work the detector does,
+    # and the wall clock also counts other test workers and whatever else the machine is running.
+    start = time.thread_time()
     detect_sensitive(payload)
-    elapsed = time.perf_counter() - start
-    assert elapsed < 1.0, f"{elapsed:.2f}s"
+    elapsed = time.thread_time() - start
+    assert elapsed < 1.0, f"{elapsed:.2f}s of processor time"
 
 
 def test_scan_cap_head_and_tail():
