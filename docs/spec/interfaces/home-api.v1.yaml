@@ -2485,7 +2485,8 @@ components:
             properties:
               n: {type: integer}
               file: {type: string, description: "The file as the skill showed it: relative to the allowed folder."}
-              paragraphs: {type: array, items: {type: integer}, description: "The paragraph numbers the statements rest on."}
+              paragraphs: {type: array, items: {type: integer}, description: "The paragraph numbers the statements rest on. For a PDF source on one page: the paragraphs on that page; on several pages: empty."}
+              pages: {type: array, items: {type: integer}, description: "PDF sources only: the pages the statements rest on (file › page 3, paragraph 2)."}
               quote: {type: string, description: "The words of the first of those paragraphs, at most 400 characters."}
               label: {type: string, description: "The skill's own `file › paragraph n` line, in the question's language."}
         handoff:

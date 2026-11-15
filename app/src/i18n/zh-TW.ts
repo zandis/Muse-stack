@@ -274,6 +274,9 @@ export const zhTW: Dict = {
 
   src_h: '出處',
   src_line: '{0} › 第 {1} 段',
+  src_page_line: '{0} › 第 {1} 頁第 {2} 段',
+  src_page: '{0} › 第 {1} 頁',
+  src_pages: '{0} › 第 {1} 頁',
 
   ch2_add_h: '新增例行工作',
   ch2_add_btn: '用一句話新增例行工作',

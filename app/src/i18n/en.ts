@@ -286,6 +286,9 @@ export const en = {
   // Sources of an answer from files
   src_h: 'Where this came from',
   src_line: '{0} › paragraph {1}',
+  src_page_line: '{0} › page {1}, paragraph {2}',
+  src_page: '{0} › page {1}',
+  src_pages: '{0} › pages {1}',
 
   // Chores (section 4.3)
   ch2_add_h: 'Add a chore',

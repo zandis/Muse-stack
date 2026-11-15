@@ -136,9 +136,16 @@ function CutShort({ turn, busy, onContinue }: { turn: Turn; busy: boolean; onCon
   );
 }
 
-export function sourceLabel(file: string, paragraphs: readonly number[], t: T, lang: Lang): string {
+// A PDF source carries its pages: "lease.pdf › page 3, paragraph 2" (one page, and then `paragraphs` are the
+// paragraphs on that page) or "lease.pdf › pages 3, 4". Any other file: "notes.md › paragraph 3".
+export function sourceLabel(file: string, paragraphs: readonly number[], t: T, lang: Lang, pages: readonly number[] = []): string {
+  const list = (ns: readonly number[]) => fmtList(ns.map((n) => fmtNumber(n, lang)), lang);
+  if (pages.length > 1) return t('src_pages', redact(file), list(pages));
+  if (pages.length === 1) {
+    return paragraphs.length === 0 ? t('src_page', redact(file), list(pages)) : t('src_page_line', redact(file), list(pages), list(paragraphs));
+  }
   if (paragraphs.length === 0) return redact(file);
-  return t('src_line', redact(file), fmtList(paragraphs.map((n) => fmtNumber(n, lang)), lang));
+  return t('src_line', redact(file), list(paragraphs));
 }
 
 function OwnApp({ apps }: { apps: readonly HandoffApp[] | undefined }) {
@@ -186,7 +193,7 @@ function TurnView(p: TurnProps) {
               <ol>
                 {turn.sources.map((s) => (
                   <li key={`${s.n}-${s.file}`}>
-                    <span className="srcfile">{`[${s.n}] ${sourceLabel(s.file, s.paragraphs, t, lang)}`}</span>
+                    <span className="srcfile">{`[${s.n}] ${sourceLabel(s.file, s.paragraphs, t, lang, s.pages ?? [])}`}</span>
                     {s.quote ? <blockquote className="quote">{redact(s.quote)}</blockquote> : null}
                   </li>
                 ))}

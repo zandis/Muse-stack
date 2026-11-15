@@ -10,6 +10,7 @@ import { translate, type Key } from '../src/i18n';
 import type { Lang } from '../src/i18n/format';
 import { allowCatalogueHosts, allowedExternal } from '../src/lib/links';
 import { Markdown, parseInline, parseMarkdown } from '../src/lib/markdown';
+import { sourceLabel } from '../src/screens/Ask';
 import { CHOICE_ORDER, greyLine, localMoney, orderedChoices, reasonKey, spentText } from '../src/state/ask';
 import { pretendAppClient } from './app-fixtures';
 
@@ -31,6 +32,17 @@ describe('money in the person’s currency', () => {
     expect(spentText(ZERO, 'TWD', 'en', T('en'))).toBe('Nothing spent.');
     expect(spentText(ZERO, 'TWD', 'zh-TW', T('zh-TW'))).toBe('沒有花錢。');
     expect(spentText(FOUR_CENTS, 'TWD', 'en', T('en'))).toBe('Spent about NT$1.');
+  });
+});
+
+describe('where an answer came from', () => {
+  it('names the paragraph of a file, and the page and paragraph of a PDF', () => {
+    expect(sourceLabel('notes.md', [3], T('en'), 'en')).toBe('notes.md › paragraph 3');
+    expect(sourceLabel('lease.pdf', [2], T('en'), 'en', [3])).toBe('lease.pdf › page 3, paragraph 2');
+    expect(sourceLabel('lease.pdf', [], T('en'), 'en', [3])).toBe('lease.pdf › page 3');
+    expect(sourceLabel('lease.pdf', [], T('en'), 'en', [3, 4])).toBe('lease.pdf › pages 3 and 4');
+    expect(sourceLabel('合約.pdf', [2], T('zh-TW'), 'zh-TW', [3])).toBe('合約.pdf › 第 3 頁第 2 段');
+    expect(sourceLabel('合約.pdf', [], T('zh-TW'), 'zh-TW', [1, 3])).toBe('合約.pdf › 第 1和3 頁');
   });
 });
 
