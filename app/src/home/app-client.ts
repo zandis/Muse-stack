@@ -28,11 +28,14 @@ import type {
   Understood,
   VerifyResult,
 } from './types-app';
+import type { DeclinedRequest, PermissionList, RecordsExport, RecordsPage, StopResult } from './types-trust';
 
 const HEX16 = /^[0-9a-f]{16}$/;
 const CHORE_ID = /^[0-9a-f]{8}$/;
 const SERVICE_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const APP_NAME = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
+const PERMISSION_NAME = /^[0-9a-f]{12}$/;
+const MANDATE_REF = /^[A-Za-z0-9._:-]{1,128}$/;
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -101,6 +104,14 @@ export interface AppClient {
   apps(): Promise<App[]>;
   addApp(name: string, priority: App['priority'], o: { dailyRequests?: number | null; allowPaid?: boolean }): Promise<NewApp>;
   removeApp(name: string): Promise<void>;
+
+  /** A page of the home's records, newest first, with whether they check out. The home checks them on every call. */
+  records(o?: { before?: number; mandate?: string; limit?: number }): Promise<RecordsPage>;
+  exportRecords(redactSummaries: boolean): Promise<RecordsExport>;
+  permissions(lang: 'en' | 'zh-TW'): Promise<PermissionList>;
+  declined(lang: 'en' | 'zh-TW'): Promise<DeclinedRequest[]>;
+  /** Stop one permission everywhere; says how each place it was in force ended up. */
+  stopPermission(name: string): Promise<StopResult>;
 }
 
 const isTurn = (v: unknown): boolean => isObject(v) && typeof v.id === 'string' && typeof v.status === 'string' && typeof v.question === 'string';
@@ -258,6 +269,31 @@ export function createAppClient(transport: Transport): AppClient {
     },
     async removeApp(name) {
       await call('DELETE', `/v1/apps/${id(APP_NAME, name)}`);
+    },
+
+    async records(o = {}) {
+      const q: string[] = [];
+      if (o.limit !== undefined) q.push(`limit=${Math.max(1, Math.min(200, Math.floor(o.limit)))}`);
+      if (o.before !== undefined) q.push(`before=${need(Number.isInteger(o.before) && o.before >= 0, o.before)}`);
+      if (o.mandate !== undefined) q.push(`mandate=${encodeURIComponent(id(MANDATE_REF, o.mandate))}`);
+      const v = await call('GET', `/v1/receipts${q.length ? `?${q.join('&')}` : ''}`);
+      return need(Array.isArray(v.records) && isObject(v.verify) && typeof v.verify.ok === 'boolean', v as unknown as RecordsPage);
+    },
+    async exportRecords(redactSummaries) {
+      const v = await call('POST', '/v1/receipts/export', { redact_summaries: redactSummaries });
+      return need(isObject(v.export) && typeof v.file_name === 'string' && typeof v.count === 'number', v as unknown as RecordsExport);
+    },
+    async permissions(lang) {
+      const v = await call('GET', `/v1/mandates?lang=${lang === 'zh-TW' ? 'zh-TW' : 'en'}`);
+      return need(Array.isArray(v.mandates) && isObject(v.enforcement), v as unknown as PermissionList);
+    },
+    async declined(lang) {
+      const v = await call('GET', `/v1/mandates/declined?lang=${lang === 'zh-TW' ? 'zh-TW' : 'en'}`);
+      return need(Array.isArray(v.declined), v.declined as DeclinedRequest[]);
+    },
+    async stopPermission(name) {
+      const v = await call('POST', `/v1/mandates/${id(PERMISSION_NAME, name)}/stop`);
+      return need(v.stopped === true && isObject(v.targets), v as unknown as StopResult);
     },
   };
 }

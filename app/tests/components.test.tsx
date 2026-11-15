@@ -528,8 +528,6 @@ describe('navigation and the other screens', () => {
 
   it('each placeholder says what will appear there and that it comes later; Pause stays reachable', async () => {
     for (const [path, title] of [
-      ['/records', 'No records yet'],
-      ['/permissions', 'No permissions yet'],
       ['/devices', 'Only this device so far'],
       ['/wallet', 'No payments yet'],
     ] as const) {

@@ -24,7 +24,7 @@ describe('dictionaries', () => {
   });
   it('really are translated (only names stay the same)', () => {
     const same = keys.filter((k) => en[k] === zhTW[k]);
-    expect(same.sort()).toEqual(['brand', 'doc_title', 'st_lang_en', 'st_lang_zh']);
+    expect(same.sort()).toEqual(['brand', 'doc_title', 'rc_s_muse', 'st_lang_en', 'st_lang_zh']);
   });
   it('use the plain words of UX section 1, not the technical ones', () => {
     // Words the table rules out on main screens. ("Key" is allowed only for For apps.)

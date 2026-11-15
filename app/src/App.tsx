@@ -7,7 +7,9 @@ import { Ask } from './screens/Ask';
 import { Chores } from './screens/Chores';
 import { FirstRun } from './screens/FirstRun';
 import { ForApps } from './screens/ForApps';
+import { Permissions } from './screens/Permissions';
 import { More, Placeholder, Wallet } from './screens/Placeholders';
+import { Records } from './screens/Records';
 import { Services } from './screens/Services';
 import { Settings } from './screens/Settings';
 import { Today } from './screens/Today';
@@ -33,6 +35,10 @@ function ScreenFor({ screen }: { screen: Screen }) {
       return <Settings />;
     case 'apps':
       return <ForApps />;
+    case 'records':
+      return <Records />;
+    case 'permissions':
+      return <Permissions />;
     default:
       return <Placeholder screen={screen} />;
   }

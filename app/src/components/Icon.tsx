@@ -31,6 +31,7 @@ const ICONS = {
   bolt: [p('M13 2L4 14h7l-1 8 9-12h-7z')],
   cloud: [p('M7 18a4 4 0 0 1-.5-8A6 6 0 0 1 18 9.5a4.2 4.2 0 0 1-1 8.5z'), p('M4 4l16 16')],
   empty: [<rect key="r" x="4" y="5" width="16" height="14" rx="3" />, p('M8 10h8M8 14h5')],
+  download: [p('M12 3v12M7 10l5 5 5-5M4 20h16')],
 } satisfies Record<string, ReactNode[]>;
 
 export type IconName = keyof typeof ICONS;
