@@ -6,11 +6,14 @@ Tasks for `scripts/chores_check.py`, the harness behind gate G1 (since 2026-11-1
 evals/chores/
   fixtures/larkspur-en/     seven English documents
   fixtures/qingfeng-zh/     seven Traditional Chinese documents
+  fixtures/harbour-pdf-en/  four English PDFs (a three-page lease, a two-column newsletter, a price table, a scan)
+  fixtures/songyuan-pdf-zh/ four PDFs: three Traditional Chinese (a three-page contract, two-column minutes, a price
+                            table) and one locked with a password
   files-answer/tasks.jsonl
   research-report/tasks.jsonl
 ```
 
-Every document under `fixtures/` was written for this test. The people, addresses, companies, products, phone numbers and email addresses are invented, and each document says so. The two folders are different households, not translations of each other. Each has a lease, meeting notes, a product FAQ, invoices (CSV), a travel plan, a short policy and a longer handbook.
+Every document under `fixtures/` was written for this test. The PDFs are generated, byte for byte, from text kept in `scripts/pdf_fixtures.py` (standard library only; `python scripts/pdf_fixtures.py --check` compares, `--write` rebuilds). The guard below checks a PDF without parsing it: the file must equal what that script builds, and the expected facts must be in its source text. With the optional pypdf installed, a test also checks that what the skill actually reads from each PDF holds the facts. The scan has no text layer and the locked file cannot be opened, so a run over those folders also shows the notes for both. The people, addresses, companies, products, phone numbers and email addresses are invented, and each document says so. The two folders are different households, not translations of each other. Each has a lease, meeting notes, a product FAQ, invoices (CSV), a travel plan, a short policy and a longer handbook.
 
 ## A task
 

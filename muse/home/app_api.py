@@ -581,7 +581,9 @@ def skill_sources(output: Mapping[str, Any]) -> list[dict[str, Any]]:
     """The files skill's citations as `file › paragraph` with the quoted words (ux section 4.2).
 
     `file` is the path as the skill showed it (relative to the allowed folder), `paragraphs` the numbers the
-    statements rest on, `quote` the words of the first of those paragraphs, cut to MAX_QUOTE_CHARS."""
+    statements rest on, `quote` the words of the first of those paragraphs, cut to MAX_QUOTE_CHARS. A PDF source adds
+    `pages`; when they are one page, `paragraphs` are the paragraphs on that page (`lease.pdf › page 3, paragraph 2`),
+    and when they are several, `paragraphs` is empty (`lease.pdf › pages 3, 4`)."""
     passages = {p.get("n"): p for p in output.get("passages") or [] if isinstance(p, dict)}
     out: list[dict[str, Any]] = []
     for c in output.get("citations") or []:
@@ -600,8 +602,13 @@ def skill_sources(output: Mapping[str, Any]) -> list[dict[str, Any]]:
         quote = " ".join(quote.split())
         if len(quote) > MAX_QUOTE_CHARS:
             quote = quote[: MAX_QUOTE_CHARS - 1] + "…"
-        out.append({"n": c.get("n"), "file": str(passage.get("shown") or c.get("path") or "")[:300], "paragraphs": numbers[:20],
-                    "quote": quote, "label": str(c.get("label") or "")[:300]})
+        source = {"n": c.get("n"), "file": str(passage.get("shown") or c.get("path") or "")[:300], "paragraphs": numbers[:20],
+                  "quote": quote, "label": str(c.get("label") or "")[:300]}
+        pages = [n for n in c.get("pages") or [] if isinstance(n, int) and not isinstance(n, bool)]
+        if pages:
+            on_page = [n for n in c.get("page_paragraphs") or [] if isinstance(n, int) and not isinstance(n, bool)]
+            source.update(pages=pages[:20], paragraphs=on_page[:20] if len(pages) == 1 else [])
+        out.append(source)
     return out
 
 

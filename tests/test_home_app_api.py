@@ -869,6 +869,21 @@ def test_skill_sources_cuts_long_quotes_and_survives_odd_output():
     assert len(s["quote"]) == app_api.MAX_QUOTE_CHARS and s["quote"].endswith("…") and s["file"] == "a.md"
 
 
+def test_skill_sources_give_a_pdf_its_page_and_the_paragraphs_on_that_page():
+    output = {"citations": [{"n": 1, "path": "/d/lease.pdf", "paragraphs": [6], "pages": [2], "page_paragraphs": [2],
+                             "label": "lease.pdf › page 2, paragraph 2"},
+                            {"n": 2, "path": "/d/lease.pdf", "paragraphs": [4, 9], "pages": [1, 3], "label": "lease.pdf › pages 1, 3"},
+                            {"n": 3, "path": "/d/notes.md", "paragraphs": [3], "label": "notes.md › paragraph 3"}],
+              "passages": [{"n": 1, "shown": "lease.pdf", "paragraphs": [5, 6], "text": "Fees\n\nThe fee is 380 dollars."},
+                           {"n": 2, "shown": "lease.pdf", "paragraphs": [4, 9], "text": "a b\n\nc d"},
+                           {"n": 3, "shown": "notes.md", "paragraphs": [3], "text": "The boat is called Petrel."}]}
+    one, two, plain = app_api.skill_sources(output)
+    assert one == {"n": 1, "file": "lease.pdf", "paragraphs": [2], "pages": [2], "quote": "The fee is 380 dollars.",
+                   "label": "lease.pdf › page 2, paragraph 2"}
+    assert two["pages"] == [1, 3] and two["paragraphs"] == [] and two["quote"] == "a b"
+    assert "pages" not in plain and plain["paragraphs"] == [3]
+
+
 def test_the_fake_one_tap_flow_completes_after_two_polls_and_first_run_can_then_ask(fakes):
     home = fakes("empty")
     status, started = fake_call(home, "POST", "/v1/connect/openrouter/start", {"same_device": True})

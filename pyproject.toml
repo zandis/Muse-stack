@@ -17,7 +17,9 @@ trust = ["cryptography>=42"]
 # Records (muse/records, `muse records`, the home's own record of what it did): Ed25519 signatures.
 # The same package and floor as `trust` and `dev`; without it Muse still works and writes no records.
 records = ["cryptography>=42"]
-pdf = ["pypdf>=4"]
+# PDF reading in the files skills (skills/*/pdf.py). Pinned exactly and hash-locked in requirements/pdf.lock;
+# pure Python, BSD-3-Clause. Without it the skills say how many PDFs were skipped.
+pdf = ["pypdf==7.0.1"]
 # Signed permission tokens (muse/permissions). Pinned exactly: 0.4.0 wraps biscuit-auth 6.0.0,
 # the release core/Cargo.toml pins, so both sides run the same engine against the same vectors.
 permissions = ["biscuit-python==0.4.0"]

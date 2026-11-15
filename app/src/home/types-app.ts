@@ -77,9 +77,12 @@ export interface AnswerRoute {
 export interface Source {
   n: number;
   file: string;
+  /** Paragraph numbers; for a PDF source on one page, the paragraphs on that page. */
   paragraphs: number[];
   quote: string;
   label: string;
+  /** PDF sources only: the pages the statements rest on. */
+  pages?: number[];
 }
 
 export type AnswerStatus = 'answered' | 'choices' | 'pending' | 'queued' | 'handed_off' | 'over_limit' | 'failed';

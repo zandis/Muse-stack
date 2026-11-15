@@ -59,8 +59,11 @@ def _shown(path: str, roots: list[str]) -> str:
     return path
 
 
-def _label(shown: str, numbers: list[int], zh: bool) -> str:
-    """`file path › paragraph 3`. Several paragraphs: `3, 5`; a run of them: `3-5`."""
+def _label(shown: str, numbers: list[int], zh: bool, places: dict[int, Any] | None = None) -> str:
+    """`file path › paragraph 3`. Several paragraphs: `3, 5`; a run of them: `3-5`. A PDF: `file › page 3, paragraph 2`."""
+    on_page = index.place_label(numbers, places or {}, zh)
+    if on_page:
+        return f"{shown} › {on_page}"
     numbers = sorted(set(numbers))
     run = len(numbers) > 2 and numbers[-1] - numbers[0] == len(numbers) - 1
     span = f"{numbers[0]}-{numbers[-1]}" if run else ("、" if zh else ", ").join(str(n) for n in numbers)
@@ -108,8 +111,8 @@ def _not_found(zh: bool) -> str:
 
 
 def _notes(ctx: Any, stats: index.Stats, pdf_ok: bool) -> None:
-    if stats.pdf_skipped:
-        ctx.note(f"{stats.pdf_skipped} PDF file(s) were not read: no PDF reader is installed with Muse.", incomplete=True)
+    for line in index.pdf_notes(stats):  # PDFs not read, or not read whole: counted and named, never silent
+        ctx.note(line, incomplete=True)
     if stats.large:
         ctx.note(f"{stats.large} file(s) were too large to read (over {index.MAX_FILE_BYTES // 1_000_000} MB each).", incomplete=True)
     if stats.unreadable:
@@ -170,7 +173,9 @@ def run(ctx: Any) -> dict[str, Any]:
     anchored = {c.path for c in chunks if names and any(name in quotes.fold(c.text)[0] for name in names)}
     passages = [{"n": n, "path": c.path, "shown": _shown(c.path, roots), "paragraph": c.para_start,
                  "paragraph_end": c.para_end, "paragraphs": list(c.paras), "text": c.text,
-                 "label": _label(_shown(c.path, roots), list(range(c.para_start, c.para_end + 1)), zh),
+                 "places": [list(p) if p else None for p in c.places] if c.places else None,
+                 "label": _label(_shown(c.path, roots), list(range(c.para_start, c.para_end + 1)), zh,
+                                 dict(zip(c.paras, c.places)) if c.places else None),
                  "anchored": (c.path in anchored) if names else None}
                 for n, c in enumerate(chosen, start=1)]
     reply = recover.ask(ctx.llm, answer_mod.messages(question, [p["text"] for p in passages]),
@@ -246,7 +251,7 @@ def _output(base: dict[str, Any], parsed: dict[str, Any], kept: list[dict[str, A
         hit = quotes.paragraph_of(p, c["start"])
         paragraphs = [hit] if hit else list(range(p["paragraph"], p["paragraph_end"] + 1))
         used.setdefault(c["n"], []).extend(paragraphs)
-        source = _label(p["shown"], paragraphs, zh)
+        source = _label(p["shown"], paragraphs, zh, index.places_of(p))
         claims.append({"id": number, "says": c["says"], "text": c["says"], "quote": c["quote"], "n": c["n"],
                        "start": c["start"], "end": c["end"], "cites": [c["n"]], "sources": [source], "source": source})
         ids.update({place: number for place in c["indexes"]})
@@ -267,8 +272,7 @@ def _output(base: dict[str, Any], parsed: dict[str, Any], kept: list[dict[str, A
         else:  # the model's own sentences do not stand on the claims: the claims are the answer
             body = "\n".join(f"{c['says']} [{c['id']}]" for c in claims)
             written = "claims"
-    citations = [{"n": n, "path": by_n[n]["path"], "paragraphs": sorted(set(used[n])),
-                  "label": _label(by_n[n]["shown"], used[n], zh)} for n in sorted(used)]
+    citations = [_citation(by_n[n], used[n], zh) for n in sorted(used)]
     missing = list(parsed.get("missing") or []) if claims else []
     text = body
     if missing:
@@ -279,6 +283,19 @@ def _output(base: dict[str, Any], parsed: dict[str, Any], kept: list[dict[str, A
     return {**base, "answer": body, "text": text, "claims": claims, "not_found": not_found, "citations": citations,
             "passages": passages, "read": parsed["read"], "written": written, "dropped_claims": dict(sorted(dropped.items())),
             "missing": missing, "attempts": attempts}
+
+
+def _citation(passage: dict[str, Any], used: list[int], zh: bool) -> dict[str, Any]:
+    """{"n", "path", "paragraphs", "label"}; for a PDF also "pages" and, when they are on one page, "page_paragraphs"."""
+    places = index.places_of(passage)
+    numbers = sorted(set(used))
+    out = {"n": passage["n"], "path": passage["path"], "paragraphs": numbers, "label": _label(passage["shown"], numbers, zh, places)}
+    spots = sorted({tuple(places[n]) for n in numbers if n in places})
+    if spots:
+        out["pages"] = sorted({page for page, _ in spots})
+        if len(out["pages"]) == 1:
+            out["page_paragraphs"] = [k for _, k in spots]
+    return out
 
 
 def check(output: Any, ctx: Any = None) -> list[str]:

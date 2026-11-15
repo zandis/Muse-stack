@@ -1,0 +1,18 @@
+# Hash-locked optional PDF reader for the files skills (files-answer, research-report): pypdf, pure Python,
+# BSD-3-Clause (read in the LICENSE file of both the wheel and the sdist). No dependencies on Python 3.11 and later.
+# Install after the other locks when you want PDFs read:
+#
+#   pip install --require-hashes -r requirements/pdf.lock
+#
+# Without it the skills still run and say "PDF reading is not installed; N PDFs were skipped".
+#
+# Generated on 2026-11-15 with uv 0.11.32 from requirements/pdf.in (run inside requirements/):
+#
+#   uv pip compile --universal --generate-hashes --python-version 3.12 \
+#     --exclude-newer 2026-11-11T00:00:00Z --no-header --no-annotate \
+#     pdf.in -o pdf.lock                                    # then put this header back
+#
+# The two hashes are the wheel (6131b764…) and the sdist (0a78bb99…), compared with https://pypi.org/pypi/pypdf/7.0.1/json.
+pypdf==7.0.1 \
+    --hash=sha256:0a78bb99efb41e9088260e9a8e5da134a5cbb9a322014744177bf29b5267ea6d \
+    --hash=sha256:6131b764b046282357037309e7ef2a1b7679d4a5c53eed3db2bfbf7c673ddc2b

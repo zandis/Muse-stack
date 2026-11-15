@@ -252,7 +252,7 @@ def test_sentences_must_cite_existing_claims_and_hold_only_quoted_numbers():
 # ================================================================ the copies, and no Muse import in a skill
 
 
-SHARED = ("index.py", "retrieve.py", "textwork.py", "answer.py", "quotes.py", "recover.py")
+SHARED = ("index.py", "pdf.py", "retrieve.py", "textwork.py", "answer.py", "quotes.py", "recover.py")
 ROOT = Path(__file__).resolve().parents[1]
 
 
