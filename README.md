@@ -583,6 +583,8 @@ It reads `LITELLM_MASTER_KEY` from the environment or from `.env`. It does not c
 
 `.github/workflows/ci.yml` renders the config with empty and partial environments and does not call a provider. The proxy tests install LiteLLM from `requirements/proxy.lock` with `--require-hashes`. A second job boots the pinned image with a throwaway master key, checks the health endpoint, and checks that a fake Gemini key exposes the chat and embed aliases without sending a completion.
 
+The app has two jobs: types, lint, unit tests, a production build and the Rust bridge; and its end-to-end tests in a real browser against the fake home (`app-e2e`).
+
 ## Tests
 
 ```bash
