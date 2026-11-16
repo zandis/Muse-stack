@@ -1,0 +1,2992 @@
+openapi: 3.1.0
+info:
+  title: Muse home control API
+  version: "1"
+  summary: The one way an app talks to the home.
+  description: |
+    Local only. The home listens on a Unix socket (`MUSE_HOME/home.sock`, mode 0600) on
+    Linux and macOS, and on `127.0.0.1` on Windows or when started with `--tcp PORT`.
+    Later the same calls are carried over the Link.
+
+    Written by hand from `muse/home/api.py`. A test (`tests/test_home_openapi.py`) walks the
+    server's route table and fails if a route is missing here, or listed here and not served.
+
+    Rules that hold for every call:
+    * Every request carries `Authorization: Bearer <device token>`. A missing, malformed or
+      unknown token gets the same 401. On the Unix socket the caller must also be the same
+      user as the home (403 otherwise). On TCP the `Host` header must be `127.0.0.1:<port>`
+      or `localhost:<port>` (403 otherwise).
+    * Every device has a role, and every call needs one scope (`x-scope` on each operation;
+      `x-roles` lists the roles that hold it; the table is `x-role-scopes` below). A device
+      whose role lacks the scope gets `forbidden` (403) before anything else is looked at.
+      `owner` may do everything. `host` (the tools server a host bot runs) may read status
+      and the catalogue, ask the person a question and read its own cards, queue, read and
+      cancel its own jobs, add records, and list and run skills; it may not pause or resume,
+      connect services, store keys, manage apps, answer a card or read the records. `viewer`
+      may only read status, the catalogue, cards, jobs, records, the chore list and the settings. A `host` sees only the
+      jobs, cards and skill runs it made itself: anyone else's answer `not_found` (404),
+      exactly as if they did not exist. Devices created before roles existed are `owner`.
+    * A peer that sends a wrong token more than 10 times in 60 seconds gets
+      `too_many_requests` (429) with `retry_after` for its further wrong tokens; a correct
+      token is always served. At most 64 connections are served at once; one more gets
+      `unavailable` (503) with `retry_after`.
+    * Bodies are JSON objects of at most 512 KiB, sent with a `Content-Length`.
+    * A reply never holds a provider key, a prompt, a queued job's result, or internal error
+      text. The only secret that ever leaves is a new app token, once, when it is created or
+      rotated. Replies that hold the person's content on purpose: a skill run's answer
+      (`GET /v1/skills/runs/{id}`), given to the device that started the run, and the person's own
+      questions and answers (`/v1/ask`, `/v1/conversations`), given only to an `owner` device.
+    * A request that holds anything shaped like a key or token is refused with a generic 400
+      (`invalid_request`), everywhere except `POST /v1/keys/{provider}` and
+      `POST /v1/connect/flows/{state_id}/code` (the one-time code of a one-tap connection).
+    * The home writes a signed record (`docs/spec/interfaces/record-format.md`) of what it does
+      through this API: a card asked or answered, pause and resume, an app added, changed,
+      removed or given a new token, a key stored (the service's id only), a job queued or
+      cancelled, a skill run, a file written. Those replies carry `recorded`: true when the
+      record was written, false when it could not be (the action itself still happened, and is
+      never undone or refused because of that) or when the call changed nothing.
+    * Every error has one shape (`Error`). `code` is stable and listed below; `message` is one
+      plain sentence for the person; `retry_after` (seconds) is present when waiting helps.
+    * No CORS headers are sent. Every reply has `Cache-Control: no-store`.
+    * All text in a reply is plain text. Render it as text (textContent), never as HTML.
+
+    Error codes: `invalid_request` 400, `unauthorized` 401, `forbidden` 403, `not_found` 404,
+    `method_not_allowed` 405, `conflict` 409, `card_already_answered` 409, `card_expired` 410,
+    `length_required` 411, `payload_too_large` 413, `too_many_requests` 429, `internal` 500,
+    `not_built` 501, `unavailable` 503.
+
+    For development, `python -m muse.home --fake` serves this same API from canned data.
+servers:
+  - url: http://127.0.0.1:4181
+    description: TCP (Windows, or `--tcp PORT`). On Linux and macOS the default is the Unix socket MUSE_HOME/home.sock.
+security:
+  - deviceToken: []
+x-error-codes:
+  invalid_request: 400
+  unauthorized: 401
+  forbidden: 403
+  not_found: 404
+  method_not_allowed: 405
+  conflict: 409
+  card_already_answered: 409
+  card_expired: 410
+  length_required: 411
+  payload_too_large: 413
+  too_many_requests: 429
+  internal: 500
+  not_built: 501
+  unavailable: 503
+# Which scopes each role holds (muse/home/auth.py::ROLE_SCOPES). Checked by tests/test_home_openapi.py.
+x-role-scopes:
+  owner: [status.read, catalogue.read, connect.write, keys.write, jobs.read, jobs.write, cards.read, cards.ask,
+          cards.answer, pause.write, apps.read, apps.write, receipts.read, receipts.write, receipts.export, skills.read,
+          skills.run, mandates.read, mandates.request, mandates.write, ask.write, chores.read, chores.write, settings.read,
+          settings.write, home.admin]
+  host: [status.read, catalogue.read, jobs.read, jobs.write, cards.read, cards.ask, receipts.write, skills.read,
+         skills.run, mandates.request]
+  viewer: [status.read, catalogue.read, jobs.read, cards.read, receipts.read, mandates.read, chores.read,
+           settings.read]
+
+paths:
+  /v1/status:
+    get:
+      operationId: getStatus
+      x-scope: status.read
+      x-roles: [owner, host, viewer]
+      summary: The snapshot the dashboard and `muse status` show, plus `api_version`.
+      description: Allowances, services, apps, the queue, the paid total and whether the home is paused. Never holds keys or prompts.
+      responses:
+        "200":
+          description: The snapshot.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Status"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/catalogue:
+    get:
+      operationId: getCatalogue
+      x-scope: catalogue.read
+      x-roles: [owner, host, viewer]
+      summary: The catalogue with the person's connection state.
+      responses:
+        "200":
+          description: Services, which are connected, what to add next, and the non-AI resources and subscriptions.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Catalogue"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/connect/{provider}:
+    post:
+      operationId: startConnection
+      x-scope: connect.write
+      x-roles: [owner]
+      summary: Start a guided connection; returns the steps.
+      description: |
+        The home opens no browser: the client shows the steps and opens `open_url` on the
+        person's device. In v1 every connection finishes with `POST /v1/keys/{provider}`
+        (`finish_with: paste_key`), including services whose catalogue method is `oauth_pkce`.
+        No request body.
+      parameters:
+        - {$ref: "#/components/parameters/provider"}
+      responses:
+        "200":
+          description: What the person does next.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ConnectionStart"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/keys/{provider}:
+    post:
+      operationId: storeKey
+      x-scope: keys.write
+      x-roles: [owner]
+      summary: Store a service's key on the home.
+      description: |
+        The only call that accepts a key. The key is stored through the home's key store
+        (OS keychain, else the 0600 dotenv file) and is never echoed, logged or returned.
+        `also` carries the extra settings some services need (for example an account id);
+        its names must be ones the catalogue lists for the service.
+      parameters:
+        - {$ref: "#/components/parameters/provider"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [key]
+              properties:
+                key: {type: string, minLength: 1, maxLength: 512, writeOnly: true}
+                also:
+                  type: object
+                  additionalProperties: {type: string, maxLength: 512, writeOnly: true}
+      responses:
+        "200":
+          description: Stored. Says what must restart for the key to be used.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/KeyStored"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/jobs:
+    get:
+      operationId: listJobs
+      x-scope: jobs.read
+      x-roles: [owner, host, viewer]
+      summary: Background jobs, oldest first. Metadata only.
+      description: A job's prompt and result are never returned by any call.
+      parameters:
+        - name: status
+          in: query
+          description: One status, or several separated by commas.
+          schema: {type: string, examples: ["queued,running,deferred"]}
+      responses:
+        "200":
+          description: The jobs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobs]
+                properties:
+                  jobs: {type: array, items: {$ref: "#/components/schemas/Job"}}
+        "400": {$ref: "#/components/responses/Invalid"}
+        default: {$ref: "#/components/responses/Error"}
+    post:
+      operationId: addJob
+      x-scope: jobs.write
+      x-roles: [owner, host]
+      summary: Queue a job to run on spare allowance.
+      description: |
+        The prompt is accepted and kept on the home until the job ends; it is not returned.
+        With neither `task` nor `alias`, the routing rules' default for the queue is used.
+        The result is written to a file on the home (`out_path`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/NewJob"}
+      responses:
+        "201":
+          description: Queued.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobReply"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/jobs/{id}:
+    get:
+      operationId: getJob
+      x-scope: jobs.read
+      x-roles: [owner, host, viewer]
+      summary: One job's metadata.
+      parameters:
+        - {$ref: "#/components/parameters/jobId"}
+      responses:
+        "200":
+          description: The job.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobReply"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+    delete:
+      operationId: cancelJob
+      x-scope: jobs.write
+      x-roles: [owner, host]
+      summary: Cancel a waiting or running job.
+      description: The job stays in the list as `cancelled` and its prompt is erased. `conflict` if it had already finished.
+      parameters:
+        - {$ref: "#/components/parameters/jobId"}
+      responses:
+        "200":
+          description: Cancelled.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobReply"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/cards:
+    get:
+      operationId: listCards
+      x-scope: cards.read
+      x-roles: [owner, host, viewer]
+      summary: Cards, newest first. "Needs you" is `?status=pending`.
+      parameters:
+        - name: status
+          in: query
+          description: One status, or several separated by commas. Absent means all.
+          schema: {type: string, examples: ["pending"]}
+      responses:
+        "200":
+          description: The cards and how many there are in each status.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [cards, counts]
+                properties:
+                  cards: {type: array, items: {$ref: "#/components/schemas/Card"}}
+                  counts:
+                    type: object
+                    required: [pending, approved, declined, expired]
+                    additionalProperties: {type: integer}
+        "400": {$ref: "#/components/responses/Invalid"}
+        default: {$ref: "#/components/responses/Error"}
+    post:
+      operationId: askCard
+      x-scope: cards.ask
+      x-roles: [owner, host]
+      summary: Ask the person a question. Creates one waiting card.
+      description: |
+        For a device that acts for the person and must ask first, such as the Muse tools server a
+        host bot runs (`python -m muse.mcp`). The card is made by the same rules as every other
+        card (`card.schema.json`): fixed kinds, bounded text, a cost that is always stated, the
+        extra fields of its kind, and nothing shaped like a key.
+
+        The home names the asking device on the card as `job_ref: "device:<name>"`. A device may
+        have at most 20 cards waiting at once (`conflict`, 409, beyond that), and it cannot answer
+        a card it asked for itself (`forbidden`, 403, on the answer call). To learn the answer,
+        read the card again with `GET /v1/cards/{id}`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/NewCard"}
+      responses:
+        "201":
+          description: The waiting card.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CardReply"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "409":
+          description: "`conflict`: this device already has 20 cards waiting."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/cards/{id}:
+    get:
+      operationId: getCard
+      x-scope: cards.read
+      x-roles: [owner, host, viewer]
+      summary: One card.
+      parameters:
+        - {$ref: "#/components/parameters/cardId"}
+      responses:
+        "200":
+          description: The card.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CardReply"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/cards/{id}/answer:
+    post:
+      operationId: answerCard
+      x-scope: cards.answer
+      x-roles: [owner]
+      summary: Approve or decline a waiting card.
+      description: |
+        Exactly one answer ever succeeds. A second answer gets `card_already_answered` (409);
+        a card whose time ran out gets `card_expired` (410) and can no longer be approved.
+        `always: true` (only with `approve`) records that the person chose "Always allow this".
+        The answering device's name is recorded as `answered_by`.
+        A device that asked for the card (`POST /v1/cards`) cannot answer it: `forbidden` (403).
+
+        A card that stands for a file a skill proposed (`POST /v1/skills/{name}/run`) is acted on
+        here: approved, the home writes the file now (a new file only, inside the output folder,
+        checked again at this moment) and the reply says so in `write`; declined, the file's
+        contents are thrown away. Exactly one answer ever succeeds, so the file is written at
+        most once. A card that expires unanswered is treated as declined.
+        When the proposal was checked against a permission, the approval becomes a single-use
+        token for exactly that write (narrowed to this card, this file, five minutes) and is spent
+        here; if the permission was stopped meanwhile, the write is `refused` under `enforce`.
+        A `grant_permission` card that stands for a device's request issues the permission when
+        approved (`write.state: issued`).
+      parameters:
+        - {$ref: "#/components/parameters/cardId"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [decision]
+              properties:
+                decision: {enum: [approve, decline]}
+                always: {type: boolean, default: false}
+      responses:
+        "200":
+          description: The card as answered, and what that caused - a proposed file written, or a requested permission issued - if it stood for one.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [card, recorded]
+                properties:
+                  card: {$ref: "#/components/schemas/Card"}
+                  recorded: {$ref: "#/components/schemas/Recorded"}
+                  write: {$ref: "#/components/schemas/WriteOutcome"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409":
+          description: "`card_already_answered`."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "410":
+          description: "`card_expired`."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/pause:
+    post:
+      operationId: pause
+      x-scope: pause.write
+      x-roles: [owner]
+      summary: The one switch, off. Background work sends nothing until resumed.
+      description: Same as `muse pause`. In v1 this stops the queue; the router keeps answering apps. No request body. Idempotent.
+      responses:
+        "200":
+          description: Paused.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [paused, recorded]
+                properties:
+                  paused: {const: true}
+                  recorded: {$ref: "#/components/schemas/Recorded"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/resume:
+    post:
+      operationId: resume
+      x-scope: pause.write
+      x-roles: [owner]
+      summary: The one switch, on.
+      description: Same as `muse resume`. No request body. Idempotent. A resume that changed nothing leaves no record.
+      responses:
+        "200":
+          description: Running again.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [paused, was_paused, recorded]
+                properties:
+                  paused: {const: false}
+                  was_paused: {type: boolean}
+                  recorded: {$ref: "#/components/schemas/Recorded"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/apps:
+    get:
+      operationId: listApps
+      x-scope: apps.read
+      x-roles: [owner]
+      summary: The apps that share the router, by name. Today's use per app is in `/v1/status`.
+      responses:
+        "200":
+          description: The registered apps. Token hashes are never returned.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [apps]
+                properties:
+                  apps: {type: array, items: {$ref: "#/components/schemas/App"}}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+    post:
+      operationId: addApp
+      x-scope: apps.write
+      x-roles: [owner]
+      summary: Register an app. Its token is returned once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - {$ref: "#/components/schemas/AppSettings"}
+                - type: object
+                  required: [name, priority]
+                  properties:
+                    name: {$ref: "#/components/schemas/AppName"}
+      responses:
+        "201":
+          description: Created. `token` is shown this once; the home keeps only its hash.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AppWithToken"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/apps/{name}:
+    patch:
+      operationId: updateApp
+      x-scope: apps.write
+      x-roles: [owner]
+      summary: Change an app's priority, caps, paid permission, privacy or note.
+      description: Send only what changes. `null` clears an optional cap; `allow_paid null` returns to the priority's default.
+      parameters:
+        - {$ref: "#/components/parameters/appName"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/AppSettings"}
+      responses:
+        "200":
+          description: The app as changed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [app, recorded]
+                properties:
+                  app: {$ref: "#/components/schemas/App"}
+                  recorded: {$ref: "#/components/schemas/Recorded"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+    delete:
+      operationId: removeApp
+      x-scope: apps.write
+      x-roles: [owner]
+      summary: Remove an app. Its token stops working at the next request.
+      parameters:
+        - {$ref: "#/components/parameters/appName"}
+      responses:
+        "200":
+          description: Removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [removed, recorded]
+                properties:
+                  removed: {const: true}
+                  recorded: {$ref: "#/components/schemas/Recorded"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/apps/{name}/rotate:
+    post:
+      operationId: rotateAppToken
+      x-scope: apps.write
+      x-roles: [owner]
+      summary: Issue a new token for an app; the old one stops working at once.
+      description: No request body.
+      parameters:
+        - {$ref: "#/components/parameters/appName"}
+      responses:
+        "200":
+          description: The new token, shown this once.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AppWithToken"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/receipts:
+    get:
+      operationId: listReceipts
+      x-scope: receipts.read
+      x-roles: [owner, viewer]
+      summary: The home's records, newest first, with whether they check out.
+      description: |
+        A page of the signed records on the home (`muse records list` shows the same). Newest
+        first, by `seq` descending: `seq` is the order the home signed them in, and it never
+        repeats. At most 200 a page (default 50); `next_before` is the `before` value that
+        fetches the next, older page, or null on the last one.
+
+        Every reply also says whether the whole chain checks out (`verify`) and what the last
+        seal covers (`sealed`). When `verify.ok` is false the records that can still be read
+        are returned, and `kind` and `index` name the first problem (the kinds are those of
+        `muse records verify`). The check is redone whenever the records file has changed.
+      parameters:
+        - name: since
+          in: query
+          description: Only records at or after this time. A time with a zone.
+          schema: {type: string, examples: ["2026-11-01T00:00:00Z"]}
+        - name: action
+          in: query
+          description: One action (`files.write`) or a family (`files`).
+          schema: {type: string}
+        - name: left_device
+          in: query
+          description: "`true`: only records whose content left the person's devices (`egress` is `service:...` or `host:...`). Records that do not say are not among them."
+          schema: {enum: ["true", "false"], default: "false"}
+        - name: mandate
+          in: query
+          description: "Only records made under this permission: its full id as the record's `mandate` member holds it (from `GET /v1/mandates`), or `device:<name>` for a helper's own reports. The Permissions screen links each permission to its records this way."
+          schema: {type: string, pattern: "^[A-Za-z0-9._:-]{1,128}$"}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+        - name: before
+          in: query
+          description: Only records with a `seq` below this. Pass the previous page's `next_before`.
+          schema: {type: integer, minimum: 0}
+      responses:
+        "200":
+          description: A page of records.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [records, order, next_before, verify, sealed, device]
+                properties:
+                  records: {type: array, maxItems: 200, items: {$ref: "#/components/schemas/Record"}}
+                  order: {const: newest_first}
+                  next_before: {type: [integer, "null"]}
+                  verify:
+                    type: object
+                    required: [ok, size]
+                    properties:
+                      ok: {type: boolean, description: Every record and the last seal check out.}
+                      size: {type: integer, description: How many records the home holds.}
+                      kind: {type: string, description: "When not ok: the first problem, such as `bad_signature` or `size_mismatch`."}
+                      index: {type: [integer, "null"], description: "When not ok: the position of the first bad record, if there is one."}
+                  sealed:
+                    type: [object, "null"]
+                    description: The last seal (checkpoint), or null when nothing was sealed yet.
+                    required: [size, root, time]
+                    properties:
+                      size: {type: integer, description: How many records it covers.}
+                      root: {type: string}
+                      time: {$ref: "#/components/schemas/Time"}
+                  device: {type: [string, "null"], description: "The home's signing key (64 hex), or null before the first record."}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+    post:
+      operationId: addReceipt
+      x-scope: receipts.write
+      x-roles: [owner, host]
+      summary: Report something a device did. The home signs it into the records.
+      description: |
+        For a device that acts for the person and wants it written down, such as the Muse tools
+        server a host bot runs (its `record_action` tool). The home decides who did it and when;
+        a caller cannot: `actor` is `helper` for a `host` device and `person` for an `owner`,
+        `mandate` is `device:<name>` for a helper, the time is the home's clock, and the record is
+        signed by the home's key. The record's fields are checked by the records module: the
+        summary rule (one line, at most 200 characters, nothing shaped like a key) and the
+        shapes of `cost`, `links` and `egress`.
+
+        This is the device's own report. The home writes down what it was told and cannot check
+        it. A device may add at most 600 records an hour (`too_many_requests`, 429, beyond that).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/NewRecord"}
+      responses:
+        "201":
+          description: The signed record and its hash.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [record, hash, recorded]
+                properties:
+                  record: {$ref: "#/components/schemas/Record"}
+                  hash: {type: string, pattern: "^[0-9a-f]{64}$", description: "The record's hash: what the next record links to."}
+                  recorded: {const: true}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "429":
+          description: "`too_many_requests`: this device added too many records in the last hour."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/receipts/export:
+    post:
+      operationId: exportReceipts
+      x-scope: receipts.export
+      x-roles: [owner]
+      summary: Seal, then hand over every record as one file anyone can check.
+      description: |
+        The Records screen's Export (ux section 4.4), the same file `muse records export` writes:
+        a complete export as record-format.md section 8 defines it (`type`
+        `muse.records.export`), sealed by a checkpoint made just now. Anyone can check it with
+        nothing but the file (`muse records check-file FILE`); what a successful check means is in
+        that section.
+
+        The home never hands out a file that does not check: when the records do not check out
+        the answer is `conflict` (409) and nothing is exported; the file is also checked again
+        before it leaves. `redact_summaries: true` leaves each record's text out (record-format.md
+        section 9); every record still checks. The person's own device only: sealing writes a
+        checkpoint, and the file holds every record. More than 20,000 records is refused
+        (`invalid_request`): export those on the home. The export itself is written down as a
+        record (`records.export`), after the seal, so it is not in the file.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                redact_summaries: {type: boolean, default: false}
+      responses:
+        "200":
+          description: The export, and what is in it.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [export, file_name, count, size, redacted, device, recorded]
+                properties:
+                  export:
+                    type: object
+                    description: The export object (record-format.md section 8). Save it as it is.
+                    required: [type, format, spec, device, checkpoint, complete, records]
+                  file_name: {type: string, examples: ["muse-records-2026-11-15.json"]}
+                  count: {type: integer, description: Records in the file.}
+                  size: {type: integer, description: Records the seal covers.}
+                  redacted: {type: integer, description: Records whose text is left out.}
+                  device: {type: string, description: "The home's signing key (64 hex): give it to whoever checks the file, another way."}
+                  recorded: {type: boolean}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "409":
+          description: "`conflict`: there are no records yet, or they do not check out, so nothing was exported."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/skills:
+    get:
+      operationId: listSkills
+      x-scope: skills.read
+      x-roles: [owner, host]
+      summary: The skills on the home, in plain words, and the folders a run may be given.
+      description: |
+        Every skill the home can load: what it does, what it asks for (one plain sentence per
+        line, the same lines `muse skills show` prints), and whether it may run. `approved` is
+        true for a skill that ships with Muse and for one of the person's own that they approved
+        and that has not changed since.
+
+        `folders` are the names a run may use for folders: the list the person keeps on the home
+        with `muse skills folders add|list|rm`. An `owner` device also sees each folder's path;
+        any other device sees names only.
+      responses:
+        "200":
+          description: The skills and the folder names.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [skills, broken, folders]
+                properties:
+                  skills: {type: array, items: {$ref: "#/components/schemas/Skill"}}
+                  broken: {type: integer, description: Skill folders on the home that could not be loaded. `muse skills list` names them.}
+                  folders:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, output]
+                      properties:
+                        name: {$ref: "#/components/schemas/FolderName"}
+                        output: {type: boolean, description: Skills may propose new files in it.}
+                        path: {type: string, description: Only for an `owner` device.}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/skills/{name}/run:
+    post:
+      operationId: runSkill
+      x-scope: skills.run
+      x-roles: [owner, host]
+      summary: Start a skill run. Answers at once with the run's id.
+      description: |
+        Runs one skill through the home's ordinary runner (the one `muse skills run` uses). The
+        reply comes at once with `status: running`; `GET /v1/skills/runs/{id}` says how it went.
+
+        A caller may be a host bot, so what it can choose is narrow:
+        * The skill must be `approved` (`conflict`, 409, otherwise).
+        * `folders` and `out` are NAMES from the person's list (`GET /v1/skills`), never paths. A
+          name that is not on the list, or whose folder has since gone or been replaced by a link,
+          is refused (`invalid_request`). `out` must be a folder the person allowed for new files.
+        * `budget`, `privacy` and `task` are optional and never beyond the skill's own: no budget
+          number above the skill's, no privacy class weaker than the skill's, no tier stronger
+          than the skill's (`invalid_request`). `paid_usd` is 0 unless given, and only an `owner`
+          device may give more than 0 (`forbidden`, 403, for anyone else).
+        * At most 2 runs at once on a home, and 1 at a time for a device that is not an `owner`
+          (`conflict`, 409).
+
+        Nothing a skill proposes is written by the run. Each proposed file (at most 20 a run)
+        becomes a `save_file` card; the home writes the file only when that card is approved
+        (`POST /v1/cards/{id}/answer`), and throws it away when the card is declined or expires.
+
+        The home records the run (`skill.run`; `egress` is `host:<name>` when a device that is not
+        an `owner` asked, since the answer goes back to it) and one `llm.call` per outside service
+        the run used.
+      parameters:
+        - {$ref: "#/components/parameters/skillName"}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/NewSkillRun"}
+      responses:
+        "202":
+          description: Started.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SkillRunReply"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/skills/runs/{id}:
+    get:
+      operationId: getSkillRun
+      x-scope: skills.read
+      x-roles: [owner, host]
+      summary: How a skill run went, and what became of the files it proposed.
+      description: |
+        `status` is `running`, or how the run ended: `done`, `partial` (something could not be
+        done; the notes say what), `needs_choice` (it could not finish on free allowance; the
+        choices the router offered are in `result.options`) or `failed`. `result.output` is the
+        skill's answer and may hold the person's content. `writes` lists each proposed file with
+        its card and its state. A device that is not an `owner` or `viewer` sees only the runs it
+        started; the home keeps the last 200 runs.
+      parameters:
+        - {$ref: "#/components/parameters/runId"}
+      responses:
+        "200":
+          description: The run.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SkillRunReply"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/mandates:
+    get:
+      operationId: listMandates
+      x-scope: mandates.read
+      x-roles: [owner, viewer]
+      summary: Every permission as a sentence, with a mark per enforcing system.
+      description: |
+        The Permissions screen. Each permission ("mandate" in the specification) is given as the
+        sentence and limit lines `describe` writes, in the language asked for, with its holder,
+        its validity, its state (`active`, `stopped`, `expired`, `not_yet_valid`) and, per target,
+        how the compiler stands: `active`, `pending` (with a reason), `failed` (with a reason),
+        `not_built` (payments, connectors and the health add-on are not built; the mark is grey,
+        never green) or `revoked`. `enforcement` says what is enforced now and under which setting.
+        Never holds a permission token or a key. Needs the `biscuit-python` package on the home
+        (`unavailable`, 503, without it).
+      parameters:
+        - {name: lang, in: query, required: false, schema: {enum: [en, zh-TW], default: en}}
+      responses:
+        "200":
+          description: The permissions, newest first.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/MandateList"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+    post:
+      operationId: issueMandate
+      x-scope: mandates.request
+      x-roles: [owner, host]
+      summary: Issue a drafted permission (the person), or ask for it (a host bot).
+      description: |
+        Takes the id of a draft this same device made with `POST /v1/mandates/draft` in the last
+        hour.
+
+        From the person's own device (`owner`): the permission is signed with the home's root key,
+        stored, and compiled: what enforces it is made at once (a router app entry, narrowed
+        tokens and listed folders for skills, a consent record). Answers 201 with the permission
+        and its per-target state. When a router app was made, its key is in `token`, ONCE.
+
+        From any other device (`host`): nothing is issued. The home makes one `grant_permission`
+        card and answers 202 with it. The permission is issued when the person approves that card
+        (`POST /v1/cards/{id}/answer`; the reply's `write` then says `state: issued`). A host can
+        ask only for itself (holder `device:<its own name>`). The same request (same holder,
+        actions and resources) is refused with `conflict` (409) while one is waiting, and for a
+        week after the person declined it.
+
+        "The person" is, in this version, a device with the `owner` role; approval with a passkey
+        replaces that check later without changing this call.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [draft]
+              properties:
+                draft: {type: string, pattern: "^[0-9a-f]{16}$"}
+                lang: {enum: [en, zh-TW], default: en}
+      responses:
+        "201":
+          description: Issued and compiled.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/MandateIssued"}
+        "202":
+          description: Asked. A card is waiting for the person; nothing was issued.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [requested, issued, card, recorded]
+                properties:
+                  requested: {const: true}
+                  issued: {const: false}
+                  card: {$ref: "#/components/schemas/Card"}
+                  recorded: {$ref: "#/components/schemas/Recorded"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/mandates/draft:
+    post:
+      operationId: draftMandate
+      x-scope: mandates.request
+      x-roles: [owner, host]
+      summary: Structured fields in, a draft and its sentence back. Nothing is issued.
+      description: |
+        Validates the fields by the permission rules (`docs/spec/interfaces/permission-token.md`)
+        and returns the sentence the person would be approving, the limit lines, and which
+        enforcing systems the permission would set up (with `not_built` where one is not built).
+        The draft is kept for an hour for the device that made it. Turning the person's free text
+        into these fields is the helper's job, not this call's. A device that is not an `owner`
+        may draft only for itself (`forbidden`, 403, otherwise).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/NewMandateDraft"}
+      responses:
+        "201":
+          description: The draft.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [draft]
+                properties:
+                  draft: {$ref: "#/components/schemas/MandateDraft"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/mandates/check:
+    post:
+      operationId: checkOwnMandate
+      x-scope: mandates.request
+      x-roles: [owner, host]
+      summary: What the calling device's own permission says about an action.
+      description: |
+        Behind the tools server's `check_permission`. `has_mandate` is false when no permission
+        was ever issued to `device:<the caller>`: the tools server then answers by its interim
+        rule and says so. Otherwise `decision` is `allow`, `ask` (the permission asks first, or
+        says nothing about this) or `deny` (it was stopped, has ended, or forbids it). Only
+        actions on a folder path and running skills can be checked; sending, installing and
+        paying answer `ask`. Muse cannot block a host's own tools: for those this is advice.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action]
+              properties:
+                action: {enum: [read, list, search, write, delete, send, run, install, spend, other]}
+                resource: {type: [string, "null"], maxLength: 400}
+                amount: {type: [object, "null"]}
+      responses:
+        "200":
+          description: The answer.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [has_mandate, decision, reason, reason_words, mandate]
+                properties:
+                  has_mandate: {type: boolean}
+                  decision: {enum: [allow, ask, deny]}
+                  reason: {type: string, description: A short code; empty for allow.}
+                  reason_words: {type: string}
+                  mandate: {type: [string, "null"], description: The short name of the permission that answered.}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/mandates/declined:
+    get:
+      operationId: listDeclinedMandateRequests
+      x-scope: mandates.request
+      x-roles: [owner, host]
+      summary: Requests for a permission the person declined in the last week.
+      description: |
+        So a helper does not ask again: `POST /v1/mandates` refuses the same request from the same
+        device until `ask_again_after`. A device that is not an `owner` sees only its own.
+        `sentence` is what the person was shown, in the language asked for; null when the home
+        cannot write it (no `biscuit-python`).
+      parameters:
+        - {name: lang, in: query, required: false, schema: {enum: [en, zh-TW], default: en}}
+      responses:
+        "200":
+          description: The declined requests, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [window_days, declined]
+                properties:
+                  window_days: {const: 7}
+                  declined:
+                    type: array
+                    items:
+                      type: object
+                      required: [card_id, device, holder, actions, resources, sentence, declined_at, ask_again_after]
+                      properties:
+                        card_id: {type: string}
+                        device: {type: string}
+                        holder: {type: string}
+                        actions: {type: array, items: {type: string}}
+                        resources: {type: array, items: {$ref: "#/components/schemas/MandateResource"}}
+                        sentence: {type: [string, "null"]}
+                        declined_at: {$ref: "#/components/schemas/Time"}
+                        ask_again_after: {$ref: "#/components/schemas/Time"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/mandates/{id}/stop:
+    post:
+      operationId: stopMandate
+      x-scope: mandates.write
+      x-roles: [owner]
+      summary: Stop a permission everywhere.
+      description: |
+        The signed stopped list is written first, so from that moment every check refuses the
+        permission and every token narrowed from it. Then each thing made for it is removed: the
+        router app (its key stops working at the next request), the narrowed tokens, the folders
+        it put on the skill-folders list; a `mandate.revoke` record is written. The reply says how
+        each target ended up. `complete: false` means something could not be removed yet; the
+        home's sweep tries again and nothing made from the permission is honoured meanwhile.
+        Idempotent. No request body.
+      parameters:
+        - {$ref: "#/components/parameters/mandateId"}
+      responses:
+        "200":
+          description: Stopped.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [stopped, was, id, name, targets, complete, recorded]
+                properties:
+                  stopped: {const: true}
+                  was: {enum: [active, stopped, expired, not_yet_valid]}
+                  id: {type: string}
+                  name: {type: string}
+                  targets: {$ref: "#/components/schemas/MandateTargets"}
+                  complete: {type: boolean}
+                  recorded: {$ref: "#/components/schemas/Recorded"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/mandates/artifacts:
+    get:
+      operationId: listMandateArtifacts
+      x-scope: mandates.read
+      x-roles: [owner, viewer]
+      summary: The same list as `GET /v1/mandates` (the earlier name of this call).
+      description: Per-target state from the compiler, for clients written against the name the architecture first gave it.
+      parameters:
+        - {name: lang, in: query, required: false, schema: {enum: [en, zh-TW], default: en}}
+      responses:
+        "200":
+          description: The permissions, newest first.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/MandateList"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/ask:
+    post:
+      operationId: ask
+      x-scope: ask.write
+      x-roles: [owner]
+      summary: "Ask a question; get an answer, or the choices when it cannot be answered now."
+      description: |
+        The home sends the question through the router as its own interactive app, or, when
+        `attachments` names folders from the person's approved list, runs the `files-answer` skill over
+        them. The reply is always 200 with an `answer` whose `status` says what happened:
+        `answered` (text, `route` with the grey line as a key and values for the client to format, `details`,
+        `sources` when the skill answered), `choices` (exactly the options the router's refusal named, in the
+        fixed order wait, handoff, pay), `pending` (the files skill is still running: poll `GET /v1/ask/{id}`),
+        or `failed` with a `reason`. The question and the answer are kept on the home in a private file
+        (`conversations.sqlite`, mode 0600; the vault replaces it), bounded, never logged, never in a
+        record or the usage ledger. No streaming: the reply comes when the whole answer is there.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/AskRequest"}
+      responses:
+        "200":
+          description: "What happened to the question."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AskReply"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/ask/{id}:
+    get:
+      operationId: getAsk
+      x-scope: ask.write
+      x-roles: [owner]
+      summary: "One question and its answer as it stands now."
+      description: |
+        Looks again at an answer that was on its way: a files run that finished, or a question queued by `wait` that has since been answered.
+      parameters:
+        - {$ref: "#/components/parameters/turnId"}
+      responses:
+        "200":
+          description: "The question and its answer."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AskReply"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/ask/{id}/choose:
+    post:
+      operationId: chooseAsk
+      x-scope: ask.write
+      x-roles: [owner]
+      summary: "Take one of the choices offered for a question."
+      description: |
+        `wait` queues the question (the answer carries `job_id`; its title in status is the fixed key
+        `question_for_later`). `handoff` records that the person opened it in their own app (`app`: one of the
+        offered ids); nothing is sent anywhere by Muse. `pay` sends it again with `x-muse-allow-paid: true`; when
+        that would pass today's limit the answer is `over_limit` with the amount over and `raise_today`, and
+        nothing is spent until a second call repeats `pay` with `raise_today: true`. A limit raised this way
+        holds for the home's own requests today; if the router's own cap still refuses, the answer is
+        `failed` with reason `router_limit`.
+      parameters:
+        - {$ref: "#/components/parameters/turnId"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/AskChoice"}
+      responses:
+        "200":
+          description: "The answer after the choice."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AskReply"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/ask/{id}/continue:
+    post:
+      operationId: continueAsk
+      x-scope: ask.write
+      x-roles: [owner]
+      summary: "Ask a cut-short question again with more room."
+      description: |
+        Only for an answer with `cut_short: true` and `can_continue: true` (it stopped at its length limit, or the
+        service spent its room on reasoning and wrote nothing). The question is sent again with a larger output
+        cap on the next tier up, never paid. The new answer replaces the old one; if it is cut short again it
+        says so with `can_continue: false`.
+      parameters:
+        - {$ref: "#/components/parameters/turnId"}
+      responses:
+        "200":
+          description: "The answer, asked again."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AskReply"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/conversations:
+    get:
+      operationId: listConversations
+      x-scope: ask.write
+      x-roles: [owner]
+      summary: "The kept conversations, newest first."
+      description: |
+        Each with the first words of its first question. Only the person's own device may read them.
+      responses:
+        "200":
+          description: "The conversations."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ConversationList"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/conversations/{id}:
+    get:
+      operationId: getConversation
+      x-scope: ask.write
+      x-roles: [owner]
+      summary: "One conversation: its questions and answers, oldest first."
+      parameters:
+        - {$ref: "#/components/parameters/conversationId"}
+      responses:
+        "200":
+          description: "The turns."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Conversation"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+    delete:
+      operationId: deleteConversation
+      x-scope: ask.write
+      x-roles: [owner]
+      summary: "Erase a conversation from the home."
+      parameters:
+        - {$ref: "#/components/parameters/conversationId"}
+      responses:
+        "200":
+          description: "Erased."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: {type: boolean}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/chores:
+    get:
+      operationId: listChores
+      x-scope: chores.read
+      x-roles: [owner, viewer]
+      summary: "The chores, as the sentences they were added with."
+      description: |
+        Each with its last result, next run, budget, the five lines it was confirmed with, and whether it runs only when there is allowance to spare.
+      responses:
+        "200":
+          description: "The chores."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ChoreList"}
+        default: {$ref: "#/components/responses/Error"}
+    post:
+      operationId: addChore
+      x-scope: chores.write
+      x-roles: [owner]
+      summary: "Save a chore from an understood object."
+      description: |
+        Send back the `understood` object of `POST /v1/chores/understand` (with `ok: true`). It is checked again on the home; a chore made this way never spends money.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/NewChore"}
+      responses:
+        "201":
+          description: "The new chore."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ChoreReply"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/chores/understand:
+    post:
+      operationId: understandChore
+      x-scope: chores.write
+      x-roles: [owner]
+      summary: "What the home understands from a sentence. Nothing is saved."
+      description: |
+        Rules only: no model is asked. `ok` is true when nothing is left to ask; otherwise `questions` says what is missing. `folders` and `out` are names from the person's approved folder list.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ChoreSentence"}
+      responses:
+        "200":
+          description: "What was understood."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UnderstoodReply"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/chores/{id}:
+    patch:
+      operationId: updateChore
+      x-scope: chores.write
+      x-roles: [owner]
+      summary: "Pause, resume, or change a chore by sentence."
+      description: |
+        `enabled: false` pauses and `true` resumes. `understood` (from `POST /v1/chores/understand`) replaces the sentence and keeps the history.
+      parameters:
+        - {$ref: "#/components/parameters/choreId"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ChoreChange"}
+      responses:
+        "200":
+          description: "The chore after the change."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ChoreReply"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+    delete:
+      operationId: deleteChore
+      x-scope: chores.write
+      x-roles: [owner]
+      summary: "Delete a chore and its history. Files it already wrote are untouched."
+      parameters:
+        - {$ref: "#/components/parameters/choreId"}
+      responses:
+        "200":
+          description: "Deleted."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: {type: boolean}
+                  recorded: {type: boolean}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/chores/{id}/run:
+    post:
+      operationId: runChore
+      x-scope: chores.write
+      x-roles: [owner]
+      summary: "Run a chore now."
+      description: |
+        Answers at once. The history says how it went; a result waits as a "Save a file" card. Refused with `conflict` while everything is paused. No request body.
+      parameters:
+        - {$ref: "#/components/parameters/choreId"}
+      responses:
+        "202":
+          description: "Started."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ChoreRunReply"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/chores/{id}/history:
+    get:
+      operationId: getChoreHistory
+      x-scope: chores.read
+      x-roles: [owner, viewer]
+      summary: "The runs of a chore, newest first, at most 50."
+      parameters:
+        - {$ref: "#/components/parameters/choreId"}
+      responses:
+        "200":
+          description: "The runs."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ChoreHistory"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/services:
+    get:
+      operationId: listServices
+      x-scope: catalogue.read
+      x-roles: [owner, host, viewer]
+      summary: "What is connected and how much is left, what to add, other allowances and subscriptions."
+      description: |
+        One entry per connected service: what is left today (`estimated` when it is not a figure the service reported), when it refills, what it is good for, its privacy badge, when the catalogue was last checked. `add` is the ranked list with minutes and whether a card or phone number is needed (`unknown` when not confirmed).
+      responses:
+        "200":
+          description: "The Services screen as data."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Services"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/services/{id}/test:
+    post:
+      operationId: testService
+      x-scope: keys.write
+      x-roles: [owner]
+      summary: "One small request that checks the stored key. No prompt is sent."
+      description: |
+        The catalogue's own key check (`muse connect --test`). `result` is `ok`, `refused`, `limited`, `failed`, `no_test` or `no_key`. No request body.
+      parameters:
+        - {$ref: "#/components/parameters/serviceId"}
+      responses:
+        "200":
+          description: "How the check went."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ServiceTest"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/services/{id}:
+    delete:
+      operationId: disconnectService
+      x-scope: keys.write
+      x-roles: [owner]
+      summary: "Disconnect: remove the service's key from this home."
+      description: |
+        The router keeps using the key it started with until it is restarted; `restart` says so.
+      parameters:
+        - {$ref: "#/components/parameters/serviceId"}
+      responses:
+        "200":
+          description: "Removed."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ServiceRemoved"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/connect/{provider}/start:
+    post:
+      operationId: startOneTap
+      x-scope: connect.write
+      x-roles: [owner]
+      summary: "Start the one-tap connection (OAuth PKCE) and get the address to open."
+      description: |
+        For services whose catalogue method is `oauth_pkce` (OpenRouter). The home makes the PKCE pair and
+        keeps the verifier; the client opens `url` in the person's browser and polls
+        `GET /v1/connect/flows/{state_id}`. With `same_device: true` the browser is on the home's own computer:
+        the home listens on 127.0.0.1 for the service's redirect, exactly as `muse connect` does (`mode:
+        loopback`). Otherwise (a phone, a remote client) a redirect to localhost would not reach the home, so
+        `mode` is `paste_code`: the service shows a code, and the client sends it with
+        `POST /v1/connect/flows/{state_id}/code`. A flow ends after 5 minutes.
+      parameters:
+        - {$ref: "#/components/parameters/provider"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/OneTapStart"}
+      responses:
+        "201":
+          description: "The flow and the address to open."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Flow"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/connect/flows/{state_id}:
+    get:
+      operationId: getOneTap
+      x-scope: connect.write
+      x-roles: [owner]
+      summary: "Where a one-tap connection stands: pending, connected or failed."
+      description: |
+        When `connected`, `gained` says what was added and `restart` whether the router must start again to use it.
+      parameters:
+        - {$ref: "#/components/parameters/flowId"}
+      responses:
+        "200":
+          description: "The flow."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Flow"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+    delete:
+      operationId: cancelOneTap
+      x-scope: connect.write
+      x-roles: [owner]
+      summary: "Cancel a one-tap connection and stop listening."
+      parameters:
+        - {$ref: "#/components/parameters/flowId"}
+      responses:
+        "200":
+          description: "Cancelled."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cancelled: {type: boolean}
+        "404": {$ref: "#/components/responses/NotFound"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/connect/flows/{state_id}/code:
+    post:
+      operationId: finishOneTapWithCode
+      x-scope: connect.write
+      x-roles: [owner]
+      summary: "paste_code mode: send the code the service showed."
+      description: |
+        The one other call whose body may hold something key-shaped. The code is traded for the key at once over verified https and kept nowhere.
+      parameters:
+        - {$ref: "#/components/parameters/flowId"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/OneTapCode"}
+      responses:
+        "200":
+          description: "The flow after the exchange."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Flow"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/home/restart-proxy:
+    post:
+      operationId: restartProxy
+      x-scope: home.admin
+      x-roles: [owner]
+      summary: "Restart the router so it reads the current keys and settings."
+      description: |
+        Uses `muse restart`. Answers `conflict` when this home does not manage the router (it was not started by Muse here and Docker was not found). No request body.
+      responses:
+        "200":
+          description: "Restarted."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restarted: {type: boolean}
+                  command: {type: string}
+                  recorded: {type: boolean}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/apps/presets:
+    get:
+      operationId: listAppPresets
+      x-scope: apps.read
+      x-roles: [owner]
+      summary: "Ready-made settings for the programs people point at Muse, and the address to paste."
+      description: |
+        From `muse/presets.py`. `steps` are the exact fields to paste where, with the address filled in and `{key}` left for the app to fill with the new key, once, on the person's screen. `verified_on` is null when the steps were not confirmed against the program's own documentation.
+      responses:
+        "200":
+          description: "The address and the presets."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AppPresets"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/settings:
+    get:
+      operationId: getSettings
+      x-scope: settings.read
+      x-roles: [owner, viewer]
+      summary: "The settings the app shows: daily limit, default privacy, language, currency and rate."
+      responses:
+        "200":
+          description: "The settings."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SettingsReply"}
+        default: {$ref: "#/components/responses/Error"}
+    patch:
+      operationId: changeSettings
+      x-scope: settings.write
+      x-roles: [owner]
+      summary: "Change settings."
+      description: |
+        Written to the home's settings file, the one `MUSE_*` settings are read from. A provider key is never written here. `restart.needed` is true when the router must start again to see the change (the daily limit, the default privacy).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SettingsChange"}
+      responses:
+        "200":
+          description: "The settings after the change."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SettingsReply"}
+        "400": {$ref: "#/components/responses/Invalid"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/memory:
+    get:
+      operationId: getMemory
+      x-scope: settings.read
+      x-roles: [owner, viewer]
+      summary: "What the helper remembers about the person. Not built: says so."
+      description: |
+        Helper memory does not exist yet. `built` is false and `items` is empty; `note` is `nothing_remembered`.
+      responses:
+        "200":
+          description: "Nothing is remembered yet."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Memory"}
+        default: {$ref: "#/components/responses/Error"}
+    delete:
+      operationId: forgetEverything
+      x-scope: settings.write
+      x-roles: [owner]
+      summary: "Forget everything the helper keeps about the person."
+      description: |
+        There is no helper memory yet, so this erases the kept conversations, which is all there is.
+      responses:
+        "200":
+          description: "What was erased."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  built: {type: boolean}
+                  items_removed: {type: integer}
+                  conversations_removed: {type: integer}
+                  recorded: {type: boolean}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/verify:
+    post:
+      operationId: verifyInstallation
+      x-scope: home.admin
+      x-roles: [owner]
+      summary: "Check that this installation is genuine."
+      description: |
+        Runs the checks of `scripts/verify_litellm.py` (the installed router against its pinned version and file record, and the known signs of the March 2026 malware). Read-only, no network. No request body.
+      responses:
+        "200":
+          description: "The result and its lines."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Verify"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+        default: {$ref: "#/components/responses/Error"}
+
+  /v1/about:
+    get:
+      operationId: getAbout
+      x-scope: settings.read
+      x-roles: [owner, viewer]
+      summary: "Versions, the catalogue's date, and which parts of the app are built."
+      description: |
+        `features.recovery` is false until the vault is wired into the home: the app then shows the recovery-key step as coming, never made-up words.
+      responses:
+        "200":
+          description: "About this home."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/About"}
+        default: {$ref: "#/components/responses/Error"}
+
+components:
+  securitySchemes:
+    deviceToken:
+      type: http
+      scheme: bearer
+      description: |
+        A device token made on the home with `muse home token add <name> [--role owner|host|viewer]`;
+        the home keeps only its SHA-256 and the role. `muse hosts setup` makes `host` tokens. In a later version this becomes a mandate token narrowed from the
+        device's mandate; the header stays the same.
+
+  parameters:
+    provider:
+      name: provider
+      in: path
+      required: true
+      description: A service id from the catalogue, such as `gemini`.
+      schema: {type: string, pattern: "^[a-z][a-z0-9_]{0,23}$"}
+    jobId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, pattern: "^[0-9a-f]{12}$"}
+    cardId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, pattern: "^[0-9a-f]{16}$"}
+    appName:
+      name: name
+      in: path
+      required: true
+      schema: {$ref: "#/components/schemas/AppName"}
+    skillName:
+      name: name
+      in: path
+      required: true
+      description: A skill's name, from `GET /v1/skills`.
+      schema: {type: string, pattern: "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$"}
+    runId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, pattern: "^[0-9a-f]{16}$"}
+    mandateId:
+      name: id
+      in: path
+      required: true
+      description: A permission's short name (the first 12 hex digits of its id), or the 64 hex digits of its id.
+      schema: {type: string, pattern: "^[0-9a-f]{12,64}$"}
+
+    turnId:
+      name: id
+      in: path
+      required: true
+      description: The id of a question, from `POST /v1/ask`.
+      schema: {type: string, pattern: "^[0-9a-f]{16}$"}
+    conversationId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, pattern: "^[0-9a-f]{16}$"}
+    choreId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, pattern: "^[0-9a-f]{8}$"}
+    serviceId:
+      name: id
+      in: path
+      required: true
+      description: A service id from the catalogue, such as `gemini`.
+      schema: {type: string, pattern: "^[a-z][a-z0-9_]{0,23}$"}
+    flowId:
+      name: state_id
+      in: path
+      required: true
+      description: The `state_id` of a one-tap connection in progress.
+      schema: {type: string, pattern: "^[0-9a-f]{16}$"}
+
+  responses:
+    Error:
+      description: Any error. See the list of codes in the description at the top.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    Invalid:
+      description: "`invalid_request`: a field is missing, unknown, mistyped or out of range, or part of the request looks like a key."
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    NotFound:
+      description: "`not_found`."
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    Conflict:
+      description: "`conflict`: it already exists, or it already finished."
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    Unavailable:
+      description: "`unavailable`: the home could not read or write its own state. Comes with `retry_after` when waiting helps."
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    NotBuilt:
+      description: "`not_built`: planned, not built yet."
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              enum: [invalid_request, unauthorized, forbidden, not_found, method_not_allowed, conflict,
+                     card_already_answered, card_expired, length_required, payload_too_large,
+                     too_many_requests, internal, not_built, unavailable]
+            message: {type: string, description: One plain sentence. Never a secret, a prompt or internal error text.}
+            retry_after: {type: integer, minimum: 0, description: Seconds. Also sent as the Retry-After header.}
+
+    FolderName:
+      type: string
+      pattern: "^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$"
+      description: A name on the person's list of folders skills may be given (`muse skills folders`).
+
+    Skill:
+      type: object
+      required: [name, description, version, source, approved, state, needs, reads_folders, writes_files, tier_default, privacy_default, budget]
+      properties:
+        name: {type: string}
+        description: {type: string}
+        version: {type: string}
+        source: {enum: [shipped, home], description: Ships with Muse, or is in the person's own skills folder.}
+        approved: {type: boolean, description: It may run.}
+        state: {enum: [ready, not-approved, changed]}
+        needs: {type: array, items: {type: string}, description: What it asks for, one plain sentence each.}
+        reads_folders: {type: boolean, description: It reads the folders named for a run.}
+        writes_files: {type: boolean, description: It proposes new files (each needs the person's approval).}
+        tier_default: {type: string}
+        privacy_default: {type: string}
+        budget:
+          type: object
+          required: [requests, tokens, seconds, paid_usd]
+          properties:
+            requests: {type: integer}
+            tokens: {type: integer}
+            seconds: {type: number}
+            paid_usd: {type: number}
+
+    NewSkillRun:
+      type: object
+      additionalProperties: false
+      properties:
+        inputs:
+          type: object
+          maxProperties: 32
+          description: The skill's inputs. Names are letters, digits and `_`; values are text (at most 20,000 characters), numbers, true or false.
+        folders: {type: array, maxItems: 8, items: {$ref: "#/components/schemas/FolderName"}, description: Folders the skill may read, by name.}
+        out: {oneOf: [{$ref: "#/components/schemas/FolderName"}, {type: "null"}], description: "The folder new files may be proposed in, by name. Absent: Muse's own folder for that skill."}
+        budget:
+          type: object
+          additionalProperties: false
+          description: Less than the skill's own budget, never more.
+          properties:
+            requests: {type: integer, minimum: 0}
+            tokens: {type: integer, minimum: 0}
+            seconds: {type: number, minimum: 0}
+            paid_usd: {type: number, minimum: 0, default: 0}
+        privacy: {type: [string, "null"], enum: [public, standard, private, local, null], description: "Never weaker than the skill's own."}
+        task: {type: [string, "null"], enum: [light, everyday, heavy, frontier, null], description: "Never stronger than the skill's own."}
+
+    WriteOutcome:
+      type: object
+      description: |
+        What approving (or declining) a card caused. For a `save_file` card: the file (`written`,
+        `refused`, `discarded`). For a `grant_permission` card that stood for a device's request:
+        the permission (`issued`, with the members of `MandateIssued`; `declined`, `expired` or
+        `failed`).
+      required: [state]
+      properties:
+        state: {enum: [written, refused, discarded, issued, declined, expired, failed], description: "`refused`: approved, but it could not be written (the reason says why)."}
+        file: {type: string, description: The file's name.}
+        reason: {type: [string, "null"]}
+        mandate: {description: "For a permission: the issued permission (an object), or null."}
+        app: {type: string}
+        token: {type: string, readOnly: true, description: A new router app key, shown once.}
+        token_shown_once: {const: true}
+        recorded: {$ref: "#/components/schemas/Recorded"}
+
+    MandateResource:
+      type: object
+      additionalProperties: false
+      required: [kind, value]
+      properties:
+        kind: {enum: [folder, host, calendar, record_kind, provider, home]}
+        value: {type: string, maxLength: 1024}
+
+    NewMandateDraft:
+      type: object
+      additionalProperties: false
+      required: [holder, actions, resources]
+      properties:
+        holder: {type: string, description: "`helper:<id>`, `app:<id>`, `device:<id>` or `clinician:<id>`."}
+        actions: {type: array, minItems: 1, maxItems: 32, items: {type: string}}
+        resources: {type: array, minItems: 1, maxItems: 64, items: {$ref: "#/components/schemas/MandateResource"}}
+        limits:
+          type: array
+          maxItems: 16
+          items:
+            type: object
+            additionalProperties: false
+            required: [kind, period, amount]
+            properties:
+              kind: {enum: [spend, requests, messages]}
+              unit: {type: string, description: A currency code for `spend`; empty otherwise.}
+              decimals: {type: integer, minimum: 0, maximum: 18}
+              period: {enum: [day, month]}
+              amount: {type: integer, minimum: 0, description: In the unit's minor units.}
+        routine: {type: array, items: {type: string}, description: Actions that need not be confirmed each time.}
+        purpose: {type: string, maxLength: 500}
+        purpose_code: {type: string, maxLength: 64}
+        days: {type: integer, minimum: 1, maximum: 3660, default: 30}
+        not_before: {$ref: "#/components/schemas/Time"}
+        not_after: {$ref: "#/components/schemas/Time"}
+        confirm:
+          description: "`each_write` (default), `never`, or {rule: over_amount, unit, decimals, amount}."
+        privacy: {enum: [local, private, standard, public], default: private}
+        period_zone: {type: string}
+        lang: {enum: [en, zh-TW], default: en}
+
+    MandateDraft:
+      type: object
+      required: [id, holder, sentence, lines, not_before, not_after, targets, issued, valid_for_s]
+      properties:
+        id: {type: string, pattern: "^[0-9a-f]{16}$"}
+        holder: {type: string}
+        sentence: {type: string}
+        lines: {type: array, items: {type: string}}
+        not_before: {$ref: "#/components/schemas/Time"}
+        not_after: {$ref: "#/components/schemas/Time"}
+        targets:
+          type: array
+          items:
+            type: object
+            required: [target, state, reason]
+            properties:
+              target: {enum: [skills, router, records, payments, connectors, health]}
+              state: {enum: [planned, not_built]}
+              reason: {type: string}
+        issued: {const: false}
+        valid_for_s: {type: integer}
+
+    MandateTargets:
+      type: object
+      description: Per enforcing system. Only the systems the permission has to do with are present.
+      additionalProperties:
+        type: object
+        required: [state, reason]
+        properties:
+          state: {enum: [active, pending, failed, not_built, revoked]}
+          reason: {type: string, description: A plain sentence when the state is not a plain yes; empty otherwise.}
+          note: {type: string}
+
+    Mandate:
+      type: object
+      required: [id, name, holder, state, sentence, lines, actions, resources, limits, privacy, issued_at, not_before, not_after,
+                 targets]
+      properties:
+        id: {type: string, pattern: "^m1_[0-9a-f]{64}$"}
+        name: {type: string, pattern: "^[0-9a-f]{12}$", description: "The short name; usable as the id in a path."}
+        holder: {type: string}
+        state: {enum: [active, stopped, expired, not_yet_valid]}
+        sentence: {type: string}
+        lines: {type: array, items: {type: string}}
+        actions: {type: array, items: {type: string}, description: "What it allows, as plain values (permission-token.md), so an app can write the sentence in its own words."}
+        resources: {type: array, items: {$ref: "#/components/schemas/MandateResource"}}
+        limits:
+          type: array
+          items:
+            type: object
+            required: [kind, unit, decimals, period, amount]
+            properties:
+              kind: {type: string, examples: [spend, requests]}
+              unit: {type: string, description: "A currency code for `spend`, such as TWD; empty otherwise."}
+              decimals: {type: integer}
+              period: {type: string, examples: [day, month]}
+              amount: {type: integer, description: "In minor units: NT$30 with 2 decimals is 3000."}
+        privacy: {type: string, examples: [private]}
+        issued_at: {$ref: "#/components/schemas/Time"}
+        not_before: {$ref: "#/components/schemas/Time"}
+        not_after: {$ref: "#/components/schemas/Time"}
+        targets: {$ref: "#/components/schemas/MandateTargets"}
+
+    MandateList:
+      type: object
+      required: [mandates, enforcement]
+      properties:
+        mandates: {type: array, items: {$ref: "#/components/schemas/Mandate"}}
+        enforcement:
+          type: object
+          required: [skills, skills_not_shipped_with_muse, router, not_built]
+          properties:
+            skills: {enum: ["off", advise, enforce], description: The MUSE_PERMISSIONS setting on the home.}
+            skills_not_shipped_with_muse: {const: enforce}
+            router: {const: enforce}
+            not_built: {type: array, items: {type: string}}
+
+    MandateIssued:
+      type: object
+      required: [mandate, recorded]
+      properties:
+        mandate: {$ref: "#/components/schemas/Mandate"}
+        recorded: {$ref: "#/components/schemas/Recorded"}
+        app: {type: string, description: The router app made from (or tied to) the permission.}
+        token: {type: string, readOnly: true, description: The new app's key. Shown once; the home keeps only its hash.}
+        token_shown_once: {const: true}
+
+    SkillRun:
+      type: object
+      required: [id, skill, status, created_at, finished_at, started_by, result, writes]
+      properties:
+        id: {type: string, pattern: "^[0-9a-f]{16}$"}
+        skill: {type: string}
+        status: {enum: [running, done, partial, needs_choice, failed]}
+        created_at: {$ref: "#/components/schemas/Time"}
+        finished_at: {oneOf: [{$ref: "#/components/schemas/Time"}, {type: "null"}]}
+        started_by: {type: string, description: The device that started it.}
+        result:
+          type: [object, "null"]
+          description: Null while running. `output` is the skill's answer and may hold the person's content.
+          properties:
+            output: {}
+            notes: {type: array, items: {type: string}}
+            check:
+              type: object
+              properties:
+                status: {enum: [passed, failed, not-run]}
+                reasons: {type: array, items: {type: string}}
+            used: {type: object, description: "Requests, tokens, cost and the services used. Counts only."}
+            options: {type: array, items: {type: object}, description: "For `needs_choice`: exactly what the router offered."}
+            refusal: {type: [object, "null"]}
+            privacy: {type: string}
+        writes:
+          type: array
+          description: The files the run proposed. Each is a card; nothing is written until its card is approved.
+          items:
+            type: object
+            required: [card_id, file, size, state, reason]
+            properties:
+              card_id: {type: string, pattern: "^[0-9a-f]{16}$"}
+              file: {type: string}
+              size: {type: integer}
+              state: {enum: [pending, applying, written, refused, discarded]}
+              reason: {type: [string, "null"]}
+
+    SkillRunReply:
+      type: object
+      required: [run]
+      properties:
+        run: {$ref: "#/components/schemas/SkillRun"}
+
+    Recorded:
+      type: boolean
+      description: |
+        True when the home wrote a record of this call. False when it could not (the action still
+        happened) or when the call changed nothing. Present on calls that change something;
+        calls that only read do not carry it.
+
+    Record:
+      type: object
+      description: |
+        One signed record, exactly as `docs/spec/interfaces/record-format.md` section 1 defines it.
+        `summary` and `summary_salt` are present unless the record was redacted; `links` and
+        `egress` only when the record has them.
+      required: [v, device, seq, time, mandate, actor, action, resource, summary_hash, outcome, cost, prev, sig]
+      additionalProperties: false
+      properties:
+        v: {const: 1}
+        device: {type: string, pattern: "^[0-9a-f]{64}$", description: The home's signing key.}
+        seq: {type: integer, minimum: 0}
+        time: {type: integer, minimum: 0, description: Milliseconds since 1970-01-01T00:00:00Z.}
+        mandate: {type: [string, "null"], description: "`device:<name>` for a record a helper device caused; null for the person's own."}
+        actor: {enum: [person, helper, system]}
+        action: {type: string, description: "A dotted name such as `card.answer`; the list is in record-format.md section 1.3."}
+        resource: {type: [string, "null"], pattern: "^[0-9a-f]{64}$", description: A keyed reference; never a name or content.}
+        summary_hash: {type: string, pattern: "^[0-9a-f]{64}$"}
+        outcome: {enum: [ok, declined, failed, undone]}
+        cost:
+          type: [object, "null"]
+          required: [currency, minor]
+          additionalProperties: false
+          properties:
+            currency: {type: string, pattern: "^[A-Z0-9]{3,8}$"}
+            minor: {type: integer, minimum: 0, description: "A count of the currency's smallest unit: NT$30 is 3000."}
+        links:
+          type: object
+          additionalProperties: false
+          properties:
+            job: {type: string}
+            card: {type: string}
+            payment_ref: {type: string}
+            undo_of: {type: string, pattern: "^[0-9a-f]{64}$"}
+        egress:
+          type: string
+          pattern: "^(?:none|home|(?:service|host):[a-z0-9][a-z0-9._-]{0,63})$"
+          description: |
+            Where the content of the action went: `none`, `home`, `service:<id>` or `host:<name>`.
+            Absent: the record does not say. "Left my devices" is `service:` or `host:`.
+        prev: {type: string, pattern: "^[0-9a-f]{64}$"}
+        sig: {type: string, pattern: "^[0-9a-f]{128}$"}
+        summary: {type: string, maxLength: 200, description: Short plain text that is safe to show. Render it as text.}
+        summary_salt: {type: string, pattern: "^[0-9a-f]{32}$"}
+
+    NewRecord:
+      type: object
+      additionalProperties: false
+      required: [action, summary]
+      properties:
+        action:
+          type: string
+          description: |
+            A dotted lower-case name, two to four segments. From a `host` device it must start with
+            `host.` (`host.files.write`, `host.message.send`), so a host's own report can never pass
+            for something the home did. From an `owner` device it is a name of its own (`note.add`),
+            not one of the home's families (`home`, `card`, `app`, `key`, `job`, `skill`, `mandate`,
+            `records`) and not `host`.
+        summary: {type: string, minLength: 1, maxLength: 200, description: "What was done, in words, on one line. No content, no names of people, nothing shaped like a key."}
+        outcome: {enum: [ok, declined, failed, undone], default: ok}
+        cost:
+          type: [object, "null"]
+          required: [currency, minor]
+          additionalProperties: false
+          properties:
+            currency: {type: string, pattern: "^[A-Z0-9]{3,8}$"}
+            minor: {type: integer, minimum: 0}
+        links:
+          type: object
+          additionalProperties: false
+          properties:
+            job: {type: string}
+            card: {type: string}
+            payment_ref: {type: string}
+            undo_of: {type: string, pattern: "^[0-9a-f]{64}$"}
+        egress: {type: string, pattern: "^(?:none|home|(?:service|host):[a-z0-9][a-z0-9._-]{0,63})$", description: Where the content went. Leave it out when not known.}
+        resource: {type: [string, "null"], maxLength: 1024, description: "The thing acted on, as a name such as `file:/Notes/a.md`. Only a keyed reference to it is stored."}
+
+    Time:
+      type: string
+      pattern: '^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$'
+      description: UTC, to the second.
+
+    Status:
+      type: object
+      description: |
+        The snapshot built by `muse/status.py` (the `Snapshot` type in `muse/types.py` is the
+        full definition), unchanged, plus `api_version` and four fields for the app: `money` (the paid
+        total and the daily limit in the person's currency), `activity` (what is running and what
+        finished today, each with a short title), `local_runtime` and `restart_pending`.
+        Fields may be added; none are removed in v1.
+      required: [api_version, generated_at, proxy, default_privacy, providers, aliases, recent, totals, apps, paid, queue, paused,
+                 suggestions, resources, subscriptions, money, activity, local_runtime, restart_pending]
+      properties:
+        api_version: {const: "1"}
+        generated_at: {$ref: "#/components/schemas/Time"}
+        home: {type: string}
+        proxy:
+          type: object
+          properties:
+            url: {type: string}
+            reachable: {type: [boolean, "null"]}
+        default_privacy: {type: string}
+        providers: {type: array, items: {type: object}, description: "Each service: configured, state (ok, cooling, exhausted, no_key, disabled, unknown), usage, limits with remaining and reset_at, deployments."}
+        aliases: {type: array, items: {type: object}}
+        recent: {type: array, items: {type: object}, description: The last calls, newest first, at most 50. Counts and names only.}
+        totals: {type: object}
+        apps: {type: array, items: {type: object}, description: Each app with today's use and what was turned away.}
+        paid: {type: object, description: "Today's paid total: cap_usd, spent_usd, held_usd, calls, resets_at."}
+        queue: {type: object, description: "Job counts by status, waiting, next_due_at."}
+        paused: {type: boolean, description: The one switch. True after POST /v1/pause.}
+        suggestions: {type: array, items: {type: object}, description: Ranked next services to connect.}
+        resources: {type: array, items: {type: object}}
+        subscriptions: {type: array, items: {type: object}}
+        money: {$ref: "#/components/schemas/Money"}
+        activity: {$ref: "#/components/schemas/Activity"}
+        local_runtime: {type: boolean, description: An AI on this computer is found and answering.}
+        restart_pending: {type: boolean, description: "A key or setting changed through this API since the router was last restarted through it."}
+
+    Bilingual:
+      type: object
+      description: The same text in each language Muse ships.
+      properties:
+        en: {type: string}
+        zh-TW: {type: string}
+
+    Catalogue:
+      type: object
+      required: [connected, providers, suggestions, resources, subscriptions]
+      properties:
+        connected: {type: array, items: {type: string}, description: Ids of the services whose key is on the home.}
+        providers:
+          type: array
+          items:
+            type: object
+            required: [id, name, kind, tier, local, connected, key_env, also_env, connection]
+            properties:
+              id: {type: string}
+              name: {type: string}
+              kind: {type: string}
+              tier: {type: string}
+              local: {type: boolean}
+              connected: {type: boolean}
+              one_off: {type: boolean}
+              key_env: {type: [string, "null"], description: The name the key is stored under. A name, never a value.}
+              also_env: {type: array, items: {type: string}}
+              kind_of_allowance: {type: array, items: {type: string}}
+              good_for: {type: array, items: {type: string}}
+              gain:
+                type: [object, "null"]
+                properties:
+                  window: {type: string}
+                  limit: {type: integer}
+                  unit: {type: string}
+              gain_text: {$ref: "#/components/schemas/Bilingual"}
+              connection:
+                type: [object, "null"]
+                properties:
+                  method: {type: string, description: "paste_key, oauth_pkce, local or none."}
+                  key_url: {type: [string, "null"]}
+                  minutes_estimate: {type: [integer, "null"]}
+                  card_required: {type: string}
+                  phone_required: {type: string}
+                  usable_on_phone: {type: string}
+                  steps: {type: integer}
+              checked_on: {type: [string, "null"]}
+              confidence: {type: [string, "null"]}
+              source_urls: {type: array, items: {type: string}}
+        suggestions: {type: array, items: {type: object}, description: The same entries as `suggestions` in the status snapshot.}
+        resources: {type: array, items: {type: object}}
+        subscriptions: {type: array, items: {type: object}}
+
+    ConnectionStart:
+      type: object
+      required: [provider, name, connected, method, finish_with, open_url, steps, key, also, next]
+      properties:
+        provider: {type: string}
+        name: {type: string}
+        connected: {type: boolean}
+        method: {type: string, description: The catalogue's method for this service.}
+        finish_with: {const: paste_key}
+        open_url: {type: [string, "null"], description: The service's own page, for the client to open.}
+        minutes_estimate: {type: [integer, "null"]}
+        card_required: {type: string}
+        phone_required: {type: string}
+        steps:
+          type: array
+          items:
+            type: object
+            required: [id, title, detail]
+            properties:
+              id: {type: string}
+              title: {$ref: "#/components/schemas/Bilingual"}
+              detail: {$ref: "#/components/schemas/Bilingual"}
+        key:
+          type: object
+          required: [name, starts_with]
+          properties:
+            name: {type: string}
+            starts_with: {type: [string, "null"], description: What this service's keys are known to start with, for a gentle check before sending.}
+        also:
+          type: array
+          items:
+            type: object
+            required: [name, configured]
+            properties:
+              name: {type: string}
+              configured: {type: boolean}
+        next:
+          type: object
+          required: [method, path]
+          properties:
+            method: {const: POST}
+            path: {type: string}
+
+    KeyStored:
+      type: object
+      required: [provider, stored, backend, warnings, still_needed, restart, recorded]
+      properties:
+        provider: {type: string}
+        recorded: {$ref: "#/components/schemas/Recorded"}
+        stored: {type: array, items: {type: string}, description: The names that were stored. Never values.}
+        backend: {type: [string, "null"], description: "keychain or dotenv (fake on a fake home)."}
+        warnings: {type: array, items: {type: string}}
+        still_needed: {type: array, items: {type: string}, description: Extra settings this service needs that are not on the home yet.}
+        restart:
+          type: object
+          required: [needed, proxy_running, command]
+          properties:
+            needed: {type: boolean}
+            proxy_running: {type: boolean}
+            command: {type: string, description: What makes the router read the new key.}
+
+    NewCard:
+      type: object
+      additionalProperties: false
+      required: [kind, title, thing]
+      properties:
+        kind: {enum: [save_file, message, spend, grant_permission, oneoff_credit, send_private, install_skill]}
+        title: {type: string, minLength: 1, maxLength: 80}
+        thing: {type: string, minLength: 1, maxLength: 200, description: What exactly, such as the file name or the payee and amount.}
+        where: {type: string, maxLength: 200, description: Where it goes or happens.}
+        under: {type: string, maxLength: 200, description: "Who is asking and under what, in words."}
+        cost:
+          type: [object, "null"]
+          description: '`{"nothing": true}` (the default) or `{"amount": "30", "currency": "TWD"}`. A spend card needs an amount.'
+        extra:
+          type: [object, "null"]
+          description: The fields of this kind of card, exactly as in card.schema.json.
+        ttl_s:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 2592000
+          description: Seconds until the card expires. Default 24 hours; 5 minutes for a spend card.
+    NewJob:
+      type: object
+      additionalProperties: false
+      properties:
+        kind: {enum: [prompt, batch], default: prompt}
+        prompt: {type: string, minLength: 1, maxLength: 100000, writeOnly: true, description: For kind prompt.}
+        prompts:
+          type: array
+          minItems: 1
+          maxItems: 20
+          writeOnly: true
+          items: {type: string, minLength: 1}
+          description: For kind batch. 100,000 characters in all at most.
+        task: {type: [string, "null"], description: "A routing task such as light or everyday."}
+        alias: {type: [string, "null"], description: A model alias such as cheap. Ignored when task is given.}
+        privacy: {enum: [public, standard, private, local, null]}
+        allow_paid: {type: boolean, default: false}
+        max_tokens: {type: integer, minimum: 1, default: 1024}
+        max_attempts: {type: integer, minimum: 1, default: 5}
+        deadline: {type: [string, "null"], description: "A time with a zone, such as 2026-11-14T08:30:00Z. The job fails if it has not finished by then."}
+
+    Job:
+      type: object
+      description: Metadata only. There is no prompt and no result here, by design.
+      required: [id, created_at, kind, alias, status, attempts, out_path, allow_paid]
+      properties:
+        id: {type: string, pattern: "^[0-9a-f]{12}$"}
+        created_at: {$ref: "#/components/schemas/Time"}
+        kind: {enum: [prompt, file-summary, batch]}
+        alias: {type: string}
+        task: {type: [string, "null"]}
+        privacy: {type: [string, "null"]}
+        out_path: {type: string, description: The file on the home that receives the result.}
+        status: {enum: [queued, running, deferred, done, failed, cancelled]}
+        attempts: {type: integer}
+        deferrals: {type: integer}
+        next_attempt_at: {type: [string, "null"]}
+        last_reason: {type: [string, "null"], description: A code, never content.}
+        started_at: {type: [string, "null"]}
+        finished_at: {type: [string, "null"]}
+        provider: {type: [string, "null"]}
+        deployment: {type: [string, "null"]}
+        cost_usd: {type: [number, "null"]}
+        tokens_in: {type: [integer, "null"]}
+        tokens_out: {type: [integer, "null"]}
+        max_attempts: {type: integer}
+        max_tokens: {type: integer}
+        deadline: {type: [string, "null"]}
+        allow_paid: {type: boolean}
+        progress: {type: integer, description: "Batch: prompts finished."}
+
+    JobReply:
+      type: object
+      required: [job]
+      properties:
+        job: {$ref: "#/components/schemas/Job"}
+        recorded: {$ref: "#/components/schemas/Recorded"}
+
+    Card:
+      $ref: "card.schema.json"
+
+    CardReply:
+      type: object
+      required: [card]
+      properties:
+        card: {$ref: "#/components/schemas/Card"}
+        recorded: {$ref: "#/components/schemas/Recorded"}
+
+    AppName:
+      type: string
+      pattern: "^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$"
+
+    AppSettings:
+      type: object
+      properties:
+        priority: {enum: [interactive, normal, background]}
+        daily_requests: {type: [integer, "null"], minimum: 0}
+        daily_tokens: {type: [integer, "null"], minimum: 0}
+        allow_paid: {type: [boolean, "null"]}
+        default_privacy: {enum: [public, standard, private, local, null]}
+        note: {type: [string, "null"], maxLength: 200}
+
+    App:
+      type: object
+      required: [name, priority, daily_requests, daily_tokens, allow_paid, default_privacy, note, created_at]
+      properties:
+        name: {$ref: "#/components/schemas/AppName"}
+        priority: {enum: [interactive, normal, background]}
+        daily_requests: {type: [integer, "null"]}
+        daily_tokens: {type: [integer, "null"]}
+        allow_paid: {type: boolean}
+        default_privacy: {type: [string, "null"]}
+        note: {type: [string, "null"]}
+        created_at: {type: [string, "null"]}
+
+    AppWithToken:
+      type: object
+      required: [app, token, token_shown_once, recorded]
+      properties:
+        app: {$ref: "#/components/schemas/App"}
+        recorded: {$ref: "#/components/schemas/Recorded"}
+        token: {type: string, readOnly: true, description: The app's router token. Shown this once; store it on the device that needs it.}
+        token_shown_once: {const: true}
+
+    # ---- the app's routes (muse/home/app_api.py)
+
+    Amount:
+      type: object
+      description: |
+        Money in US dollars and in the person's currency, as decimal strings. `approx` is true
+        when the local figure was rounded from a conversion.
+      required: [usd, local, approx]
+      properties:
+        usd: {type: string, pattern: '^\d+\.\d{2,4}$'}
+        local: {type: string, pattern: '^\d+(\.\d{2})?$'}
+        approx: {type: boolean}
+
+    Money:
+      type: object
+      description: |
+        The paid total in the person's currency. The rate is a setting, not a lookup:
+        `rate_source` is always `fixed setting`. `daily_limit.source` is `default` until a limit
+        is saved; the default is NT$30 (US$0.9375 at the fixed rate of 32), which is also the
+        router's own default, so a new home is in step from the start and nothing is written for
+        it. `daily_limit.router_usd` is the cap the router enforces for the same settings, and
+        `in_step` says whether the two agree (a saved limit reaches the router at its next
+        start; see `restart_pending`).
+      required: [currency, rate, rate_source, rate_date, spent_today, daily_limit]
+      properties:
+        currency: {type: string, enum: [TWD, USD, JPY, KRW]}
+        rate: {type: string, description: Units of the currency per US dollar.}
+        rate_source: {const: fixed setting}
+        rate_date: {type: string, format: date}
+        spent_today: {$ref: "#/components/schemas/Amount"}
+        daily_limit:
+          allOf:
+            - {$ref: "#/components/schemas/Amount"}
+            - type: object
+              required: [source, router_usd, in_step]
+              properties:
+                source: {type: string, enum: [default, setting]}
+                router_usd: {type: string}
+                in_step: {type: boolean}
+
+    Title:
+      type: object
+      description: |
+        A short human title. `key` names a sentence the app has in every language
+        (`question_for_later`, `questions_for_later`, `file_summary`, `chore`); `text` is set only for
+        a chore, and is the sentence the person wrote for it. Never the words of a plain question.
+      required: [key, params, text]
+      properties:
+        key: {type: string}
+        params: {type: object}
+        text: {type: [string, "null"]}
+
+    Activity:
+      type: object
+      required: [running, done_today]
+      properties:
+        running:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              kind: {type: string, enum: [job, chore]}
+              title: {$ref: "#/components/schemas/Title"}
+              status: {type: string}
+              at: {type: [string, "null"]}
+        done_today:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              kind: {type: string, enum: [job, chore]}
+              title: {$ref: "#/components/schemas/Title"}
+              status: {type: string}
+              at: {type: [string, "null"]}
+              ok: {type: boolean}
+
+    AskRequest:
+      type: object
+      additionalProperties: false
+      required: [text]
+      properties:
+        text: {type: string, minLength: 1, maxLength: 20000}
+        conversation_id: {type: [string, "null"], pattern: "^[0-9a-f]{16}$"}
+        privacy: {type: [string, "null"], enum: [public, standard, private, local, null], description: Default from Settings.}
+        task: {type: [string, "null"], enum: [light, everyday, heavy, frontier, null], default: everyday}
+        attachments:
+          type: array
+          maxItems: 8
+          items: {$ref: "#/components/schemas/FolderName"}
+          description: Folder names from the person's approved list. With any, the `files-answer` skill answers from those folders.
+
+    HandoffApp:
+      type: object
+      description: One of the person's own apps. Links only; the client opens them. `url_app` is present when the app documents a link that opens it.
+      required: [id, name, url_web]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        url_web: {type: [string, "null"]}
+        url_app: {type: string}
+
+    AskAnswer:
+      type: object
+      description: A question and what became of it.
+      required: [id, conversation_id, created_at, question, status]
+      properties:
+        id: {type: string, pattern: "^[0-9a-f]{16}$"}
+        conversation_id: {type: string}
+        created_at: {$ref: "#/components/schemas/Time"}
+        question: {type: string}
+        privacy: {type: [string, "null"]}
+        task: {type: [string, "null"]}
+        attachments: {type: array, items: {type: string}}
+        status: {type: string, enum: [answered, choices, pending, queued, handed_off, over_limit, failed]}
+        cut_short: {type: boolean, description: "The answer stopped at its length limit, or came back empty because the room went on reasoning."}
+        can_continue: {type: boolean, description: "POST /v1/ask/{id}/continue may ask again with more room."}
+        text: {type: string, description: The answer. Plain text; render it as text.}
+        route:
+          type: object
+          description: |
+            Which service answered and what it cost. `line` is the grey line as data, for the client to
+            format: `key` is one of `free`, `free_refill`, `paid`, `local`, `cache`, `free_many`,
+            `skill_local`, `unknown`; `params` may hold `service`, `refill_at`, `cost`, `count`.
+          properties:
+            provider: {type: [string, "null"]}
+            name: {type: [string, "null"]}
+            local: {type: boolean}
+            cost: {$ref: "#/components/schemas/Amount"}
+            cache: {type: boolean}
+            refill_hint: {type: [string, "null"], description: When that service's daily allowance next refills, if known.}
+            line:
+              type: object
+              required: [key, params]
+              properties:
+                key: {type: string}
+                params: {type: object}
+        details:
+          type: object
+          description: "Behind Details: the deployment, the task tier, tokens, and the flags `min_output` and `empty_reasoning`."
+        sources:
+          type: array
+          description: "When the files skill answered: the passages it cites, as file › paragraph with the quoted words."
+          items:
+            type: object
+            properties:
+              n: {type: integer}
+              file: {type: string, description: "The file as the skill showed it: relative to the allowed folder."}
+              paragraphs: {type: array, items: {type: integer}, description: "The paragraph numbers the statements rest on. For a PDF source on one page: the paragraphs on that page; on several pages: empty."}
+              pages: {type: array, items: {type: integer}, description: "PDF sources only: the pages the statements rest on (file › page 3, paragraph 2)."}
+              quote: {type: string, description: "The words of the first of those paragraphs, at most 400 characters."}
+              label: {type: string, description: "The skill's own `file › paragraph n` line, in the question's language."}
+        handoff:
+          type: object
+          properties:
+            apps: {type: array, items: {$ref: "#/components/schemas/HandoffApp"}}
+        reason:
+          type: string
+          description: "Why there is no answer: used_up, busy, yielding, paid_needed, paid_limit, app_limit, private_no_service, paused, router_unreachable, refused_key, router_limit, empty, skill_failed, skill_busy, failed."
+        choices:
+          type: object
+          description: Exactly the options the router named, in this order. A missing one was not offered.
+          properties:
+            wait:
+              type: object
+              properties:
+                until: {$ref: "#/components/schemas/Time"}
+            handoff:
+              type: object
+              properties:
+                apps: {type: array, items: {$ref: "#/components/schemas/HandoffApp"}}
+            pay: {$ref: "#/components/schemas/Amount"}
+        over_limit:
+          type: object
+          description: Paying would pass today's limit. Nothing was spent.
+          properties:
+            over: {$ref: "#/components/schemas/Amount"}
+            limit: {$ref: "#/components/schemas/Amount"}
+            spent: {$ref: "#/components/schemas/Amount"}
+            pay: {$ref: "#/components/schemas/Amount"}
+            raise_today:
+              type: object
+              properties:
+                to: {$ref: "#/components/schemas/Amount"}
+        job_id: {type: string, description: "After `wait`: the queued job."}
+        run_id: {type: string, description: The files skill's run.}
+        until: {type: string}
+        app:
+          type: object
+          description: "After `handoff`: the app it was opened in."
+
+    AskReply:
+      type: object
+      required: [conversation_id, answer]
+      properties:
+        conversation_id: {type: string}
+        answer: {$ref: "#/components/schemas/AskAnswer"}
+        recorded: {type: boolean}
+        streaming: {const: false}
+
+    AskChoice:
+      type: object
+      additionalProperties: false
+      required: [choice]
+      properties:
+        choice: {type: string, enum: [wait, handoff, pay]}
+        app: {type: [string, "null"], description: "With `handoff`: the id of the app that was opened."}
+        raise_today: {type: boolean, description: "With `pay`, after an `over_limit` answer: raise the limit for today only and pay."}
+
+    ConversationList:
+      type: object
+      required: [conversations]
+      properties:
+        conversations:
+          type: array
+          items:
+            type: object
+            required: [id, created_at, updated_at, turns, preview]
+            properties:
+              id: {type: string}
+              created_at: {$ref: "#/components/schemas/Time"}
+              updated_at: {$ref: "#/components/schemas/Time"}
+              turns: {type: integer}
+              preview: {type: string, description: The first words of the first question.}
+        kept: {type: string}
+        limits: {type: object}
+
+    Conversation:
+      type: object
+      required: [id, turns]
+      properties:
+        id: {type: string}
+        turns: {type: array, items: {$ref: "#/components/schemas/AskAnswer"}}
+
+    Chore:
+      type: object
+      description: A chore as `muse chores list --json` gives it, plus `lines`, `title`, `typical_time` and `paid`.
+      required: [id, sentence, enabled, spare_only, when, budget_text, lines, title]
+      properties:
+        id: {type: string, pattern: "^[0-9a-f]{8}$"}
+        sentence: {type: string}
+        enabled: {type: boolean}
+        spare_only: {type: boolean, description: Runs when there is allowance to spare.}
+        typical_time: {type: [string, "null"], description: "For a spare-allowance chore: when it usually runs, HH:MM."}
+        next_run: {type: [string, "null"]}
+        when: {type: string}
+        budget: {type: object}
+        budget_text: {type: string}
+        paid: {type: boolean}
+        last_run_at: {type: [string, "null"]}
+        last_status: {type: [string, "null"]}
+        last_summary: {type: [string, "null"]}
+        lines: {type: object, description: "what, when, where, budget, permission: the lines it was confirmed with, in the sentence's language."}
+        title: {$ref: "#/components/schemas/Title"}
+
+    ChoreList:
+      type: object
+      required: [chores, can_run, paused]
+      properties:
+        chores: {type: array, items: {$ref: "#/components/schemas/Chore"}}
+        can_run: {type: boolean, description: This home can run chores.}
+        paused: {type: boolean}
+
+    ChoreReply:
+      type: object
+      required: [chore]
+      properties:
+        chore: {$ref: "#/components/schemas/Chore"}
+        recorded: {type: boolean}
+
+    ChoreSentence:
+      type: object
+      additionalProperties: false
+      required: [sentence]
+      properties:
+        sentence: {type: string, minLength: 1, maxLength: 500}
+        folders: {type: array, maxItems: 8, items: {$ref: "#/components/schemas/FolderName"}}
+        out: {type: [string, "null"]}
+
+    Understood:
+      type: object
+      description: What was understood from a sentence (`muse/skills/schedule.py::understand`).
+      required: [ok, sentence, lang, questions]
+      properties:
+        ok: {type: boolean, description: Nothing is left to ask.}
+        sentence: {type: string}
+        lang: {type: string}
+        spec: {type: [object, "null"]}
+        what: {type: string}
+        when: {type: string}
+        where: {type: string}
+        budget: {type: string}
+        permission: {type: string}
+        budget_values: {type: [object, "null"]}
+        questions:
+          type: array
+          items:
+            type: object
+            properties:
+              code: {type: string}
+              text: {type: string}
+        notes: {type: array, items: {type: string}}
+
+    UnderstoodReply:
+      type: object
+      required: [understood, saved]
+      properties:
+        understood: {$ref: "#/components/schemas/Understood"}
+        saved: {const: false}
+
+    NewChore:
+      type: object
+      additionalProperties: false
+      required: [understood]
+      properties:
+        understood: {$ref: "#/components/schemas/Understood"}
+        privacy: {type: [string, "null"]}
+
+    ChoreChange:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        enabled: {type: boolean}
+        understood: {$ref: "#/components/schemas/Understood"}
+
+    ChoreRun:
+      type: object
+      properties:
+        id: {type: string}
+        chore_id: {type: string}
+        status: {type: string, enum: [queued, running, waiting_card, done, partial, failed, needs_choice, skipped, declined, expired]}
+        trigger: {type: string}
+        started_at: {type: [string, "null"]}
+        finished_at: {type: [string, "null"]}
+        summary: {type: [string, "null"], description: Counts and status words; never file contents.}
+        card_id: {type: [string, "null"]}
+        requests: {type: [integer, "null"]}
+        cost_usd: {type: [number, "null"]}
+
+    ChoreRunReply:
+      type: object
+      required: [run]
+      properties:
+        run: {$ref: "#/components/schemas/ChoreRun"}
+        title: {$ref: "#/components/schemas/Title"}
+
+    ChoreHistory:
+      type: object
+      required: [chore_id, runs]
+      properties:
+        chore_id: {type: string}
+        runs: {type: array, items: {$ref: "#/components/schemas/ChoreRun"}}
+
+    Services:
+      type: object
+      required: [connected, add, resources, subscriptions, local_runtime]
+      properties:
+        connected:
+          type: array
+          items:
+            type: object
+            required: [id, name, badge, state]
+            properties:
+              id: {type: string}
+              name: {type: string}
+              badge: {type: string, enum: [local, private, standard]}
+              local: {type: boolean}
+              left:
+                type: [object, "null"]
+                description: The tightest daily limit. `estimated` is false only for a figure the service itself reported.
+              unlimited: {type: boolean}
+              refill_at: {type: [string, "null"]}
+              estimated: {type: boolean}
+              good_for: {type: array, items: {type: string}}
+              checked_on: {type: [string, "null"]}
+              state: {type: string, enum: [ok, busy, used_up, key_refused, "off", unknown]}
+              retry_at: {type: [string, "null"]}
+              can_test: {type: boolean}
+              can_disconnect: {type: boolean}
+        add:
+          type: array
+          description: Ranked by allowance gained per minute.
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              name: {type: string}
+              method: {type: string, enum: [one_tap, guided]}
+              minutes: {type: [integer, "null"]}
+              steps: {type: integer}
+              card: {type: string, enum: ["yes", "no", unknown]}
+              phone: {type: string, enum: ["yes", "no", unknown]}
+              gain: {type: [object, "null"]}
+              key_host: {type: [string, "null"], description: The https host of the service's own key page.}
+              facts: {type: object, description: "`free_per_day` and `may_train`, for the two plain facts shown before connecting."}
+        resources: {type: array, items: {type: object}, description: "Storage, computing and chain allowances: shown, not managed."}
+        subscriptions: {type: array, items: {type: object}, description: The person's own ChatGPT, Claude and Gemini apps. Links only.}
+        local_runtime: {type: boolean}
+        restart_pending: {type: boolean}
+
+    Restart:
+      type: object
+      description: Whether the router must start again to see a change, and whether this home can do that itself (`POST /v1/home/restart-proxy`).
+      properties:
+        needed: {type: boolean}
+        proxy_running: {type: boolean}
+        command: {type: string}
+        managed: {type: boolean}
+
+    ServiceTest:
+      type: object
+      required: [provider, result]
+      properties:
+        provider: {type: string}
+        name: {type: string}
+        result: {type: string, enum: [ok, refused, limited, failed, no_test, no_key]}
+        status: {type: [integer, "null"]}
+        sent_a_prompt: {const: false}
+
+    ServiceRemoved:
+      type: object
+      required: [provider, removed]
+      properties:
+        provider: {type: string}
+        removed: {type: boolean}
+        still_set_elsewhere: {type: boolean, description: The key is also in this process's environment, which the home cannot change.}
+        restart: {$ref: "#/components/schemas/Restart"}
+        recorded: {type: boolean}
+
+    OneTapStart:
+      type: object
+      additionalProperties: false
+      properties:
+        same_device: {type: boolean, default: false, description: The browser that will open `url` is on the home's own computer.}
+
+    OneTapCode:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code: {type: string, maxLength: 512}
+
+    Flow:
+      type: object
+      required: [state_id, provider, mode, status]
+      properties:
+        state_id: {type: string, pattern: "^[0-9a-f]{16}$"}
+        provider: {type: string}
+        mode: {type: string, enum: [loopback, paste_code]}
+        status: {type: string, enum: [pending, connected, failed]}
+        reason: {type: [string, "null"], enum: [timeout, denied, bad_callback, exchange_failed, store_failed, cancelled, bad_code, null]}
+        expires_at: {$ref: "#/components/schemas/Time"}
+        url: {type: string, description: "On start only: the service's own page to open."}
+        name: {type: string}
+        facts: {type: object}
+        gained: {type: object, description: "When connected: the service's name and what it adds, in each language."}
+        restart: {$ref: "#/components/schemas/Restart"}
+
+    AppPresets:
+      type: object
+      required: [endpoint, presets]
+      properties:
+        endpoint: {type: string, description: "The address to paste, such as http://127.0.0.1:4000/v1."}
+        presets:
+          type: array
+          items:
+            type: object
+            properties:
+              kind: {type: string}
+              title: {type: string}
+              priority: {type: string, enum: [interactive, normal, background]}
+              daily_requests: {type: [integer, "null"]}
+              daily_tokens: {type: [integer, "null"]}
+              alias: {type: string}
+              why: {type: string}
+              steps: {type: array, items: {type: string}}
+              key_placeholder: {const: "{key}"}
+              verified: {type: boolean}
+              verified_on: {type: [string, "null"]}
+              checked_on: {type: string}
+              source: {type: string}
+              caveat: {type: [string, "null"]}
+
+    Settings:
+      type: object
+      properties:
+        daily_limit: {$ref: "#/components/schemas/Amount"}
+        default_privacy: {type: string, enum: [standard, private, local]}
+        language: {type: string, enum: [en, zh-TW]}
+        language_set: {type: boolean}
+        currency: {type: string}
+        rate: {type: string}
+        rate_source: {const: fixed setting}
+        rate_date: {type: string}
+        currencies: {type: array, items: {type: string}}
+        languages: {type: array, items: {type: string}}
+        privacy_choices: {type: array, items: {type: string}}
+        restart_pending: {type: boolean}
+        first_run:
+          type: string
+          enum: [pending, done, skipped]
+          description: |
+            Whether the first-run flow (docs/spec/02-ux.md section 3) has been finished or skipped on this home.
+            The app opens it by itself only while this is `pending` and no service is connected. Once `done`
+            or `skipped`, it stays so.
+
+    SettingsReply:
+      type: object
+      required: [settings]
+      properties:
+        settings: {$ref: "#/components/schemas/Settings"}
+        changed: {type: array, items: {type: string}}
+        restart: {$ref: "#/components/schemas/Restart"}
+        recorded: {type: boolean}
+
+    SettingsChange:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        daily_limit_local: {type: [number, string], description: The daily spending limit in the person's currency. Zero means never spend.}
+        default_privacy: {type: string, enum: [standard, private, local]}
+        language: {type: string, enum: [en, zh-TW]}
+        currency: {type: string, enum: [TWD, USD, JPY, KRW]}
+        usd_rate: {type: [number, string], description: Units of the currency per US dollar.}
+        first_run: {type: string, enum: [done, skipped], description: The first-run flow was finished or skipped. The first value sent is kept.}
+
+    Memory:
+      type: object
+      required: [built, items, note]
+      properties:
+        built: {const: false}
+        items: {type: array, maxItems: 0}
+        note: {const: nothing_remembered}
+        conversations: {type: integer, description: How many conversations are kept on the home.}
+
+    Verify:
+      type: object
+      required: [result, lines]
+      properties:
+        result: {type: string, enum: [ok, problem, unknown]}
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              level: {type: string}
+              text: {type: string}
+
+    About:
+      type: object
+      required: [versions, catalogue, features]
+      properties:
+        versions: {type: object, description: "muse, api, python, router."}
+        catalogue:
+          type: object
+          properties:
+            checked_on: {type: [string, "null"]}
+            services: {type: integer}
+        features:
+          type: object
+          description: What is built. All false today.
+          properties:
+            recovery: {type: boolean}
+            memory: {type: boolean}
+            streaming: {type: boolean}
+            wallet: {type: boolean}
+            export: {type: boolean}
+        endpoint: {type: string}
+        local_runtime: {type: boolean}

@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "match": "9dc124a10e286ac2a68abebfa05fc02802d7b0bca52c4c110e4f4bd06d27b30f",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "body_sha256": "cdfe6738d120ff0a8c40ba571a2cfa3fb53fb44156d7b02357ab668cb4b42c88",
+    "model": "gemini-day",
+    "max_tokens": 32,
+    "messages": 1
+  },
+  "response": {
+    "status": 429,
+    "elapsed_ms": 0,
+    "headers": [
+      [
+        "server",
+        "BaseHTTP/0.6 Python/3.12.3"
+      ],
+      [
+        "date",
+        "Fri, 13 Nov 2026 16:41:16 GMT"
+      ],
+      [
+        "content-type",
+        "application/json"
+      ]
+    ],
+    "body": "{\"error\": {\"code\": 429, \"message\": \"You exceeded your current quota, please check your plan and billing details.\", \"status\": \"RESOURCE_EXHAUSTED\", \"details\": [{\"@type\": \"type.googleapis.com/google.rpc.QuotaFailure\", \"violations\": [{\"quotaMetric\": \"generativelanguage.googleapis.com/generate_content_free_tier_requests\", \"quotaId\": \"GenerateRequestsPerDayPerProjectPerModel-FreeTier\", \"quotaValue\": \"250\"}]}, {\"@type\": \"type.googleapis.com/google.rpc.RetryInfo\", \"retryDelay\": \"41s\"}]}}"
+  }
+}

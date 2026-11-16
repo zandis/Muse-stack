@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "match": "553ec5aa43e38a62d665b6d6c3135e2bf3dc88b7a212d051caa08a3796267a9d",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "body_sha256": "9c62ff9e2b6d6ad1a562d2cf6631538b57d27851c3c5bfb50da221003cdca669",
+    "model": "stream-model",
+    "max_tokens": 32,
+    "messages": 1
+  },
+  "response": {
+    "status": 200,
+    "elapsed_ms": 0,
+    "headers": [
+      [
+        "server",
+        "BaseHTTP/0.6 Python/3.12.3"
+      ],
+      [
+        "date",
+        "Fri, 13 Nov 2026 16:41:16 GMT"
+      ],
+      [
+        "content-type",
+        "text/event-stream"
+      ]
+    ],
+    "body": "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"thinking\"}}]}\n\ndata: {\"error\":{\"message\":\"You exceeded your quota\",\"code\":429}}\n\ndata: [DONE]\n\n",
+    "chunks": [
+      "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"thinking\"}}]}",
+      "data: {\"error\":{\"message\":\"You exceeded your quota\",\"code\":429}}",
+      "data: [DONE]"
+    ]
+  }
+}

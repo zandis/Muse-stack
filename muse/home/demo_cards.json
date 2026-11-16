@@ -1,0 +1,219 @@
+{
+  "note": "Demo cards for the fake home: one of each kind in docs/spec/02-ux.md section 5, plus one approved, one declined and one expired. No real data.",
+  "cards": [
+    {
+      "state": "pending",
+      "age_s": 120,
+      "kind": "save_file",
+      "title": "Save a file",
+      "thing": "Weekly digest 13 Nov.md",
+      "where": "Documents/Muse",
+      "under": {
+        "text": "Weekly digest chore",
+        "mandate_id": "demo-mandate-weekly-digest"
+      },
+      "cost": {
+        "nothing": true
+      },
+      "extra": {
+        "size_bytes": 18240
+      },
+      "job_ref": "demo-job-digest"
+    },
+    {
+      "state": "pending",
+      "age_s": 300,
+      "kind": "message",
+      "title": "Send a message",
+      "thing": "Reply to Mei about Saturday",
+      "where": "LINE",
+      "under": {
+        "text": "Family messages permission",
+        "mandate_id": "demo-mandate-family-line"
+      },
+      "cost": {
+        "nothing": true
+      },
+      "extra": {
+        "preview": "Hi Mei, Saturday works for us. We can bring the dessert.\nShall we say 6 pm at your place?",
+        "to": "Mei",
+        "draft": false
+      }
+    },
+    {
+      "state": "pending",
+      "age_s": 45,
+      "kind": "spend",
+      "title": "Pay for a service",
+      "thing": "Transcript of a 42-minute recording",
+      "where": "Deepgram",
+      "under": {
+        "text": "Paid services, up to NT$30 a day",
+        "mandate_id": "demo-mandate-paid"
+      },
+      "cost": {
+        "amount": "6",
+        "currency": "TWD"
+      },
+      "extra": {
+        "payee": "Deepgram",
+        "limit_left": {
+          "amount": "24",
+          "currency": "TWD"
+        }
+      }
+    },
+    {
+      "state": "pending",
+      "age_s": 600,
+      "kind": "grant_permission",
+      "title": "Grant a permission",
+      "thing": "Weekly digest chore",
+      "where": "This computer",
+      "under": {
+        "text": "Asked by you in Chores",
+        "mandate_id": null
+      },
+      "cost": {
+        "nothing": true
+      },
+      "extra": {
+        "sentence": "Every Monday at 08:00, read these three feeds and save a summary to Documents/Muse.",
+        "limits": [
+          "Reads 3 feeds you chose",
+          "Writes only to Documents/Muse",
+          "Free allowance only, at most 40 requests a week"
+        ],
+        "ends_at": "2027-02-13T00:00:00Z"
+      }
+    },
+    {
+      "state": "pending",
+      "age_s": 900,
+      "kind": "oneoff_credit",
+      "title": "Use a one-off trial credit",
+      "thing": "Summarise a 180-page contract",
+      "where": "Cohere",
+      "under": {
+        "text": "Contract question",
+        "mandate_id": null
+      },
+      "cost": {
+        "nothing": true
+      },
+      "extra": {
+        "service": "Cohere",
+        "credit_left": "about 400 of 1,000 trial calls"
+      }
+    },
+    {
+      "state": "pending",
+      "age_s": 1500,
+      "kind": "send_private",
+      "title": "Send something private to a service",
+      "thing": "Lab results 2026-10.pdf",
+      "where": "A service that does not keep or train on what you send",
+      "under": {
+        "text": "Your question: explain my lab results",
+        "mandate_id": null
+      },
+      "cost": {
+        "nothing": true
+      },
+      "extra": {
+        "badge": "Private",
+        "services": [
+          "Groq",
+          "AI on this computer"
+        ]
+      }
+    },
+    {
+      "state": "pending",
+      "age_s": 2400,
+      "kind": "install_skill",
+      "title": "Install a skill",
+      "thing": "Feed reader",
+      "where": "This computer",
+      "under": {
+        "text": "Needed by the weekly digest chore",
+        "mandate_id": null
+      },
+      "cost": {
+        "nothing": true
+      },
+      "extra": {
+        "asks_for": [
+          "Read web pages you list",
+          "Save files to Documents/Muse",
+          "Use free allowance for short summaries"
+        ],
+        "author": "Muse",
+        "sha256": "9f2c4e1ab7d05c6638e0f1a4d2b97c5e8a3f60b14d7e92c5a8b1f3e6d4c7a091"
+      }
+    },
+    {
+      "state": "approved",
+      "age_s": 21600,
+      "answered_after_s": 40,
+      "always": true,
+      "answered_by": "desktop",
+      "kind": "save_file",
+      "title": "Save a file",
+      "thing": "Morning digest 13 Nov.md",
+      "where": "Documents/Muse",
+      "under": {
+        "text": "Morning digest chore",
+        "mandate_id": "demo-mandate-morning-digest"
+      },
+      "cost": {
+        "nothing": true
+      },
+      "extra": {}
+    },
+    {
+      "state": "declined",
+      "age_s": 14400,
+      "answered_after_s": 300,
+      "answered_by": "phone",
+      "kind": "message",
+      "title": "Draft a message",
+      "thing": "Follow-up to the landlord",
+      "where": "Email drafts",
+      "under": {
+        "text": "Asked by you in Ask",
+        "mandate_id": null
+      },
+      "cost": {
+        "nothing": true
+      },
+      "extra": {
+        "preview": "Dear Mr Lin, I am writing again about the water heater.",
+        "draft": true
+      }
+    },
+    {
+      "state": "expired",
+      "age_s": 7200,
+      "kind": "spend",
+      "title": "Pay for a service",
+      "thing": "Speech for a 3-minute voice note",
+      "where": "ElevenLabs",
+      "under": {
+        "text": "Paid services, up to NT$30 a day",
+        "mandate_id": "demo-mandate-paid"
+      },
+      "cost": {
+        "amount": "2.5",
+        "currency": "TWD"
+      },
+      "extra": {
+        "payee": "ElevenLabs",
+        "limit_left": {
+          "amount": "30",
+          "currency": "TWD"
+        }
+      }
+    }
+  ]
+}

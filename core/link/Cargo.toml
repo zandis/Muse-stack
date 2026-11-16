@@ -1,0 +1,48 @@
+[package]
+name = "muse-link"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.91"
+description = "The Muse device link: devices of one person reach each other by public key over iroh (no open ports), and a new device is paired with a QR code, a one-time secret and a four-word check. Networking lives here so that muse-core stays pure."
+publish = false
+license = "Apache-2.0"
+
+# Its own workspace root, with its own lock file (core/link/Cargo.lock).
+# The pure core (core/Cargo.toml, core/Cargo.lock) does not know this crate
+# exists, so `cargo test --locked` in core/ neither resolves nor downloads the
+# networking stack. See docs/spec/interfaces/link-and-pairing.md section 2.
+[workspace]
+
+[lib]
+name = "muse_link"
+path = "src/lib.rs"
+
+[features]
+# Lets tests look at the decrypted pairing messages (to prove no key is in
+# them) and forge an invitation. Never enabled by a product build.
+test-util = []
+
+[dependencies]
+muse-core = { path = ".." }
+# The transport. Pinned exactly; an update is a deliberate, reviewed change.
+# Default features minus `metrics`.
+iroh = { version = "=1.4.1", default-features = false, features = ["tls-ring", "portmapper", "fast-apple-datapath"] }
+# Noise_NNpsk0 for pairing. Only the primitives that one pattern needs.
+snow = { version = "=0.10.0", default-features = false, features = ["std", "default-resolver", "use-curve25519", "use-chacha20poly1305", "use-sha2", "use-getrandom"] }
+tokio = { version = "1.44", default-features = false, features = ["rt", "macros", "net", "time", "sync", "io-util"] }
+# The home's own HTTP-over-Unix-socket request builder and reply parser (no Tauri, no system libraries).
+muse-home-link = { path = "../../app/src-tauri/crates/home-link" }
+serde_json = "1"
+sha2 = "0.10"
+zeroize = "1.8"
+
+[dev-dependencies]
+muse-link = { path = ".", features = ["test-util"] }
+tokio = { version = "1.44", default-features = false, features = ["rt-multi-thread", "macros", "net", "time", "sync", "io-util"] }
+
+# Unoptimised curve arithmetic makes the handshakes and the vault slow in tests.
+[profile.dev.package.curve25519-dalek]
+opt-level = 3
+
+[profile.dev.package.sha2]
+opt-level = 3

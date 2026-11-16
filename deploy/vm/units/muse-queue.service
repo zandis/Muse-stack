@@ -1,0 +1,48 @@
+# The background queue: jobs that run on free allowance through the router on
+# loopback. It never calls a provider itself.
+[Unit]
+Description=Muse background queue
+After=muse-proxy.service
+Wants=muse-proxy.service
+
+[Service]
+Type=simple
+User=@MUSE_USER@
+Group=@MUSE_USER@
+WorkingDirectory=@MUSE_ROOT@
+EnvironmentFile=-@MUSE_CONF@
+Environment=PATH=@MUSE_VENV@/bin:/usr/bin:/bin
+Environment=PYTHONPATH=@MUSE_ROOT@
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@MUSE_VENV@/bin/python -m muse queue run
+Restart=on-failure
+RestartSec=10
+MemoryMax=1G
+CPUQuota=100%
+TasksMax=128
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=@PROTECT_HOME@
+ReadWritePaths=@MUSE_STATE@
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

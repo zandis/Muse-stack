@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "match": "b215d71a5d78e2d80c6f8511df6d31e674242fa846cee14cb99137b7670ba4fd",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "body_sha256": "1f288d2e7f20e3bba854907e6ccf262f2c9091a7da5c5b7a539de289885b7b85",
+    "model": "denied",
+    "max_tokens": 32,
+    "messages": 1
+  },
+  "response": {
+    "status": 403,
+    "elapsed_ms": 0,
+    "headers": [
+      [
+        "server",
+        "BaseHTTP/0.6 Python/3.12.3"
+      ],
+      [
+        "date",
+        "Fri, 13 Nov 2026 16:41:16 GMT"
+      ],
+      [
+        "content-type",
+        "application/json"
+      ]
+    ],
+    "body": "{\"error\": {\"code\": 403, \"status\": \"RESOURCE_EXHAUSTED\", \"message\": \"Your quota has been exceeded for this model.\"}}"
+  }
+}

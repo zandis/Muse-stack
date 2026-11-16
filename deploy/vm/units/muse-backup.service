@@ -1,0 +1,45 @@
+# Daily backup: a consistent copy of MUSE_HOME, encrypted with age before it
+# leaves this machine, then uploaded with the instance's own identity (no
+# stored API key). See deploy/vm/muse-backup.sh for exactly what is included.
+[Unit]
+Description=Muse backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=@MUSE_USER@
+Group=@MUSE_USER@
+WorkingDirectory=@MUSE_ROOT@
+EnvironmentFile=-@MUSE_CONF@
+Environment=PATH=@MUSE_VENV@/bin:/usr/bin:/bin
+Environment=PYTHONPATH=@MUSE_ROOT@
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/bin/bash @MUSE_ROOT@/deploy/vm/muse-backup.sh
+TimeoutStartSec=30min
+MemoryMax=1G
+CPUQuota=50%
+TasksMax=64
+Nice=10
+IOSchedulingClass=idle
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=@PROTECT_HOME@
+ReadWritePaths=@MUSE_STATE@
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+UMask=0077

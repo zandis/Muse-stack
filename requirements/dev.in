@@ -1,0 +1,7 @@
+# Input for requirements/dev.lock: what installing and testing this repo needs
+# on top of requirements/proxy.lock. Versions shared with proxy.lock are held
+# to the same pins by the constraint line.
+-c proxy.lock
+pytest>=8
+pytest-xdist>=3.6  # parallel test runs: python -m pytest tests -n auto --dist worksteal
+setuptools>=68  # build backend for `pip install --no-build-isolation --no-deps -e .`

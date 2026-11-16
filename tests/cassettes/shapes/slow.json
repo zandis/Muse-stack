@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "match": "218835e92961dd01cae70bafd33abd12803a8505d3843a14515b2f8df9305c15",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "body_sha256": "a3c336b202b21638d4c730edceb58d4a8cd24ecae474853e3b35d5253f1bf12e",
+    "model": "slow-model",
+    "max_tokens": 32,
+    "messages": 1
+  },
+  "response": {
+    "status": 200,
+    "elapsed_ms": 0,
+    "headers": [
+      [
+        "server",
+        "BaseHTTP/0.6 Python/3.12.3"
+      ],
+      [
+        "date",
+        "Fri, 13 Nov 2026 16:41:16 GMT"
+      ],
+      [
+        "content-type",
+        "application/json"
+      ]
+    ],
+    "body": "{\"id\": \"chatcmpl-fake\", \"object\": \"chat.completion\", \"created\": 0, \"model\": \"fake\", \"choices\": [{\"index\": 0, \"message\": {\"role\": \"assistant\", \"content\": \"fake reply\"}, \"finish_reason\": \"stop\"}], \"usage\": {\"prompt_tokens\": 11, \"completion_tokens\": 7, \"total_tokens\": 18}}"
+  }
+}

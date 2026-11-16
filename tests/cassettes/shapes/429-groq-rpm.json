@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "match": "f75ba949f17b015a6ce587a572b8920d300cae6ae473c497d9599aa2d3834772",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "body_sha256": "0c7fd6a934b17c30f2fa1632d37914da2cd020bb8661966378548240c90b9b3e",
+    "model": "groq-rpm",
+    "max_tokens": 32,
+    "messages": 1
+  },
+  "response": {
+    "status": 429,
+    "elapsed_ms": 0,
+    "headers": [
+      [
+        "server",
+        "BaseHTTP/0.6 Python/3.12.3"
+      ],
+      [
+        "date",
+        "Fri, 13 Nov 2026 16:41:16 GMT"
+      ],
+      [
+        "content-type",
+        "application/json"
+      ],
+      [
+        "retry-after",
+        "2"
+      ],
+      [
+        "x-ratelimit-limit-requests",
+        "14400"
+      ],
+      [
+        "x-ratelimit-remaining-requests",
+        "0"
+      ],
+      [
+        "x-ratelimit-reset-requests",
+        "2s"
+      ],
+      [
+        "x-ratelimit-limit-tokens",
+        "6000"
+      ],
+      [
+        "x-ratelimit-remaining-tokens",
+        "5900"
+      ],
+      [
+        "x-ratelimit-reset-tokens",
+        "2s"
+      ]
+    ],
+    "body": "{\"error\": {\"message\": \"Rate limit reached for model `openai/gpt-oss-120b` on requests per minute (RPM): Limit 30, Used 30, Requested 1. Please try again in 2s.\", \"type\": \"rate_limit\", \"code\": 429}}"
+  }
+}

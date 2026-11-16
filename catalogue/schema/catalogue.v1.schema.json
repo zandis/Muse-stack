@@ -1,0 +1,1030 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Free allowance catalogue, version 1",
+  "description": "Dated, cited facts about free and trial allowances for AI services, storage, compute, chain and messaging, and a list of consumer subscriptions that are hand-off only. Every fact was read on the provider's own page on the entry's checked_on date.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "schema",
+    "generated_at",
+    "catalogue_date",
+    "release",
+    "licence",
+    "source",
+    "counts",
+    "ai_services",
+    "other_allowances",
+    "subscriptions",
+    "changes"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^1\\.\\d+$"
+    },
+    "schema": {
+      "type": "string",
+      "description": "Repository-relative path of this schema."
+    },
+    "generated_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d\\d-\\d\\d$",
+      "description": "The date given when the file was generated, or else the newest checked_on. Not a clock reading."
+    },
+    "catalogue_date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d\\d-\\d\\d$",
+      "description": "The newest checked_on among the entries."
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "released_on"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "released"
+          ]
+        },
+        "released_on": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^\\d{4}-\\d\\d-\\d\\d$"
+        }
+      }
+    },
+    "licence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "spdx",
+        "statement",
+        "options"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "undecided",
+            "chosen"
+          ]
+        },
+        "spdx": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "CC0-1.0",
+            "CC-BY-4.0",
+            null
+          ]
+        },
+        "statement": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "spdx",
+              "summary"
+            ],
+            "properties": {
+              "spdx": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "files",
+        "generator",
+        "rules"
+      ],
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "generator": {
+          "type": "string"
+        },
+        "rules": {
+          "type": "string"
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ai_services",
+        "other_allowances",
+        "subscriptions"
+      ],
+      "properties": {
+        "ai_services": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "other_allowances": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "subscriptions": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "ai_services": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ai_service"
+      }
+    },
+    "other_allowances": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/other_allowance"
+      }
+    },
+    "subscriptions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/subscription"
+      }
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/change"
+      },
+      "description": "What changed since the previous release (before the first release: since the first generated draft). Oldest first."
+    }
+  },
+  "$defs": {
+    "date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d\\d-\\d\\d$"
+    },
+    "tri": {
+      "type": "string",
+      "enum": [
+        "yes",
+        "no",
+        "unknown"
+      ]
+    },
+    "bilingual": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "en",
+        "zh-TW"
+      ],
+      "properties": {
+        "en": {
+          "type": "string"
+        },
+        "zh-TW": {
+          "type": "string"
+        }
+      },
+      "description": "The same text in English and Traditional Chinese (Taiwan)."
+    },
+    "limit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "window",
+        "limit",
+        "unit",
+        "scope",
+        "condition",
+        "headline",
+        "status"
+      ],
+      "properties": {
+        "window": {
+          "type": "string",
+          "enum": [
+            "minute",
+            "day",
+            "month",
+            "total"
+          ],
+          "description": "The period the limit covers. total never refills."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "unit": {
+          "type": "string",
+          "description": "What is counted, e.g. requests, tokens, neurons, gb, pushed_messages."
+        },
+        "scope": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "What the limit applies to, when the page says."
+        },
+        "condition": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A condition for this limit, e.g. an account state."
+        },
+        "headline": {
+          "type": "boolean",
+          "description": "The one limit to quote first."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "verified",
+            "estimated",
+            "unknown"
+          ],
+          "description": "verified: read on the provider's page on checked_on. estimated: a working number that was not read on a page."
+        }
+      }
+    },
+    "allowance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "kinds",
+        "one_off",
+        "limits",
+        "reset"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "verified",
+            "estimated",
+            "unknown"
+          ],
+          "description": "unknown means the catalogue holds no confirmed number. It does not mean there is no allowance."
+        },
+        "kinds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "monthly",
+              "one_off",
+              "scarce_strong",
+              "abundant_small"
+            ]
+          }
+        },
+        "one_off": {
+          "type": "boolean",
+          "description": "True when the allowance never renews (trial credit)."
+        },
+        "limits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/limit"
+          }
+        },
+        "reset": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "rule",
+            "tz",
+            "note"
+          ],
+          "properties": {
+            "rule": {
+              "type": "string",
+              "enum": [
+                "utc_day",
+                "pacific_day",
+                "rolling",
+                "calendar_month",
+                "none",
+                "unknown"
+              ]
+            },
+            "tz": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "IANA time zone, when the rule needs one."
+            },
+            "note": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/bilingual"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "read_remaining": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "endpoint",
+        "fields",
+        "note"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "enum": [
+            "headers",
+            "api_endpoint",
+            "dashboard_only",
+            "none",
+            "unknown"
+          ]
+        },
+        "endpoint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https://"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "description": "How what is left can be read, as the provider documents it."
+    },
+    "connection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "key_url",
+        "auth_url",
+        "env_names",
+        "steps",
+        "how",
+        "minutes_estimate",
+        "card_required",
+        "phone_required",
+        "usable_on_phone"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "enum": [
+            "oauth_pkce",
+            "paste_key",
+            "none"
+          ],
+          "description": "oauth_pkce: sign in and approve, no key is copied. paste_key: create a key on the provider's page. none: nothing to connect yet."
+        },
+        "key_url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https://"
+        },
+        "auth_url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https://"
+        },
+        "env_names": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]*$"
+          },
+          "description": "Names of the environment variables this project reads for the service. Names only, never values."
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "title",
+              "detail"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "$ref": "#/$defs/bilingual"
+              },
+              "detail": {
+                "$ref": "#/$defs/bilingual"
+              }
+            }
+          }
+        },
+        "how": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/bilingual"
+            }
+          ]
+        },
+        "minutes_estimate": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "minutes",
+                "basis"
+              ],
+              "properties": {
+                "minutes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "basis": {
+                  "const": "estimate"
+                }
+              }
+            }
+          ],
+          "description": "How long setting up takes. An estimate by the catalogue's maintainers, not a measurement."
+        },
+        "card_required": {
+          "$ref": "#/$defs/tri"
+        },
+        "phone_required": {
+          "$ref": "#/$defs/tri"
+        },
+        "usable_on_phone": {
+          "$ref": "#/$defs/tri"
+        }
+      }
+    },
+    "terms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "one_account_per_person",
+        "aggregation_or_reselling",
+        "automation_of_console",
+        "hosted_in"
+      ],
+      "properties": {
+        "one_account_per_person": {
+          "$ref": "#/$defs/tri"
+        },
+        "aggregation_or_reselling": {
+          "type": "string",
+          "enum": [
+            "prohibited",
+            "allowed",
+            "unknown"
+          ]
+        },
+        "automation_of_console": {
+          "type": "string",
+          "enum": [
+            "prohibited",
+            "allowed",
+            "unknown"
+          ]
+        },
+        "hosted_in": {
+          "type": "string",
+          "pattern": "^(?:[a-z]{2}|varies|local|unknown)$"
+        }
+      }
+    },
+    "confidence": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "H",
+        "M",
+        "L",
+        null
+      ],
+      "description": "H: every stated fact was read on the provider's pages. M: the main facts, some fields unknown. L: little confirmed."
+    },
+    "ai_service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "tier",
+        "good_for",
+        "allowance",
+        "read_remaining",
+        "connection",
+        "policy",
+        "terms",
+        "models",
+        "checked_on",
+        "confidence",
+        "source_urls",
+        "notes"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "cloud",
+            "local"
+          ],
+          "description": "local: a program on the person's own computer; no account and no allowance."
+        },
+        "tier": {
+          "type": "string",
+          "enum": [
+            "free",
+            "trial",
+            "metered",
+            "paid",
+            "local",
+            "unknown"
+          ]
+        },
+        "good_for": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "everyday",
+              "long_documents",
+              "quick_answers",
+              "embeddings",
+              "reranking"
+            ]
+          }
+        },
+        "allowance": {
+          "$ref": "#/$defs/allowance"
+        },
+        "read_remaining": {
+          "$ref": "#/$defs/read_remaining"
+        },
+        "connection": {
+          "$ref": "#/$defs/connection"
+        },
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "trains_on_inputs",
+            "human_review",
+            "region",
+            "commercial_use",
+            "terms_url",
+            "note"
+          ],
+          "properties": {
+            "trains_on_inputs": {
+              "$ref": "#/$defs/tri"
+            },
+            "human_review": {
+              "$ref": "#/$defs/tri"
+            },
+            "region": {
+              "type": "string",
+              "description": "Where requests are processed: a country or region code, or unknown."
+            },
+            "commercial_use": {
+              "type": "string",
+              "enum": [
+                "allowed",
+                "prohibited",
+                "depends-on-model-licence",
+                "unknown"
+              ]
+            },
+            "terms_url": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^https://"
+            },
+            "note": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "clinical_use": {
+              "type": "string",
+              "enum": [
+                "forbidden",
+                "allowed",
+                "unknown"
+              ],
+              "description": "Whether the provider's terms allow clinical practice or medical advice. Omitted when unknown. forbidden means every tier, paid or unpaid."
+            }
+          },
+          "description": "Privacy and terms facts. unknown means nobody has confirmed it; treat it as the cautious answer. clinical_use is present only when it is not unknown."
+        },
+        "terms": {
+          "$ref": "#/$defs/terms"
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "model",
+              "mode",
+              "context_tokens",
+              "price",
+              "verified_by",
+              "notes"
+            ],
+            "properties": {
+              "model": {
+                "type": "string",
+                "description": "The model id, written as a LiteLLM route: a provider prefix, then the provider's own model id."
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "chat",
+                  "embedding",
+                  "rerank",
+                  "unknown"
+                ]
+              },
+              "context_tokens": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              },
+              "price": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": [
+                        "number",
+                        "string"
+                      ]
+                    },
+                    "description": "Per million tokens, where the catalogue has a price read on the provider's page."
+                  }
+                ]
+              },
+              "verified_by": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "A short tag for how the model id was confirmed."
+              },
+              "notes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "checked_on": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^\\d{4}-\\d\\d-\\d\\d$"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "source_urls": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^https://"
+          }
+        },
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "other_allowance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "provider",
+        "good_for",
+        "tier",
+        "allowance",
+        "read_remaining",
+        "connection",
+        "terms",
+        "checked_on",
+        "confidence",
+        "source_urls",
+        "notes"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "$ref": "#/$defs/bilingual"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "storage",
+            "compute",
+            "chain",
+            "messaging"
+          ]
+        },
+        "provider": {
+          "type": "string"
+        },
+        "good_for": {
+          "$ref": "#/$defs/bilingual"
+        },
+        "tier": {
+          "const": "free"
+        },
+        "allowance": {
+          "$ref": "#/$defs/allowance"
+        },
+        "read_remaining": {
+          "$ref": "#/$defs/read_remaining"
+        },
+        "connection": {
+          "$ref": "#/$defs/connection"
+        },
+        "terms": {
+          "$ref": "#/$defs/terms"
+        },
+        "checked_on": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d\\d-\\d\\d$"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "source_urls": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^https://"
+          }
+        },
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "subscription": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "handoff_only",
+        "good_for",
+        "open",
+        "checked_on",
+        "confidence",
+        "source_urls",
+        "notes"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "const": "subscription"
+        },
+        "handoff_only": {
+          "const": true,
+          "description": "The person opens their own subscription. Nothing is routed through it and nothing signs in to it."
+        },
+        "good_for": {
+          "$ref": "#/$defs/bilingual"
+        },
+        "open": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "web": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "url",
+                "prefill"
+              ],
+              "properties": {
+                "url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "prefill": {
+                  "type": "string",
+                  "enum": [
+                    "documented",
+                    "unknown"
+                  ]
+                }
+              }
+            },
+            "app": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "url",
+                "prefill"
+              ],
+              "properties": {
+                "url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "prefill": {
+                  "type": "string",
+                  "enum": [
+                    "documented",
+                    "unknown"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "checked_on": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d\\d-\\d\\d$"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "source_urls": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^https://"
+          }
+        },
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "date",
+        "change",
+        "section",
+        "id",
+        "field",
+        "from",
+        "to"
+      ],
+      "properties": {
+        "date": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d\\d-\\d\\d$"
+        },
+        "change": {
+          "type": "string",
+          "enum": [
+            "added",
+            "removed",
+            "limits_changed",
+            "policy_changed",
+            "date_changed",
+            "confidence_changed",
+            "details_changed"
+          ]
+        },
+        "section": {
+          "type": "string",
+          "enum": [
+            "ai_services",
+            "other_allowances",
+            "subscriptions"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "field": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "What changed. For details_changed, the names of the fields that differ."
+        },
+        "from": {
+          "description": "The earlier value, for limits, policy facts, dates and confidence."
+        },
+        "to": {
+          "description": "The new value."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,2048 @@
+{
+ "generated_at": "2026-11-12T14:00:00Z",
+ "home": "/home/you/.muse",
+ "proxy": {
+  "url": "http://127.0.0.1:4000",
+  "reachable": true
+ },
+ "default_privacy": "standard",
+ "providers": [
+  {
+   "id": "gemini",
+   "name": "Gemini",
+   "connection_method": "paste_key",
+   "minutes_estimate": 4,
+   "good_for": [
+    "everyday",
+    "quick_answers",
+    "long_documents",
+    "embeddings"
+   ],
+   "kind_of_allowance": [
+    "daily"
+   ],
+   "checked_on": "2026-11-12",
+   "confidence": "M",
+   "kind": "cloud",
+   "tier": "free",
+   "key_env": "GEMINI_API_KEY",
+   "configured": true,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "yes",
+    "human_review": "yes",
+    "region": "us",
+    "commercial_use": "allowed",
+    "terms_url": "https://aistudio.google.com/docs/terms",
+    "note": "Free tier: Google uses prompts and responses to improve products and human reviewers may read them. Free tier may not serve EEA/UK/CH end users."
+   },
+   "state": "ok",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 112,
+     "tokens": 96400
+    },
+    "month": {
+     "requests": 1604,
+     "tokens": 1210000
+    }
+   },
+   "limits": [
+    {
+     "window": "minute",
+     "metric": "requests",
+     "limit": 10,
+     "remaining": 9,
+     "reset_at": "2026-11-12T14:00:34Z",
+     "source": "estimate"
+    },
+    {
+     "window": "day",
+     "metric": "requests",
+     "limit": 1500,
+     "remaining": 1388,
+     "reset_at": "2026-11-12T16:10:00Z",
+     "source": "estimate"
+    },
+    {
+     "window": "day",
+     "metric": "tokens",
+     "limit": 1000000,
+     "remaining": 903600,
+     "reset_at": "2026-11-12T16:10:00Z",
+     "source": "estimate"
+    }
+   ],
+   "deployments": [
+    {
+     "id": "gemini-3.1-flash-lite",
+     "model": "gemini/gemini-3.1-flash-lite",
+     "mode": "chat",
+     "aliases": [
+      "fast",
+      "cheap"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T13:59:20Z",
+     "success_rate_24h": 0.99
+    },
+    {
+     "id": "gemini-3.5-flash-lite",
+     "model": "gemini/gemini-3.5-flash-lite",
+     "mode": "chat",
+     "aliases": [
+      "cheap"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T13:29:00Z",
+     "success_rate_24h": 0.97
+    },
+    {
+     "id": "gemini-3.8-flash",
+     "model": "gemini/gemini-3.8-flash",
+     "mode": "chat",
+     "aliases": [
+      "smart",
+      "long-context"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T13:57:00Z",
+     "success_rate_24h": 0.98
+    },
+    {
+     "id": "gemini-embedding-2",
+     "model": "gemini/gemini-embedding-2",
+     "mode": "embedding",
+     "aliases": [
+      "embed"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T13:51:00Z",
+     "success_rate_24h": 1.0
+    }
+   ]
+  },
+  {
+   "id": "groq",
+   "name": "Groq",
+   "connection_method": "paste_key",
+   "minutes_estimate": 4,
+   "good_for": [
+    "everyday",
+    "quick_answers"
+   ],
+   "kind_of_allowance": [
+    "daily"
+   ],
+   "checked_on": "2026-11-12",
+   "confidence": "M",
+   "kind": "cloud",
+   "tier": "free",
+   "key_env": "GROQ_API_KEY",
+   "configured": true,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "unknown",
+    "human_review": "unknown",
+    "region": "us",
+    "commercial_use": "allowed",
+    "terms_url": "https://groq.com/terms-of-use/",
+    "note": "Not re-checked. Treated as unknown, so the private class skips it."
+   },
+   "state": "ok",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 86,
+     "tokens": 121300
+    },
+    "month": {
+     "requests": 640,
+     "tokens": 810000
+    }
+   },
+   "limits": [
+    {
+     "window": "minute",
+     "metric": "requests",
+     "limit": 30,
+     "remaining": 27,
+     "reset_at": "2026-11-12T14:00:41Z",
+     "source": "header"
+    },
+    {
+     "window": "minute",
+     "metric": "tokens",
+     "limit": 8000,
+     "remaining": 5200,
+     "reset_at": "2026-11-12T14:00:38Z",
+     "source": "header"
+    },
+    {
+     "window": "day",
+     "metric": "requests",
+     "limit": 1000,
+     "remaining": 914,
+     "reset_at": "2026-11-12T23:22:00Z",
+     "source": "header"
+    },
+    {
+     "window": "day",
+     "metric": "tokens",
+     "limit": 200000,
+     "remaining": 78700,
+     "reset_at": "2026-11-12T23:22:00Z",
+     "source": "header"
+    }
+   ],
+   "deployments": [
+    {
+     "id": "groq-gpt-oss-20b",
+     "model": "groq/openai/gpt-oss-20b",
+     "mode": "chat",
+     "aliases": [
+      "fast",
+      "cheap"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T13:58:25Z",
+     "success_rate_24h": 1.0
+    },
+    {
+     "id": "groq-gpt-oss-120b",
+     "model": "groq/openai/gpt-oss-120b",
+     "mode": "chat",
+     "aliases": [
+      "smart"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T13:54:00Z",
+     "success_rate_24h": 0.99
+    }
+   ]
+  },
+  {
+   "id": "ollama",
+   "name": "Ollama",
+   "connection_method": "none",
+   "minutes_estimate": null,
+   "good_for": [],
+   "kind_of_allowance": [],
+   "checked_on": null,
+   "confidence": null,
+   "kind": "local",
+   "tier": "local",
+   "key_env": null,
+   "configured": true,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "no",
+    "human_review": "no",
+    "region": "local",
+    "commercial_use": "depends-on-model-licence",
+    "terms_url": "https://ollama.com",
+    "note": "Runs on this machine. Check each model's licence before commercial use."
+   },
+   "state": "ok",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 58,
+     "tokens": 40800
+    },
+    "month": {
+     "requests": 402,
+     "tokens": 290000
+    }
+   },
+   "limits": [],
+   "deployments": [
+    {
+     "id": "ollama-llama3.2-3b",
+     "model": "ollama/llama3.2:3b",
+     "mode": "chat",
+     "aliases": [
+      "fast",
+      "cheap"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T13:56:00Z",
+     "success_rate_24h": 1.0
+    },
+    {
+     "id": "ollama-qwen3-14b",
+     "model": "ollama/qwen3:14b",
+     "mode": "chat",
+     "aliases": [
+      "smart"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T13:38:00Z",
+     "success_rate_24h": 1.0
+    },
+    {
+     "id": "ollama-nomic-embed",
+     "model": "ollama/nomic-embed-text",
+     "mode": "embedding",
+     "aliases": [
+      "embed"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T13:10:00Z",
+     "success_rate_24h": 1.0
+    }
+   ]
+  },
+  {
+   "id": "siliconflow",
+   "name": "SiliconFlow",
+   "connection_method": "paste_key",
+   "minutes_estimate": null,
+   "good_for": [
+    "everyday",
+    "quick_answers",
+    "embeddings",
+    "reranking"
+   ],
+   "kind_of_allowance": [],
+   "checked_on": "2026-11-12",
+   "confidence": "L",
+   "kind": "cloud",
+   "tier": "metered",
+   "key_env": "SILICONFLOW_API_KEY",
+   "configured": true,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "unknown",
+    "human_review": "unknown",
+    "region": "unknown",
+    "commercial_use": "unknown",
+    "terms_url": "https://siliconflow.com/terms",
+    "note": "Not checked."
+   },
+   "state": "ok",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 9,
+     "tokens": 7200
+    },
+    "month": {
+     "requests": 31,
+     "tokens": 26400
+    }
+   },
+   "limits": [
+    {
+     "window": "month",
+     "metric": "tokens",
+     "limit": null,
+     "remaining": null,
+     "reset_at": null,
+     "source": "catalog"
+    }
+   ],
+   "deployments": [
+    {
+     "id": "siliconflow-qwen-3-5-9b",
+     "model": "openai/Qwen/Qwen3.5-9B",
+     "mode": "chat",
+     "aliases": [
+      "fast",
+      "cheap"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T09:00:00Z",
+     "success_rate_24h": 0.88
+    },
+    {
+     "id": "siliconflow-bge-m3",
+     "model": "openai/BAAI/bge-m3",
+     "mode": "embedding",
+     "aliases": [
+      "embed"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": null,
+     "success_rate_24h": null
+    },
+    {
+     "id": "siliconflow-bge-reranker",
+     "model": "hosted_vllm/BAAI/bge-reranker-v2-m3",
+     "mode": "rerank",
+     "aliases": [
+      "rerank"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": null,
+     "success_rate_24h": null
+    }
+   ]
+  },
+  {
+   "id": "deepseek",
+   "name": "DeepSeek",
+   "connection_method": "paste_key",
+   "minutes_estimate": null,
+   "good_for": [
+    "everyday",
+    "long_documents"
+   ],
+   "kind_of_allowance": [],
+   "checked_on": "2026-11-12",
+   "confidence": "L",
+   "kind": "cloud",
+   "tier": "paid",
+   "key_env": "DEEPSEEK_API_KEY",
+   "configured": true,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "unknown",
+    "human_review": "unknown",
+    "region": "cn",
+    "commercial_use": "unknown",
+    "terms_url": "https://platform.deepseek.com/downloads/DeepSeek%20Open%20Platform%20Terms%20of%20Service.html",
+    "note": "Hosted in the PRC. Not checked further."
+   },
+   "state": "ok",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 14,
+     "tokens": 38900
+    },
+    "month": {
+     "requests": 96,
+     "tokens": 402000
+    }
+   },
+   "limits": [],
+   "deployments": [
+    {
+     "id": "deepseek-flash",
+     "model": "deepseek/deepseek-flash",
+     "mode": "chat",
+     "aliases": [
+      "cheap",
+      "smart",
+      "long-context"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 200,
+     "last_used_at": "2026-11-12T13:13:00Z",
+     "success_rate_24h": 1.0
+    },
+    {
+     "id": "deepseek-v4-pro",
+     "model": "deepseek/deepseek-v4-pro",
+     "mode": "chat",
+     "aliases": [
+      "smart",
+      "long-context"
+     ],
+     "state": "ok",
+     "blocked_until": null,
+     "last_status": 500,
+     "last_used_at": "2026-11-12T11:00:00Z",
+     "success_rate_24h": 0.92
+    }
+   ]
+  },
+  {
+   "id": "openrouter",
+   "name": "OpenRouter",
+   "connection_method": "oauth_pkce",
+   "minutes_estimate": 1,
+   "good_for": [
+    "everyday",
+    "quick_answers",
+    "long_documents"
+   ],
+   "kind_of_allowance": [
+    "daily"
+   ],
+   "checked_on": "2026-11-12",
+   "confidence": "H",
+   "kind": "cloud",
+   "tier": "free",
+   "key_env": "OPENROUTER_API_KEY",
+   "configured": true,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "yes",
+    "human_review": "unknown",
+    "region": "varies",
+    "commercial_use": "unknown",
+    "terms_url": "https://openrouter.ai/terms",
+    "note": "Free endpoints follow the upstream host; many log or train on prompts."
+   },
+   "state": "cooling",
+   "blocked_until": "2026-11-12T14:02:14Z",
+   "block_reason": "Rate limited by the upstream host (HTTP 429). Retrying after the provider's cool-down.",
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 48,
+     "tokens": 52100
+    },
+    "month": {
+     "requests": 310,
+     "tokens": 402000
+    }
+   },
+   "limits": [
+    {
+     "window": "minute",
+     "metric": "requests",
+     "limit": 20,
+     "remaining": 0,
+     "reset_at": "2026-11-12T14:02:14Z",
+     "source": "header"
+    },
+    {
+     "window": "day",
+     "metric": "requests",
+     "limit": 50,
+     "remaining": 2,
+     "reset_at": "2026-11-13T01:40:00Z",
+     "source": "header"
+    }
+   ],
+   "deployments": [
+    {
+     "id": "openrouter-gemma-4-26b-free",
+     "model": "openrouter/google/gemma-4-26b-a4b-it:free",
+     "mode": "chat",
+     "aliases": [
+      "fast"
+     ],
+     "state": "cooling",
+     "blocked_until": "2026-11-12T14:02:14Z",
+     "last_status": 429,
+     "last_used_at": "2026-11-12T13:59:10Z",
+     "success_rate_24h": 0.42
+    },
+    {
+     "id": "openrouter-gemma-4-31b-free",
+     "model": "openrouter/google/gemma-4-31b-it:free",
+     "mode": "chat",
+     "aliases": [
+      "smart"
+     ],
+     "state": "cooling",
+     "blocked_until": "2026-11-12T14:02:14Z",
+     "last_status": 429,
+     "last_used_at": "2026-11-12T13:57:00Z",
+     "success_rate_24h": 0.5
+    },
+    {
+     "id": "openrouter-nemotron-ultra-free",
+     "model": "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+     "mode": "chat",
+     "aliases": [
+      "smart",
+      "long-context"
+     ],
+     "state": "cooling",
+     "blocked_until": "2026-11-12T14:02:14Z",
+     "last_status": 429,
+     "last_used_at": "2026-11-12T13:52:00Z",
+     "success_rate_24h": 0.6
+    },
+    {
+     "id": "openrouter-free-router",
+     "model": "openrouter/openrouter/free",
+     "mode": "chat",
+     "aliases": [
+      "fast",
+      "cheap",
+      "smart",
+      "long-context"
+     ],
+     "state": "cooling",
+     "blocked_until": "2026-11-12T14:02:14Z",
+     "last_status": 429,
+     "last_used_at": "2026-11-12T13:58:00Z",
+     "success_rate_24h": 0.55
+    }
+   ]
+  },
+  {
+   "id": "cohere",
+   "name": "Cohere",
+   "connection_method": "paste_key",
+   "minutes_estimate": 4,
+   "good_for": [
+    "everyday",
+    "quick_answers",
+    "long_documents",
+    "embeddings",
+    "reranking"
+   ],
+   "kind_of_allowance": [
+    "monthly"
+   ],
+   "checked_on": "2026-11-12",
+   "confidence": "M",
+   "kind": "cloud",
+   "tier": "trial",
+   "key_env": "COHERE_API_KEY",
+   "configured": true,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "unknown",
+    "human_review": "unknown",
+    "region": "us",
+    "commercial_use": "prohibited",
+    "terms_url": "https://cohere.com/pricing",
+    "note": "Trial keys are not permitted for production or commercial use."
+   },
+   "state": "exhausted",
+   "blocked_until": "2026-11-29T20:00:00Z",
+   "block_reason": "Trial key used all 1,000 calls for this month.",
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "month": {
+     "requests": 1000,
+     "tokens": 402000
+    }
+   },
+   "limits": [
+    {
+     "window": "month",
+     "metric": "requests",
+     "limit": 1000,
+     "remaining": 0,
+     "reset_at": "2026-11-29T20:00:00Z",
+     "source": "estimate"
+    },
+    {
+     "window": "minute",
+     "metric": "requests",
+     "limit": 20,
+     "remaining": 20,
+     "reset_at": "2026-11-12T14:00:50Z",
+     "source": "catalog"
+    }
+   ],
+   "deployments": [
+    {
+     "id": "cohere-command-r7b",
+     "model": "cohere_chat/command-r7b-12-2024",
+     "mode": "chat",
+     "aliases": [
+      "fast",
+      "cheap"
+     ],
+     "state": "exhausted",
+     "blocked_until": "2026-11-29T20:00:00Z",
+     "last_status": 429,
+     "last_used_at": "2026-11-11T14:00:00Z",
+     "success_rate_24h": 0.9
+    },
+    {
+     "id": "cohere-command-a",
+     "model": "cohere_chat/command-a-03-2025",
+     "mode": "chat",
+     "aliases": [
+      "smart",
+      "long-context"
+     ],
+     "state": "exhausted",
+     "blocked_until": "2026-11-29T20:00:00Z",
+     "last_status": 429,
+     "last_used_at": "2026-11-10T14:00:00Z",
+     "success_rate_24h": 0.9
+    },
+    {
+     "id": "cohere-embed-v5-fast",
+     "model": "cohere/embed-v5.0-fast",
+     "mode": "embedding",
+     "aliases": [
+      "embed"
+     ],
+     "state": "exhausted",
+     "blocked_until": "2026-11-29T20:00:00Z",
+     "last_status": 429,
+     "last_used_at": "2026-11-09T14:00:00Z",
+     "success_rate_24h": 0.9
+    },
+    {
+     "id": "cohere-rerank-v4-fast",
+     "model": "cohere/rerank-v4.0-fast",
+     "mode": "rerank",
+     "aliases": [
+      "rerank"
+     ],
+     "state": "exhausted",
+     "blocked_until": "2026-11-29T20:00:00Z",
+     "last_status": 429,
+     "last_used_at": "2026-11-11T14:00:00Z",
+     "success_rate_24h": 0.9
+    }
+   ]
+  },
+  {
+   "id": "lmstudio",
+   "name": "LM Studio",
+   "connection_method": "none",
+   "minutes_estimate": null,
+   "good_for": [],
+   "kind_of_allowance": [],
+   "checked_on": null,
+   "confidence": null,
+   "kind": "local",
+   "tier": "local",
+   "key_env": null,
+   "configured": true,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "no",
+    "human_review": "no",
+    "region": "local",
+    "commercial_use": "depends-on-model-licence",
+    "terms_url": "https://lmstudio.ai",
+    "note": "Runs on this machine."
+   },
+   "state": "unknown",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "month": {
+     "requests": 0,
+     "tokens": 0
+    }
+   },
+   "limits": [],
+   "deployments": []
+  },
+  {
+   "id": "jina",
+   "name": "Jina",
+   "connection_method": "paste_key",
+   "minutes_estimate": 4,
+   "good_for": [
+    "embeddings",
+    "reranking"
+   ],
+   "kind_of_allowance": [],
+   "checked_on": "2026-11-12",
+   "confidence": "L",
+   "kind": "cloud",
+   "tier": "trial",
+   "key_env": "JINA_API_KEY",
+   "configured": false,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "unknown",
+    "human_review": "unknown",
+    "region": "unknown",
+    "commercial_use": "unknown",
+    "terms_url": "https://jina.ai/legal",
+    "note": "Not checked."
+   },
+   "state": "no_key",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "month": {
+     "requests": 0,
+     "tokens": 0
+    }
+   },
+   "limits": [],
+   "deployments": [
+    {
+     "id": "jina-embeddings-v3",
+     "model": "jina_ai/jina-embeddings-v3",
+     "mode": "embedding",
+     "aliases": [
+      "embed"
+     ],
+     "state": "no_key",
+     "blocked_until": null,
+     "last_status": null,
+     "last_used_at": null,
+     "success_rate_24h": null
+    },
+    {
+     "id": "jina-reranker-v2",
+     "model": "jina_ai/jina-reranker-v2-base-multilingual",
+     "mode": "rerank",
+     "aliases": [
+      "rerank"
+     ],
+     "state": "no_key",
+     "blocked_until": null,
+     "last_status": null,
+     "last_used_at": null,
+     "success_rate_24h": null
+    }
+   ]
+  },
+  {
+   "id": "novita",
+   "name": "Novita",
+   "connection_method": "paste_key",
+   "minutes_estimate": null,
+   "good_for": [
+    "everyday",
+    "quick_answers",
+    "long_documents"
+   ],
+   "kind_of_allowance": [],
+   "checked_on": "2026-11-12",
+   "confidence": "L",
+   "kind": "cloud",
+   "tier": "paid",
+   "key_env": "NOVITA_API_KEY",
+   "configured": false,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "unknown",
+    "human_review": "unknown",
+    "region": "unknown",
+    "commercial_use": "unknown",
+    "terms_url": "https://novita.ai/legal/terms-of-service",
+    "note": "Not checked."
+   },
+   "state": "no_key",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "month": {
+     "requests": 0,
+     "tokens": 0
+    }
+   },
+   "limits": [],
+   "deployments": [
+    {
+     "id": "novita-llama-3.1-8b",
+     "model": "novita/meta-llama/llama-3.1-8b-instruct",
+     "mode": "chat",
+     "aliases": [
+      "fast",
+      "cheap"
+     ],
+     "state": "no_key",
+     "blocked_until": null,
+     "last_status": null,
+     "last_used_at": null,
+     "success_rate_24h": null
+    },
+    {
+     "id": "novita-gpt-oss-120b",
+     "model": "novita/openai/gpt-oss-120b",
+     "mode": "chat",
+     "aliases": [
+      "cheap",
+      "smart"
+     ],
+     "state": "no_key",
+     "blocked_until": null,
+     "last_status": null,
+     "last_used_at": null,
+     "success_rate_24h": null
+    }
+   ]
+  },
+  {
+   "name": "Cerebras",
+   "connection_method": "paste_key",
+   "minutes_estimate": 4,
+   "good_for": [
+    "everyday",
+    "quick_answers"
+   ],
+   "kind_of_allowance": [
+    "daily"
+   ],
+   "checked_on": "2026-11-12",
+   "confidence": "M",
+   "id": "cerebras",
+   "kind": "cloud",
+   "tier": "free",
+   "key_env": "CEREBRAS_API_KEY",
+   "configured": false,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "unknown",
+    "human_review": "unknown",
+    "region": "unknown",
+    "commercial_use": "unknown",
+    "terms_url": "https://www.cerebras.ai/terms-of-service",
+    "note": "Training and review terms for the API were not confirmed, so the private class skips it. The website terms say Cerebras's right to monitor content does not give it the right to train on it; the pricing page footnote says the free offer is not intended for production use."
+   },
+   "state": "no_key",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "month": {
+     "requests": 0,
+     "tokens": 0
+    }
+   },
+   "limits": [],
+   "deployments": [
+    {
+     "id": "cerebras-gpt-oss-120b",
+     "model": "cerebras/gpt-oss-120b",
+     "mode": "chat",
+     "aliases": [],
+     "state": "no_key",
+     "blocked_until": null,
+     "last_status": null,
+     "last_used_at": null,
+     "success_rate_24h": null
+    },
+    {
+     "id": "cerebras-qwen-3-8-27b",
+     "model": "cerebras/qwen-3.8-27b",
+     "mode": "chat",
+     "aliases": [],
+     "state": "no_key",
+     "blocked_until": null,
+     "last_status": null,
+     "last_used_at": null,
+     "success_rate_24h": null
+    }
+   ]
+  },
+  {
+   "name": "Cloudflare Workers AI",
+   "connection_method": "paste_key",
+   "minutes_estimate": 8,
+   "good_for": [
+    "everyday",
+    "quick_answers"
+   ],
+   "kind_of_allowance": [
+    "daily"
+   ],
+   "checked_on": "2026-11-12",
+   "confidence": "M",
+   "id": "cloudflare",
+   "kind": "cloud",
+   "tier": "free",
+   "key_env": "CLOUDFLARE_API_KEY",
+   "configured": false,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "no",
+    "human_review": "unknown",
+    "region": "unknown",
+    "commercial_use": "unknown",
+    "terms_url": "https://developers.cloudflare.com/workers-ai/platform/data-usage/",
+    "note": "Cloudflare says it does not use Customer Content processed by Workers AI to train models, and does not keep inputs or outputs of plain inference requests. Human review is not addressed, so the private class still skips it."
+   },
+   "state": "no_key",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "month": {
+     "requests": 0,
+     "tokens": 0
+    }
+   },
+   "limits": [],
+   "deployments": [
+    {
+     "id": "cloudflare-llama-3-1-8b",
+     "model": "cloudflare/@cf/meta/llama-3.1-8b-instruct-fp8",
+     "mode": "chat",
+     "aliases": [],
+     "state": "no_key",
+     "blocked_until": null,
+     "last_status": null,
+     "last_used_at": null,
+     "success_rate_24h": null
+    },
+    {
+     "id": "cloudflare-llama-3-3-70b",
+     "model": "cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "mode": "chat",
+     "aliases": [],
+     "state": "no_key",
+     "blocked_until": null,
+     "last_status": null,
+     "last_used_at": null,
+     "success_rate_24h": null
+    }
+   ]
+  },
+  {
+   "id": "nvidia_nim",
+   "name": "NVIDIA NIM",
+   "connection_method": "paste_key",
+   "minutes_estimate": null,
+   "good_for": [
+    "everyday",
+    "quick_answers",
+    "long_documents",
+    "embeddings"
+   ],
+   "kind_of_allowance": [],
+   "checked_on": "2026-11-12",
+   "confidence": "L",
+   "kind": "cloud",
+   "tier": "paid",
+   "key_env": "NVIDIA_NIM_API_KEY",
+   "configured": false,
+   "enabled": true,
+   "policy": {
+    "trains_on_inputs": "unknown",
+    "human_review": "unknown",
+    "region": "us",
+    "commercial_use": "unknown",
+    "terms_url": "https://build.nvidia.com",
+    "note": "Not checked."
+   },
+   "state": "no_key",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "month": {
+     "requests": 0,
+     "tokens": 0
+    }
+   },
+   "limits": [],
+   "deployments": [
+    {
+     "id": "nim-gpt-oss-20b",
+     "model": "nvidia_nim/openai/gpt-oss-20b",
+     "mode": "chat",
+     "aliases": [
+      "fast",
+      "cheap"
+     ],
+     "state": "no_key",
+     "blocked_until": null,
+     "last_status": null,
+     "last_used_at": null,
+     "success_rate_24h": null
+    }
+   ]
+  },
+  {
+   "id": "voyage",
+   "name": "Voyage",
+   "connection_method": "paste_key",
+   "minutes_estimate": null,
+   "good_for": [
+    "embeddings",
+    "reranking"
+   ],
+   "kind_of_allowance": [
+    "one_off"
+   ],
+   "checked_on": "2026-11-12",
+   "confidence": "L",
+   "kind": "cloud",
+   "tier": "paid",
+   "key_env": "VOYAGE_API_KEY",
+   "configured": true,
+   "enabled": false,
+   "policy": {
+    "trains_on_inputs": "unknown",
+    "human_review": "unknown",
+    "region": "us",
+    "commercial_use": "unknown",
+    "terms_url": "https://www.voyageai.com/tos",
+    "note": "Not checked."
+   },
+   "state": "disabled",
+   "blocked_until": null,
+   "block_reason": null,
+   "usage": {
+    "minute": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "day": {
+     "requests": 0,
+     "tokens": 0
+    },
+    "month": {
+     "requests": 0,
+     "tokens": 0
+    }
+   },
+   "limits": [],
+   "deployments": [
+    {
+     "id": "voyage-4-lite",
+     "model": "voyage/voyage-4-lite",
+     "mode": "embedding",
+     "aliases": [
+      "embed"
+     ],
+     "state": "disabled",
+     "blocked_until": null,
+     "last_status": null,
+     "last_used_at": null,
+     "success_rate_24h": null
+    },
+    {
+     "id": "voyage-rerank-3-lite",
+     "model": "voyage/rerank-3-lite",
+     "mode": "rerank",
+     "aliases": [
+      "rerank"
+     ],
+     "state": "disabled",
+     "blocked_until": null,
+     "last_status": null,
+     "last_used_at": null,
+     "success_rate_24h": null
+    }
+   ]
+  }
+ ],
+ "aliases": [
+  {
+   "name": "fast",
+   "mode": "chat",
+   "available": 4,
+   "total": 8,
+   "next": "groq-gpt-oss-20b"
+  },
+  {
+   "name": "cheap",
+   "mode": "chat",
+   "available": 7,
+   "total": 11,
+   "next": "gemini-3.1-flash-lite"
+  },
+  {
+   "name": "smart",
+   "mode": "chat",
+   "available": 4,
+   "total": 9,
+   "next": "gemini-3.8-flash"
+  },
+  {
+   "name": "long-context",
+   "mode": "chat",
+   "available": 3,
+   "total": 7,
+   "next": "gemini-3.8-flash"
+  },
+  {
+   "name": "embed",
+   "mode": "embedding",
+   "available": 3,
+   "total": 6,
+   "next": "gemini-embedding-2"
+  },
+  {
+   "name": "rerank",
+   "mode": "rerank",
+   "available": 1,
+   "total": 4,
+   "next": "siliconflow-bge-reranker"
+  }
+ ],
+ "recent": [
+  {
+   "ts": "2026-11-12T13:59:20Z",
+   "alias": "fast",
+   "deployment": "gemini-3.1-flash-lite",
+   "provider": "gemini",
+   "status": 200,
+   "ok": true,
+   "latency_ms": 640,
+   "tokens_in": 412,
+   "tokens_out": 96,
+   "privacy": "standard"
+  },
+  {
+   "ts": "2026-11-12T13:59:10Z",
+   "alias": "fast",
+   "deployment": "openrouter-gemma-4-26b-free",
+   "provider": "openrouter",
+   "status": 429,
+   "ok": false,
+   "latency_ms": 310,
+   "tokens_in": null,
+   "tokens_out": null,
+   "privacy": "standard"
+  },
+  {
+   "ts": "2026-11-12T13:58:25Z",
+   "alias": "fast",
+   "deployment": "groq-gpt-oss-20b",
+   "provider": "groq",
+   "status": 200,
+   "ok": true,
+   "latency_ms": 380,
+   "tokens_in": 1204,
+   "tokens_out": 388,
+   "privacy": "standard"
+  },
+  {
+   "ts": "2026-11-12T13:57:50Z",
+   "alias": "smart",
+   "deployment": "ollama-qwen3-14b",
+   "provider": "ollama",
+   "status": 200,
+   "ok": true,
+   "latency_ms": 8420,
+   "tokens_in": 2210,
+   "tokens_out": 1650,
+   "privacy": "private"
+  },
+  {
+   "ts": "2026-11-12T13:56:55Z",
+   "alias": "smart",
+   "deployment": "gemini-3.8-flash",
+   "provider": "gemini",
+   "status": 200,
+   "ok": true,
+   "latency_ms": 2130,
+   "tokens_in": 5808,
+   "tokens_out": 1022,
+   "privacy": "standard"
+  },
+  {
+   "ts": "2026-11-12T13:56:00Z",
+   "alias": "embed",
+   "deployment": "ollama-nomic-embed",
+   "provider": "ollama",
+   "status": 200,
+   "ok": true,
+   "latency_ms": 95,
+   "tokens_in": 5120,
+   "tokens_out": null,
+   "privacy": "local"
+  },
+  {
+   "ts": "2026-11-12T13:54:50Z",
+   "alias": "smart",
+   "deployment": "gemini-3.8-flash",
+   "provider": "gemini",
+   "status": 429,
+   "ok": false,
+   "latency_ms": 210,
+   "tokens_in": null,
+   "tokens_out": null,
+   "privacy": "standard"
+  },
+  {
+   "ts": "2026-11-12T13:53:00Z",
+   "alias": "cheap",
+   "deployment": "groq-gpt-oss-120b",
+   "provider": "groq",
+   "status": 200,
+   "ok": true,
+   "latency_ms": 1190,
+   "tokens_in": 980,
+   "tokens_out": 402,
+   "privacy": "private"
+  },
+  {
+   "ts": "2026-11-12T13:50:40Z",
+   "alias": "long-context",
+   "deployment": "gemini-3.8-flash",
+   "provider": "gemini",
+   "status": 200,
+   "ok": true,
+   "latency_ms": 6820,
+   "tokens_in": 181400,
+   "tokens_out": 2310,
+   "privacy": "standard"
+  },
+  {
+   "ts": "2026-11-12T13:45:00Z",
+   "alias": "cheap",
+   "deployment": "deepseek-flash",
+   "provider": "deepseek",
+   "status": 200,
+   "ok": true,
+   "latency_ms": 1710,
+   "tokens_in": 3300,
+   "tokens_out": 812,
+   "privacy": "public"
+  },
+  {
+   "ts": "2026-11-12T13:35:00Z",
+   "alias": "fast",
+   "deployment": "ollama-llama3.2-3b",
+   "provider": "ollama",
+   "status": 200,
+   "ok": true,
+   "latency_ms": 920,
+   "tokens_in": 310,
+   "tokens_out": 140,
+   "privacy": "local"
+  },
+  {
+   "ts": "2026-11-12T13:13:20Z",
+   "alias": null,
+   "deployment": "deepseek-v4-pro",
+   "provider": "deepseek",
+   "status": 500,
+   "ok": false,
+   "latency_ms": null,
+   "tokens_in": null,
+   "tokens_out": null,
+   "privacy": "standard"
+  },
+  {
+   "ts": "2026-11-12T12:53:20Z",
+   "alias": "embed",
+   "deployment": "gemini-embedding-2",
+   "provider": "gemini",
+   "status": 200,
+   "ok": true,
+   "latency_ms": 180,
+   "tokens_in": 2048,
+   "tokens_out": null,
+   "privacy": "standard"
+  },
+  {
+   "ts": "2026-11-11T13:10:00Z",
+   "alias": "fast",
+   "deployment": "gemini-3.1-flash-lite",
+   "provider": "gemini",
+   "status": 200,
+   "ok": true,
+   "latency_ms": 590,
+   "tokens_in": 220,
+   "tokens_out": 64,
+   "privacy": "standard"
+  }
+ ],
+ "totals": {
+  "requests_today": 327,
+  "tokens_today": 358700
+ },
+ "apps": [
+  {
+   "name": "owner",
+   "builtin": true,
+   "priority": "interactive",
+   "daily_requests": null,
+   "daily_tokens": null,
+   "allow_paid": true,
+   "default_privacy": null,
+   "note": null,
+   "created_at": null,
+   "last_used_at": "2026-11-12T13:58:00Z",
+   "today": {
+    "requests": 41,
+    "failures": 1,
+    "tokens": 96400,
+    "cost_usd": 0.03
+   },
+   "deferrals": {}
+  },
+  {
+   "name": "open-webui",
+   "builtin": false,
+   "priority": "interactive",
+   "daily_requests": null,
+   "daily_tokens": null,
+   "allow_paid": true,
+   "default_privacy": null,
+   "note": "family chat window",
+   "created_at": "2026-11-02T09:00:00Z",
+   "last_used_at": "2026-11-12T13:41:10Z",
+   "today": {
+    "requests": 118,
+    "failures": 0,
+    "tokens": 142000,
+    "cost_usd": 0.0
+   },
+   "deferrals": {}
+  },
+  {
+   "name": "cline",
+   "builtin": false,
+   "priority": "normal",
+   "daily_requests": null,
+   "daily_tokens": 1500000,
+   "allow_paid": false,
+   "default_privacy": null,
+   "note": "coding agent",
+   "created_at": "2026-11-05T18:20:00Z",
+   "last_used_at": "2026-11-12T13:30:00Z",
+   "today": {
+    "requests": 96,
+    "failures": 4,
+    "tokens": 1290000,
+    "cost_usd": 0.0
+   },
+   "deferrals": {
+    "defer:reserve": 2
+   }
+  },
+  {
+   "name": "notes-batch",
+   "builtin": false,
+   "priority": "background",
+   "daily_requests": 500,
+   "daily_tokens": null,
+   "allow_paid": false,
+   "default_privacy": "private",
+   "note": "nightly note summaries",
+   "created_at": "2026-11-08T22:00:00Z",
+   "last_used_at": "2026-11-12T13:20:00Z",
+   "today": {
+    "requests": 212,
+    "failures": 0,
+    "tokens": 268000,
+    "cost_usd": 0.0
+   },
+   "deferrals": {
+    "defer:yield": 14,
+    "defer:reserve": 3
+   }
+  },
+  {
+   "name": "queue",
+   "builtin": false,
+   "priority": "background",
+   "daily_requests": null,
+   "daily_tokens": null,
+   "allow_paid": false,
+   "default_privacy": null,
+   "note": "managed by muse queue",
+   "created_at": "2026-11-10T07:00:00Z",
+   "last_used_at": "2026-11-12T12:10:00Z",
+   "today": {
+    "requests": 8,
+    "failures": 0,
+    "tokens": 9100,
+    "cost_usd": 0.0
+   },
+   "deferrals": {
+    "defer:yield": 5
+   }
+  }
+ ],
+ "paid": {
+  "cap_usd": 1.0,
+  "spent_usd": 0.03,
+  "held_usd": 0.0,
+  "calls": 2,
+  "unknown_cost_calls": 0,
+  "resets_at": "2026-11-13T08:00:00Z"
+ },
+ "queue": {
+  "counts": {
+   "queued": 1,
+   "running": 0,
+   "deferred": 2,
+   "done": 7,
+   "failed": 1,
+   "cancelled": 0
+  },
+  "waiting": 3,
+  "next_due_at": "2026-11-12T14:12:00Z",
+  "oldest_queued_at": "2026-11-12T11:40:00Z",
+  "hold_until": null
+ },
+ "paused": false,
+ "suggestions": [
+  {
+   "id": "cerebras",
+   "name": "Cerebras",
+   "rank": 1,
+   "method": "paste_key",
+   "minutes_estimate": 4,
+   "steps": 3,
+   "card_required": "unknown",
+   "phone_required": "unknown",
+   "gain": {
+    "window": "day",
+    "limit": 1000000,
+    "unit": "tokens"
+   },
+   "text": {
+    "en": {
+     "gain": "adds roughly 1,000,000 tokens a day",
+     "meta": "about 4 min, 3 steps",
+     "friction": "card or phone may be needed (not confirmed)"
+    },
+    "zh-TW": {
+     "gain": "每天多約 1,000,000 個 token",
+     "meta": "約 4 分鐘，3 個步驟",
+     "friction": "可能需要信用卡或手機號碼（尚未確認）"
+    }
+   }
+  },
+  {
+   "id": "cloudflare",
+   "name": "Cloudflare Workers AI",
+   "rank": 2,
+   "method": "paste_key",
+   "minutes_estimate": 8,
+   "steps": 4,
+   "card_required": "unknown",
+   "phone_required": "unknown",
+   "gain": {
+    "window": "day",
+    "limit": 10000,
+    "unit": "neurons"
+   },
+   "text": {
+    "en": {
+     "gain": "adds roughly 10,000 neurons a day",
+     "meta": "about 8 min, 4 steps",
+     "friction": "card or phone may be needed (not confirmed)"
+    },
+    "zh-TW": {
+     "gain": "每天多約 10,000 個 neurons",
+     "meta": "約 8 分鐘，4 個步驟",
+     "friction": "可能需要信用卡或手機號碼（尚未確認）"
+    }
+   }
+  },
+  {
+   "id": "jina",
+   "name": "Jina",
+   "rank": 3,
+   "method": "paste_key",
+   "minutes_estimate": 4,
+   "steps": 2,
+   "card_required": "unknown",
+   "phone_required": "unknown",
+   "gain": null,
+   "text": {
+    "en": {
+     "gain": "allowance not confirmed",
+     "meta": "about 4 min, 2 steps",
+     "friction": "card or phone may be needed (not confirmed)"
+    },
+    "zh-TW": {
+     "gain": "額度尚未確認",
+     "meta": "約 4 分鐘，2 個步驟",
+     "friction": "可能需要信用卡或手機號碼（尚未確認）"
+    }
+   }
+  },
+  {
+   "id": "local",
+   "name": "AI on this computer",
+   "rank": 4,
+   "method": "local",
+   "minutes_estimate": null,
+   "steps": 0,
+   "card_required": "no",
+   "phone_required": "no",
+   "gain": null,
+   "text": {
+    "en": {
+     "gain": "no daily limit; runs on this computer",
+     "meta": "needs Ollama, LM Studio or another local runtime",
+     "friction": null
+    },
+    "zh-TW": {
+     "gain": "沒有每日上限，在這台電腦上執行",
+     "meta": "需要先裝 Ollama、LM Studio 或其他本機執行環境",
+     "friction": null
+    }
+   }
+  }
+ ],
+ "resources": [
+  {
+   "id": "cloudflare-r2",
+   "kind": "storage",
+   "name": {
+    "en": "Cloudflare R2 storage",
+    "zh-TW": "Cloudflare R2 雲端儲存"
+   },
+   "provider": "Cloudflare",
+   "summary": {
+    "en": "Object storage with a free monthly amount of storage and operations. Sending data out of R2 directly is free.",
+    "zh-TW": "物件儲存空間，每月有免費的容量和操作次數。直接從 R2 傳出資料不收費。"
+   },
+   "managed": false,
+   "kind_of_allowance": [
+    "monthly"
+   ],
+   "allowance": [
+    {
+     "window": "month",
+     "limit": 10,
+     "unit": "gb_month",
+     "scope": "storage",
+     "condition": null,
+     "headline": true,
+     "text": {
+      "en": "10 GB-month a month",
+      "zh-TW": "每月 10 GB-月"
+     }
+    },
+    {
+     "window": "month",
+     "limit": 1000000,
+     "unit": "class_a_operations",
+     "scope": "writes and lists",
+     "condition": null,
+     "headline": false,
+     "text": {
+      "en": "1,000,000 class A operations a month",
+      "zh-TW": "每月 1,000,000 A 類操作"
+     }
+    },
+    {
+     "window": "month",
+     "limit": 10000000,
+     "unit": "class_b_operations",
+     "scope": "reads",
+     "condition": null,
+     "headline": false,
+     "text": {
+      "en": "10,000,000 class B operations a month",
+      "zh-TW": "每月 10,000,000 B 類操作"
+     }
+    }
+   ],
+   "headline": {
+    "window": "month",
+    "limit": 10,
+    "unit": "gb_month",
+    "scope": "storage",
+    "condition": null,
+    "headline": true,
+    "text": {
+     "en": "10 GB-month a month",
+     "zh-TW": "每月 10 GB-月"
+    }
+   },
+   "reset": {
+    "rule": "unknown",
+    "text": {
+     "en": "refill time not confirmed",
+     "zh-TW": "補滿時間尚未確認"
+    }
+   },
+   "how": {
+    "en": "Needs a Cloudflare account. Muse does not connect to it yet.",
+    "zh-TW": "需要一個 Cloudflare 帳號。Muse 目前還不會連接它。"
+   },
+   "key_url": "https://dash.cloudflare.com/",
+   "checked_on": "2026-11-12",
+   "confidence": "M",
+   "source_urls": [
+    "https://developers.cloudflare.com/r2/pricing/"
+   ]
+  },
+  {
+   "id": "google-drive",
+   "kind": "storage",
+   "name": {
+    "en": "Google account storage (Drive, Gmail, Photos)",
+    "zh-TW": "Google 帳號儲存空間（雲端硬碟、Gmail、相簿）"
+   },
+   "provider": "Google",
+   "summary": {
+    "en": "Every Google Account comes with up to 15 GB at no charge, shared across Drive, Gmail and Photos.",
+    "zh-TW": "每個 Google 帳號免費附帶最多 15 GB，由雲端硬碟、Gmail 和相簿共用。"
+   },
+   "managed": false,
+   "kind_of_allowance": [],
+   "allowance": [
+    {
+     "window": "total",
+     "limit": 15,
+     "unit": "gb",
+     "scope": "shared by Drive, Gmail and Photos",
+     "condition": null,
+     "headline": true,
+     "text": {
+      "en": "15 GB in total",
+      "zh-TW": "總共 15 GB"
+     }
+    }
+   ],
+   "headline": {
+    "window": "total",
+    "limit": 15,
+    "unit": "gb",
+    "scope": "shared by Drive, Gmail and Photos",
+    "condition": null,
+    "headline": true,
+    "text": {
+     "en": "15 GB in total",
+     "zh-TW": "總共 15 GB"
+    }
+   },
+   "reset": {
+    "rule": "none",
+    "text": {
+     "en": "does not refill",
+     "zh-TW": "不會補充"
+    }
+   },
+   "how": {
+    "en": "Uses your own Google Account. Muse does not connect to it yet.",
+    "zh-TW": "使用你自己的 Google 帳號。Muse 目前還不會連接它。"
+   },
+   "key_url": "https://drive.google.com/",
+   "checked_on": "2026-11-12",
+   "confidence": "M",
+   "source_urls": [
+    "https://support.google.com/drive/answer/2375123"
+   ]
+  },
+  {
+   "id": "huggingface-zerogpu",
+   "kind": "compute",
+   "name": {
+    "en": "Hugging Face ZeroGPU",
+    "zh-TW": "Hugging Face ZeroGPU 免費 GPU"
+   },
+   "provider": "Hugging Face",
+   "summary": {
+    "en": "Free GPU time for running ZeroGPU Spaces. A free account gets 5 minutes a day; visitors who are not signed in get 2.",
+    "zh-TW": "用來執行 ZeroGPU Spaces 的免費 GPU 時間。免費帳號每天 5 分鐘；沒登入的訪客是 2 分鐘。"
+   },
+   "managed": false,
+   "kind_of_allowance": [
+    "daily"
+   ],
+   "allowance": [
+    {
+     "window": "day",
+     "limit": 5,
+     "unit": "gpu_minutes",
+     "scope": "free account",
+     "condition": null,
+     "headline": true,
+     "text": {
+      "en": "5 GPU minutes a day",
+      "zh-TW": "每天 5 GPU 分鐘"
+     }
+    },
+    {
+     "window": "day",
+     "limit": 2,
+     "unit": "gpu_minutes",
+     "scope": "not signed in",
+     "condition": null,
+     "headline": false,
+     "text": {
+      "en": "2 GPU minutes a day",
+      "zh-TW": "每天 2 GPU 分鐘"
+     }
+    }
+   ],
+   "headline": {
+    "window": "day",
+    "limit": 5,
+    "unit": "gpu_minutes",
+    "scope": "free account",
+    "condition": null,
+    "headline": true,
+    "text": {
+     "en": "5 GPU minutes a day",
+     "zh-TW": "每天 5 GPU 分鐘"
+    }
+   },
+   "reset": {
+    "rule": "rolling",
+    "text": {
+     "en": "Refills 24 hours after your first GPU use, not at a fixed clock time.",
+     "zh-TW": "從你第一次使用 GPU 起算 24 小時後補滿，不是固定的時刻。"
+    }
+   },
+   "how": {
+    "en": "Needs a free Hugging Face account. Muse does not connect to it yet.",
+    "zh-TW": "需要一個免費的 Hugging Face 帳號。Muse 目前還不會連接它。"
+   },
+   "key_url": "https://huggingface.co/",
+   "checked_on": "2026-11-12",
+   "confidence": "H",
+   "source_urls": [
+    "https://huggingface.co/docs/hub/spaces-zerogpu"
+   ]
+  },
+  {
+   "id": "cloudflare-workers",
+   "kind": "compute",
+   "name": {
+    "en": "Cloudflare Workers (free plan)",
+    "zh-TW": "Cloudflare Workers（免費方案）"
+   },
+   "provider": "Cloudflare",
+   "summary": {
+    "en": "Run small programs at the edge. The free plan allows 100,000 requests a day, with 10 ms of CPU time per request.",
+    "zh-TW": "在邊緣節點執行小程式。免費方案每天可處理 100,000 個請求，每個請求的 CPU 時間是 10 毫秒。"
+   },
+   "managed": false,
+   "kind_of_allowance": [
+    "daily"
+   ],
+   "allowance": [
+    {
+     "window": "day",
+     "limit": 100000,
+     "unit": "requests",
+     "scope": "Workers, free plan",
+     "condition": null,
+     "headline": true,
+     "text": {
+      "en": "100,000 requests a day",
+      "zh-TW": "每天 100,000 次請求"
+     }
+    }
+   ],
+   "headline": {
+    "window": "day",
+    "limit": 100000,
+    "unit": "requests",
+    "scope": "Workers, free plan",
+    "condition": null,
+    "headline": true,
+    "text": {
+     "en": "100,000 requests a day",
+     "zh-TW": "每天 100,000 次請求"
+    }
+   },
+   "reset": {
+    "rule": "utc_day",
+    "text": {
+     "en": "refills at 00:00 UTC",
+     "zh-TW": "在 UTC 00:00 補滿"
+    }
+   },
+   "how": {
+    "en": "Needs a Cloudflare account. Muse does not connect to it yet.",
+    "zh-TW": "需要一個 Cloudflare 帳號。Muse 目前還不會連接它。"
+   },
+   "key_url": "https://dash.cloudflare.com/",
+   "checked_on": "2026-11-12",
+   "confidence": "H",
+   "source_urls": [
+    "https://developers.cloudflare.com/workers/platform/limits/"
+   ]
+  },
+  {
+   "id": "coinbase-x402-facilitator",
+   "kind": "chain",
+   "name": {
+    "en": "Coinbase x402 payment facilitator",
+    "zh-TW": "Coinbase x402 付款中介（facilitator）"
+   },
+   "provider": "Coinbase Developer Platform",
+   "summary": {
+    "en": "The first 1,000 onchain facilitator transactions each month are free, then 0.001 US dollars each. Checking a payment is always free.",
+    "zh-TW": "每個月前 1,000 筆鏈上 facilitator 交易免費，之後每筆 0.001 美元。驗證付款一律免費。"
+   },
+   "managed": false,
+   "kind_of_allowance": [
+    "monthly"
+   ],
+   "allowance": [
+    {
+     "window": "month",
+     "limit": 1000,
+     "unit": "transactions",
+     "scope": "onchain facilitator settlements",
+     "condition": null,
+     "headline": true,
+     "text": {
+      "en": "1,000 transactions a month",
+      "zh-TW": "每月 1,000 筆交易"
+     }
+    }
+   ],
+   "headline": {
+    "window": "month",
+    "limit": 1000,
+    "unit": "transactions",
+    "scope": "onchain facilitator settlements",
+    "condition": null,
+    "headline": true,
+    "text": {
+     "en": "1,000 transactions a month",
+     "zh-TW": "每月 1,000 筆交易"
+    }
+   },
+   "reset": {
+    "rule": "unknown",
+    "text": {
+     "en": "refill time not confirmed",
+     "zh-TW": "補滿時間尚未確認"
+    }
+   },
+   "how": {
+    "en": "The facilitator signs in with a CDP API key ID and secret. Muse does not connect to it yet.",
+    "zh-TW": "facilitator 以 CDP 的 API 金鑰 ID 和密鑰登入。Muse 目前還不會連接它。"
+   },
+   "key_url": "https://docs.cdp.coinbase.com/x402/core-concepts/facilitator",
+   "checked_on": "2026-11-12",
+   "confidence": "M",
+   "source_urls": [
+    "https://docs.cdp.coinbase.com/x402/core-concepts/facilitator"
+   ]
+  }
+ ],
+ "subscriptions": [
+  {
+   "id": "chatgpt",
+   "name": "ChatGPT",
+   "handoff_only": true,
+   "description": {
+    "en": "Your own ChatGPT account. Muse opens it; you ask there.",
+    "zh-TW": "你自己的 ChatGPT 帳號。Muse 幫你打開，你在那裡提問。"
+   },
+   "web_url": "https://chatgpt.com/",
+   "app_url": null,
+   "prefill": {
+    "web": "unknown",
+    "app": null
+   },
+   "checked_on": "2026-11-12",
+   "confidence": "L"
+  },
+  {
+   "id": "claude",
+   "name": "Claude",
+   "handoff_only": true,
+   "description": {
+    "en": "Your own Claude account. Muse opens it; you ask there.",
+    "zh-TW": "你自己的 Claude 帳號。Muse 幫你打開，你在那裡提問。"
+   },
+   "web_url": "https://claude.ai/new",
+   "app_url": "claude://claude.ai/new",
+   "prefill": {
+    "web": "unknown",
+    "app": "documented"
+   },
+   "checked_on": "2026-11-12",
+   "confidence": "M"
+  },
+  {
+   "id": "gemini",
+   "name": "Gemini app",
+   "handoff_only": true,
+   "description": {
+    "en": "Your own Google account's Gemini app. Muse opens it; you ask there.",
+    "zh-TW": "你自己的 Google 帳號裡的 Gemini App。Muse 幫你打開，你在那裡提問。"
+   },
+   "web_url": "https://gemini.google.com/app",
+   "app_url": null,
+   "prefill": {
+    "web": "unknown",
+    "app": null
+   },
+   "checked_on": "2026-11-12",
+   "confidence": "L"
+  }
+ ]
+}

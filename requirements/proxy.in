@@ -1,0 +1,3 @@
+# Input for requirements/proxy.lock. Change the version here, then regenerate
+# (the commands are in the header of proxy.lock and in README "Supply chain").
+litellm[proxy]==1.108.6

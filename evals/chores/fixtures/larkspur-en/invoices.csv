@@ -1,0 +1,11 @@
+invoice_no,date,vendor,item,amount_usd,status,due_date
+INV-3101,2031-01-08,Greywater Energy,Electricity December,84.20,paid,2031-01-22
+INV-3102,2031-01-15,Finchley Fibre,Internet January,39.00,paid,2031-01-29
+INV-3103,2031-02-03,Corvid Lifts,Emergency lift repair,410.00,paid,2031-02-17
+INV-3104,2031-02-09,Greywater Energy,Electricity January,97.65,paid,2031-02-23
+INV-3105,2031-02-15,Finchley Fibre,Internet February,39.00,paid,2031-03-01
+INV-3106,2031-03-02,Nimbel Home,Brisa K2 air purifier,229.00,paid,2031-03-16
+INV-3107,2031-03-09,Greywater Energy,Electricity February,91.10,paid,2031-03-23
+INV-3108,2031-03-15,Finchley Fibre,Internet March,39.00,unpaid,2031-03-29
+INV-3109,2031-03-20,Marlowe Plumbing,Kitchen tap replacement,135.50,unpaid,2031-04-03
+INV-3110,2031-03-28,Nimbel Home,K2-F9 replacement filter,39.00,refunded,2031-04-11

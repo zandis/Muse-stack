@@ -1,0 +1,190 @@
+name: config
+
+on:
+  push:
+    # The work branch is tested on every push, as main is.
+    branches: [main, ccr-645e0264-bn082z]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PyYAML
+        run: python -m pip install "pyyaml>=6,<7"
+      - name: Validate rendered config without provider keys
+        run: python scripts/validate_config.py
+
+  unit:
+    # The resource manager without LiteLLM installed: ledger, quota parsing,
+    # privacy policy, key store, local discovery, CLI, dashboard.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+      - name: Unit tests
+        # In parallel, one worker per core (pytest-xdist, from the dev extra). Every test
+        # has its own MUSE_HOME and tmp paths and binds port 0, so workers share nothing.
+        # The serial form (drop `-n auto`) still works.
+        run: python -m pytest tests -q --ignore=tests/integration -n auto --dist worksteal
+
+  core:
+    # The Rust core (core/) replays the vectors exported from Python
+    # (core/conformance). The unit job checks that those files are current.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust core tests
+        working-directory: core
+        run: cargo test --locked
+
+  link:
+    # The device link and pairing prototype (core/link, its own workspace and lock
+    # file). Relays and address lookup are off in every test: nothing here uses the
+    # internet. A clean build of its tests takes about 1.5 minutes on 4 cores.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Link and pairing tests (loopback only)
+        working-directory: core/link
+        run: cargo test --locked
+
+  app:
+    # The app (app/): types, lint, unit tests and a production build of the front end,
+    # then the Rust bridge to the home (no WebKit needed). The end-to-end tests
+    # run in the `app-e2e` job; the desktop build is run locally for now (app/README.md).
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: pnpm, the version package.json names
+        run: corepack enable && corepack prepare pnpm@10.28.0 --activate
+      - name: Install exactly what the lock file says (no install scripts are allowed to run)
+        run: pnpm install --frozen-lockfile
+      - name: Types
+        run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint
+      - name: Unit tests
+        run: pnpm test
+      - name: Build
+        run: pnpm build
+      - name: Bridge to the home (Rust, no WebKit)
+        working-directory: app/src-tauri
+        run: cargo test --locked -p muse-home-link
+
+  app-e2e:
+    # The app's end-to-end tests: a production build of the front end in a real browser against
+    # the fake home (`python -m muse.home --fake`). The fake home needs the signature library for
+    # Records and the permissions library for Permissions, so those two extras are installed.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: The home, with the records and permissions libraries
+        working-directory: .
+        run: python -m pip install -e ".[records,permissions]"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: pnpm, the version package.json names
+        run: corepack enable && corepack prepare pnpm@10.28.0 --activate
+      - name: Install exactly what the lock file says (no install scripts are allowed to run)
+        run: pnpm install --frozen-lockfile
+      - name: The browser the pinned Playwright expects
+        run: pnpm exec playwright install --with-deps chromium
+      - name: End-to-end tests
+        run: pnpm e2e
+
+  proxy-integration:
+    # Starts the real LiteLLM proxy with the hook loaded against a fake
+    # upstream. No provider is called and no real key is used.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install from the hash-locked lists
+        # proxy.lock: litellm[proxy] and its dependencies (PyYAML and cryptography
+        # included). dev.lock: pytest and setuptools. Then the repo itself, with
+        # nothing fetched: no dependency resolution and no build isolation.
+        run: |
+          python -m pip install --require-hashes -r requirements/proxy.lock -r requirements/dev.lock
+          python -m pip install --no-build-isolation --no-deps -e .
+      - name: The installed LiteLLM is the pinned one
+        run: python scripts/verify_litellm.py
+      - name: Hook and proxy tests
+        run: python -m pytest tests/test_hook_unit.py tests/integration -q -n auto --dist worksteal
+
+  boot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the proxy with a master key and no provider keys
+        run: |
+          set -eu
+          printf 'LITELLM_MASTER_KEY=sk-ci-master\n' > .env
+          docker compose up -d
+          for _ in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:4000/health/liveliness; then
+              echo
+              curl -fsS -H "Authorization: Bearer sk-ci-master" http://127.0.0.1:4000/v1/models
+              echo
+              python3 scripts/smoke_test.py
+              exit 0
+            fi
+            sleep 3
+          done
+          docker compose logs
+          exit 1
+      - name: Start again with one fake provider key and do not call it
+        if: success()
+        run: |
+          set -eu
+          docker compose down
+          printf 'LITELLM_MASTER_KEY=sk-ci-master\nGEMINI_API_KEY=sk-ci-not-a-real-gemini-key\n' > .env
+          docker compose up -d
+          for _ in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:4000/health/liveliness >/dev/null; then
+              python3 - << 'PY'
+          import json, urllib.request
+          req = urllib.request.Request(
+              "http://127.0.0.1:4000/v1/models",
+              headers={"Authorization": "Bearer sk-ci-master"},
+          )
+          with urllib.request.urlopen(req, timeout=20) as response:
+              ids = {item["id"] for item in json.load(response).get("data", [])}
+          needed = {"fast", "cheap", "smart", "long-context", "embed", "gemini-3.8-flash"}
+          missing = needed - ids
+          if missing or "rerank" in ids:
+              raise SystemExit(f"unexpected models: missing={missing} rerank={'rerank' in ids} ids={sorted(ids)}")
+          print("partial key exposed", ", ".join(sorted(needed)))
+          PY
+              exit 0
+            fi
+            sleep 3
+          done
+          docker compose logs
+          exit 1

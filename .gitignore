@@ -1,0 +1,36 @@
+.env
+.env.*
+!.env.example
+
+# Generated at startup. Safe to keep locally; do not commit a rendered config
+# because it is environment-specific.
+config/generated/
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+*.log
+.DS_Store
+
+*.egg-info/
+.muse/
+
+# Rust core build output (core/Cargo.lock is committed).
+core/target/
+
+# Local agent worktrees (never committed).
+.claude/worktrees/
+
+# Muse app (app/): installed packages and build output (app/pnpm-lock.yaml and app/src-tauri/Cargo.lock are committed).
+app/node_modules/
+app/dist/
+app/test-results/
+app/playwright-report/
+app/src-tauri/target/
+app/src-tauri/gen/
+
+core/link/target/

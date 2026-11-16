@@ -1,0 +1,95 @@
+# Muse stack: LiteLLM proxy. Provider keys come from .env and are optional.
+#
+#   cp .env.example .env
+#   # set LITELLM_MASTER_KEY at minimum
+#   docker compose up -d
+#
+# The image is the multi-arch build on ghcr.io (linux/amd64 and linux/arm64).
+# The Docker Hub litellm/litellm tags are amd64-only and will not run on an
+# Oracle Cloud Ampere VM. Spend logs are a separate compose file:
+# docker-compose.spend.yml.
+#
+# The image is pinned by the digest of its multi-arch index, so the tag cannot
+# be moved under us (README "Supply chain"). Resolved from ghcr.io on 2026-11-13:
+#   linux/amd64  sha256:66670e9c33efde809133c4b90d8096f4df84957f1f8277c277f312cfcc5359d3
+#   linux/arm64  sha256:91addd1d9a0ee27b8f3202472915e41e6c019c984e590af9d81f613b9fe99742
+# Check it again with: python scripts/verify_litellm.py --image
+# Never use latest, main-latest or main-stable here; scripts/validate_config.py refuses them.
+
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.108.6@sha256:c64fe10f82a1f77906f88574f954317c50f67c617e0c97b70ac8fc61b74d3ec3
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
+      LITELLM_PORT: "4000"
+      LITELLM_NUM_WORKERS: ${LITELLM_NUM_WORKERS:-1}
+      # Paid use: empty override = follow the daily cap (paid joins the aliases
+      # last when the cap is > 0); true/false forces it on/off. See .env.example.
+      MUSE_ALLOW_PAID_FALLBACK:
+      MUSE_DISABLE_PROVIDERS: ${MUSE_DISABLE_PROVIDERS:-}
+      # Bare names pass a value through from the shell that runs compose, so
+      # `muse up` can hand over keychain-stored keys without writing them to disk.
+      # Unset in the shell means the .env value (if any) applies.
+      GEMINI_API_KEY:
+      GROQ_API_KEY:
+      COHERE_API_KEY:
+      OPENROUTER_API_KEY:
+      CEREBRAS_API_KEY:
+      SAMBANOVA_API_KEY:
+      CLOUDFLARE_API_KEY:
+      CLOUDFLARE_ACCOUNT_ID:
+      SILICONFLOW_API_KEY:
+      JINA_API_KEY:
+      NOVITA_API_KEY:
+      DEEPSEEK_API_KEY:
+      VOYAGE_API_KEY:
+      NVIDIA_NIM_API_KEY:
+      OLLAMA_API_BASE:
+      LM_STUDIO_API_BASE:
+      MUSE_LOCAL_OPENAI_BASE:
+      MUSE_LOCAL_ORDER: ${MUSE_LOCAL_ORDER:-5}
+      MUSE_DEFAULT_PRIVACY: ${MUSE_DEFAULT_PRIVACY:-standard}
+      # The port mapping above uses this same value. The renderer refuses to
+      # boot with an empty master key unless it is loopback.
+      MUSE_BIND: ${MUSE_BIND:-127.0.0.1}
+      # 1/true/on: muse/hook.py raises a request to private when it spots sensitive content.
+      MUSE_AUTO_PRIVACY: ${MUSE_AUTO_PRIVACY:-}
+      # Rationing between apps (muse/ration.py). Unset means the documented default.
+      MUSE_DAILY_PAID_CAP_USD:
+      MUSE_TZ:
+      MUSE_COOLDOWN_FALLBACK_S:
+      MUSE_ACTIVE_WINDOW_S:
+      MUSE_RESERVE_BACKGROUND:
+      MUSE_RESERVE_NORMAL:
+      MUSE_EXPIRING_DAY_S:
+      MUSE_EXPIRING_MONTH_S:
+      MUSE_LOCAL_YIELD:
+      # State shared with the muse CLI and dashboard on the host.
+      MUSE_HOME: /opt/muse/home
+      PYTHONPATH: /opt/muse
+    ports:
+      # Loopback by default. Set MUSE_BIND=0.0.0.0 only behind a firewall or TLS proxy.
+      - "${MUSE_BIND:-127.0.0.1}:${MUSE_PORT:-4000}:4000"
+    volumes:
+      - ./config:/opt/muse/config:ro
+      - ./scripts:/opt/muse/scripts:ro
+      - ./muse:/opt/muse/muse:ro
+      - ${MUSE_HOME:-${HOME}/.muse}:/opt/muse/home
+    extra_hosts:
+      # Lets the container reach Ollama or LM Studio on the host (Linux needs this line).
+      - "host.docker.internal:host-gateway"
+    entrypoint: ["/bin/sh", "/opt/muse/scripts/entrypoint.sh"]
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness')
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s

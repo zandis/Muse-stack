@@ -1,0 +1,6 @@
+# This folder is its own pnpm project, not part of a larger workspace.
+packages: []
+
+# Supply chain: no dependency may run an install script. Add a name here only
+# when a build step is strictly required, and say why next to it.
+onlyBuiltDependencies: []

@@ -1,0 +1,56 @@
+# The user's own consumer subscriptions. Hand-off only: Muse opens the app or web
+# page, the user runs the question there under their own account. Muse never
+# signs in, never holds a token, never reads a quota, and never routes a request
+# through these. See docs/muse-plan.md 6.5.
+#
+# open.app / open.web: {url, prefill: documented | unknown, prompt_template?, max_prompt_chars?}
+#   prefill is `documented` only where the provider's own documentation describes
+#   the link. Otherwise it is `unknown` and Muse opens the plain page. A
+#   prompt_template's {prompt} is replaced by the URL-encoded question.
+version: 1
+subscriptions:
+  - id: chatgpt
+    name: ChatGPT
+    handoff_only: true
+    description:
+      en: "Your own ChatGPT account. Muse opens it; you ask there."
+      zh-TW: "你自己的 ChatGPT 帳號。Muse 幫你打開，你在那裡提問。"
+    open:
+      web: {url: "https://chatgpt.com/", prefill: unknown}
+    checked_on: "2026-11-12"
+    confidence: L
+    source_urls: []
+    note: "No official OpenAI page describing a prefilled-question link was found; only third-party pages, so the plain page is opened."
+
+  - id: claude
+    name: Claude
+    handoff_only: true
+    description:
+      en: "Your own Claude account. Muse opens it; you ask there."
+      zh-TW: "你自己的 Claude 帳號。Muse 幫你打開，你在那裡提問。"
+    open:
+      app:
+        url: "claude://claude.ai/new"
+        prefill: documented
+        prompt_template: "claude://claude.ai/new?q={prompt}"
+        max_prompt_chars: 14000
+        note: "Claude Desktop only. Values must be URL-encoded; the prompt is cut at about 14,000 characters."
+      web: {url: "https://claude.ai/new", prefill: unknown}
+    checked_on: "2026-11-12"
+    confidence: M
+    source_urls:
+      - https://support.claude.com/en/articles/14729294-open-claude-desktop-with-a-link
+    note: "The desktop link is documented by Anthropic. No documentation was found for a prefilled link on the web page."
+
+  - id: gemini
+    name: Gemini app
+    handoff_only: true
+    description:
+      en: "Your own Google account's Gemini app. Muse opens it; you ask there."
+      zh-TW: "你自己的 Google 帳號裡的 Gemini App。Muse 幫你打開，你在那裡提問。"
+    open:
+      web: {url: "https://gemini.google.com/app", prefill: unknown}
+    checked_on: "2026-11-12"
+    confidence: L
+    source_urls: []
+    note: "No official Google page describing a prefilled-question link was found, so the plain page is opened."

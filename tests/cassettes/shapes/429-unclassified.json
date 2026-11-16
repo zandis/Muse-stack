@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "match": "a3ba4beb4cb7304288d2d364983deb817ed06abb73d5800895b155be7af208fb",
+  "request": {
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "body_sha256": "4da3eba7ab59d98077b86524bc6cd2e7b9fdb17b9ee2f852e6fd1da0e2b317c2",
+    "model": "unclassified",
+    "max_tokens": 32,
+    "messages": 1
+  },
+  "response": {
+    "status": 429,
+    "elapsed_ms": 0,
+    "headers": [
+      [
+        "server",
+        "BaseHTTP/0.6 Python/3.12.3"
+      ],
+      [
+        "date",
+        "Fri, 13 Nov 2026 16:41:16 GMT"
+      ],
+      [
+        "content-type",
+        "application/json"
+      ]
+    ],
+    "body": "{\"error\": {\"message\": \"You exceeded your quota\", \"code\": 429}}"
+  }
+}

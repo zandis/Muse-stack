@@ -1,0 +1,1322 @@
+# Muse stack provider catalog.
+#
+# scripts/render_config.py turns this file plus the process environment into
+# the LiteLLM config. A provider is omitted when its env var is empty or when
+# its id is listed in MUSE_DISABLE_PROVIDERS, so a missing key cannot fail
+# startup.
+#
+# join:
+#   always          — part of the public alias (fast, smart, ...) whenever the key is set
+#   paid_fallback   — joins the public aliases when paid use is on: MUSE_DAILY_PAID_CAP_USD
+#                     > 0 (default 0.9375, NT$30 at 32) and MUSE_ALLOW_PAID_FALLBACK not false, or
+#                     MUSE_ALLOW_PAID_FALLBACK=true. Otherwise direct model name only.
+#   With the cap > 0, every tier paid/metered alias entry is rendered at order
+#   20 + its own order (or later than the highest free/local order), so free,
+#   trial and local deployments are always tried first.
+#
+# price: optional, per deployment, USD per million tokens:
+#     price: {input_per_mtok: 0.02, output_per_mtok: 0.05}
+#   The hook (muse/ration.py) uses a paid or metered deployment automatically
+#   only when it has a price, and charges calls against the daily paid cap
+#   with it. Without a price the deployment stays callable by its direct name
+#   (by an app allowed to pay), and those calls are recorded as unknown cost.
+#   Prices are not filled in for the providers below: copy them from the
+#   provider's own pricing page after checking, never from notes or memory.
+#   tier free, trial and local cost 0 by definition.
+#
+# min_output_tokens: optional, per deployment (chat only), a whole number from 1
+#   to 8192; also accepted on the provider as the default for its chat
+#   deployments (the deployment's own value wins). A reasoning model spends
+#   output tokens on hidden reasoning before it writes anything visible, so a
+#   request with a small max_tokens comes back as HTTP 200 with empty content
+#   and finish_reason "length". The renderer writes the number as
+#   model_info.muse_min_output_tokens and the hook (muse/hook.py) raises a
+#   smaller max_tokens / max_completion_tokens / max_output_tokens to it for
+#   that one upstream call, reported as `x-muse-min-output: raised:<from>-><to>`.
+#   A request that sets no cap is left alone, and nothing is ever lowered.
+#   The 1024 used below is NOT from any provider's documentation. It is the
+#   owner's observation on real keys: gpt-oss models returned an empty answer at
+#   max_tokens 16-20 and a normal one at 300 (2026-11-12/13), and the first
+#   skills run (2026-11-13) still got empty answers at the light ceiling of 300.
+#   A floor above a task's ceiling wins for that deployment (that is the point),
+#   so a light call to these models may use up to 1024 output tokens of the
+#   allowance. Set it only on models known to reason before answering.
+#
+# reasoning: optional, per chat deployment, e.g.
+#     reasoning: {param: reasoning_effort, light: low, everyday: low}
+#   Asks a reasoning model to think less on the named task tiers. The renderer
+#   writes model_info.muse_reasoning; the hook (muse/hook.py) sets the parameter
+#   on the upstream call by the request's task when the client did not set it,
+#   and answers `x-muse-reasoning: <value>`. Only where the provider documents
+#   the parameter for that model AND LiteLLM passes it through for that route
+#   (drop_params is on, so a dropped parameter would silently do nothing):
+#   checked 2026-11-13 for groq/ and cerebras/ (yes) and nvidia_nim/ and
+#   novita/ (LiteLLM 1.108.5 drops reasoning_effort there: no field).
+#
+# quota: optional, per provider, e.g. {requests_per_month: 1000}. Used by
+#   `muse status` and by the reserve rule when the provider reports nothing.
+#
+# order: lower is tried first inside an alias. Equal orders are load-balanced
+# with simple-shuffle, weighted by rpm. rpm values are routing weights, not a
+# promise of the provider's real quota.
+#
+# verified describes what was checked on 2026-11-11. See README for the gaps.
+#
+# policy: what the privacy classes route on (muse/policy.py). Values are
+#   yes | no | unknown. "unknown" is treated as "yes" by the private class, so
+#   a provider only receives private prompts once someone has checked its terms
+#   and written "no" here. commercial_use is allowed | prohibited | unknown.
+#   clinical_use is forbidden | allowed | unknown. A clinical or medical request
+#   is never sent to forbidden, on every privacy class, including the default
+#   standard. unknown is not forbidden. Gemini is forbidden on every tier.
+#
+# kind: local providers have no key. They are enabled when base_env is set
+#   (e.g. OLLAMA_API_BASE) and their deployments come from the local catalog
+#   written by `muse local discover` (MUSE_LOCAL_CATALOG, default
+#   $MUSE_HOME/local.yaml), because the models installed differ per machine.
+#
+# Catalogue v2 (2026-11-12). Every field below is optional, is checked by
+# scripts/validate_config.py (via muse/catalog.py) and is read by `muse connect`,
+# `muse status` and the dashboard. The rule for every fact: it was read on the
+# provider's own page on `checked_on`, and `source_urls` says which. Anything
+# not confirmed is `unknown` and the entry's `confidence` stays L or M. Never
+# fill a number from memory.
+#   name              display name (a brand, so it is not translated)
+#   also_env          more variables the provider needs besides `env` (not secrets
+#                     in themselves, e.g. an account id); the provider is off until all are set
+#   one_off: true     the allowance never renews (trial credits). The renderer writes
+#                     model_info.muse_oneoff (a boolean) on every deployment so the
+#                     rationing code can hold it back for jobs that need it.
+#   kind_of_allowance daily | monthly | one_off | scarce_strong | abundant_small
+#                     (docs/muse-plan.md 5.2). Only what the windows below support.
+#   allowance         [{window: minute|day|month|total, limit, unit: requests|tokens|neurons|..,
+#                       scope?, condition?, headline?}]. `headline: true` marks the entry that
+#                       `muse connect` quotes as "what you gain". No headline: the first
+#                       entry that is not per-minute. Do not duplicate `quota:`, which the
+#                       rationing code reads.
+#   reset             {rule: utc_day|pacific_day|rolling|calendar_month|none|unknown, tz?}
+#   read_remaining    {method: headers|api_endpoint|dashboard_only|none|unknown, endpoint?, fields?, note?}
+#   connection        {method: oauth_pkce|paste_key|none, auth_url?, exchange_url? (oauth_pkce,
+#                       https only), key_url, steps: [{id, title: {en, zh-TW}, detail: {en, zh-TW}}],
+#                       card_required|phone_required|usable_on_phone: yes|no|unknown,
+#                       minutes_estimate (Muse's own estimate, not measured),
+#                       test?: {url, auth: bearer | {header: NAME}} one GET that sends no prompt}
+#   good_for          everyday | long_documents | quick_answers | embeddings | reranking,
+#                     consistent with the deployments below
+#   terms_flags       {one_account_per_person: yes|no|unknown, aggregation_or_reselling:
+#                       prohibited|allowed|unknown, automation_of_console: prohibited|allowed|unknown,
+#                       hosted_in: <country code>|varies|local|unknown}. Providers hosted in
+#                       mainland China carry hosted_in: cn (and policy.region: cn).
+#   checked_on        YYYY-MM-DD, never in the future
+#   confidence        H (all stated facts read on the provider's pages) | M (the main facts,
+#                     some fields unknown) | L (little confirmed)
+#   source_urls       the pages the facts were read on
+
+aliases:
+  fast:
+    mode: chat
+    fallbacks: [cheap, smart]
+    context_window_fallback: long-context
+  cheap:
+    mode: chat
+    fallbacks: [fast, smart]
+    context_window_fallback: long-context
+  smart:
+    mode: chat
+    fallbacks: [cheap, fast]
+    context_window_fallback: long-context
+  long-context:
+    mode: chat
+    fallbacks: [smart]
+  vision:
+    mode: chat
+  embed:
+    mode: embedding
+  rerank:
+    mode: rerank
+
+providers:
+  - id: gemini
+    env: GEMINI_API_KEY
+    tier: free
+    policy:
+      trains_on_inputs: yes
+      human_review: yes
+      region: us
+      commercial_use: allowed
+      clinical_use: forbidden
+      terms_url: https://aistudio.google.com/docs/terms
+      note: "Unpaid tier: Google uses prompts and responses to improve products, human reviewers may read them, and the terms say not to submit sensitive, confidential or personal information. The same terms, on every tier including paid, forbid clinical practice and medical advice. Must be 18+. Apps offered to EEA/UK/CH users must use the paid tier. Outputs may not be used to build competing models."
+    key_url: https://aistudio.google.com/apikey
+    name: Gemini
+    one_off: false
+    kind_of_allowance: [daily]
+    good_for: [everyday, quick_answers, long_documents, embeddings]
+    allowance: []
+    reset: {rule: pacific_day, tz: America/Los_Angeles}
+    read_remaining:
+      method: dashboard_only
+      note: "Limits are per project, not per key. Numbers are shown in Google AI Studio and were not copied here. No remaining-quota endpoint was found."
+    connection:
+      method: paste_key
+      key_url: https://aistudio.google.com/apikey
+      card_required: unknown
+      phone_required: unknown
+      minutes_estimate: 4
+      usable_on_phone: unknown
+      test: {url: https://generativelanguage.googleapis.com/v1beta/models, auth: {header: x-goog-api-key}}
+      steps:
+        - id: sign-in
+          title: {en: "Sign in with your own Google account", zh-TW: "用你自己的 Google 帳號登入"}
+          detail: {en: "Muse opens the AI Studio key page (aistudio.google.com/apikey). Sign in with your own Google account there.", zh-TW: "Muse 會打開 AI Studio 的金鑰頁面（aistudio.google.com/apikey）。請在那裡用你自己的 Google 帳號登入。"}
+        - id: accept-terms
+          title: {en: "Accept the terms", zh-TW: "同意服務條款"}
+          detail: {en: "After you accept the terms, AI Studio creates a default project and key for you.", zh-TW: "同意條款後，AI Studio 會自動替你建立預設專案和金鑰。"}
+        - id: copy-key
+          title: {en: "Copy the key", zh-TW: "複製金鑰"}
+          detail: {en: "Copy the key shown on the page, then come back here and paste it when asked.", zh-TW: "複製頁面上的金鑰，再回到這裡，等 Muse 詢問時貼上。"}
+    terms_flags: {one_account_per_person: unknown, aggregation_or_reselling: unknown, automation_of_console: unknown, hosted_in: unknown}
+    checked_on: "2026-11-15"
+    confidence: M
+    source_urls:
+      - https://ai.google.dev/gemini-api/docs/pricing
+      - https://ai.google.dev/gemma/docs/core/gemma_on_gemini_api
+      - https://aistudio.google.com/docs/terms
+      - https://aistudio.google.com/docs/rate-limits
+      - https://aistudio.google.com/docs/api-key
+      - https://aistudio.google.com/docs/quickstart
+    notes: >-
+      Google AI Studio free tier. The pricing page (read 2026-11-15) marks the
+      deployed Gemini and Gemma models "Free of charge" and says free-tier
+      content is used to improve Google's products. Numeric RPM/RPD are shown
+      in AI Studio and were not copied here. gemini-2.5-flash, gemini-2.5-flash-lite
+      and gemini-2.5-pro are not deployed: a new AI Studio key gets HTTP 404 for
+      them, and the pricing page says 2.5 Pro and 2.5 Flash are deprecated.
+      gemini-4-hydrogen is free of charge with a 1M window on that page, but
+      gemini/gemini-4-hydrogen is not in LiteLLM 1.108.6's model map, so it is
+      not deployed. Gemma 4 image input is documented and is not wired here.
+    deployments:
+      - id: gemini-3.1-flash-lite
+        model: gemini/gemini-3.1-flash-lite
+        mode: chat
+        aliases: [fast, cheap]
+        order: 1
+        rpm: 10
+        context_tokens: 1048576
+        join: always
+        verified: gemini-pricing-and-litellm-1.108.5
+        notes: Free of charge on the Gemini pricing page. 1,048,576-token window is from the LiteLLM 1.108.6 model map. Answers on a new AI Studio key (checked 2026-11-12).
+      - id: gemini-3.5-flash-lite
+        model: gemini/gemini-3.5-flash-lite
+        mode: chat
+        aliases: [cheap]
+        order: 1
+        rpm: 10
+        context_tokens: 1048576
+        join: always
+        verified: gemini-pricing-and-litellm-1.108.5
+        notes: Free of charge on the standard tier of the pricing page. Answers on a new AI Studio key (checked 2026-11-12).
+      - id: gemini-3.8-flash
+        model: gemini/gemini-3.8-flash
+        mode: chat
+        aliases: [smart, long-context]
+        order: 1
+        rpm: 8
+        context_tokens: 1048576
+        join: always
+        verified: gemini-pricing-and-litellm-1.108.5
+        notes: Free of charge. Pricing page calls it the most capable Flash model. The 1,048,576 window is from LiteLLM 1.108.6's map. A new key can get HTTP 503 while demand is high; that is transient, so the deployment stays.
+      - id: gemini-gemma-4-26b
+        model: gemini/gemma-4-26b-a4b-it
+        mode: chat
+        aliases: [fast, cheap, long-context]
+        order: 2
+        rpm: 10
+        context_tokens: 262144
+        join: always
+        verified: gemma-on-gemini-api-and-litellm-1.108.6
+        notes: >-
+          Gemma 4 26B MoE. Ids gemma-4-26b-a4b-it and gemma-4-31b-it are the
+          Gemini API's hosted Gemma 4 models (read 2026-11-15). The pricing page
+          marks Gemma 4 free of charge and says the free tier is used to improve
+          Google's products. LiteLLM 1.108.6 maps this id to 262,144 input tokens.
+          Order 2 so Flash-Lite and Groq stay first. Text only here: image input
+          is documented but not routed.
+      - id: gemini-gemma-4-31b
+        model: gemini/gemma-4-31b-it
+        mode: chat
+        aliases: [smart, long-context]
+        order: 2
+        rpm: 8
+        context_tokens: 262144
+        join: always
+        verified: gemma-on-gemini-api-and-litellm-1.108.6
+        notes: >-
+          Gemma 4 31B. Same free-tier terms as the 26B model. Order 2 on smart,
+          after Gemini 3.8 Flash and Groq gpt-oss-120b. 262,144 input tokens from
+          the LiteLLM 1.108.6 map, so it qualifies for long-context.
+      - id: gemini-embedding-2
+        model: gemini/gemini-embedding-2
+        mode: embedding
+        aliases: [embed]
+        order: 1
+        rpm: 10
+        join: always
+        verified: gemini-pricing-and-litellm-1.108.5
+        notes: Free of charge for text, image, audio, and video input. Output dimension was not stated on the pricing page. LiteLLM maps max input to 8,192 tokens.
+
+  - id: groq
+    env: GROQ_API_KEY
+    tier: free
+    policy:
+      trains_on_inputs: unknown
+      human_review: unknown
+      region: us
+      commercial_use: allowed
+      terms_url: https://groq.com/terms-of-use/
+      note: "Training and review terms not checked, so the private class skips it. The services agreement bars reselling or leasing access."
+    key_url: https://console.groq.com/keys
+    name: Groq
+    one_off: false
+    kind_of_allowance: [daily]
+    good_for: [everyday, quick_answers]
+    allowance: []
+    reset: {rule: unknown}
+    read_remaining:
+      method: headers
+      fields: [x-ratelimit-limit-requests, x-ratelimit-remaining-requests, x-ratelimit-reset-requests, x-ratelimit-limit-tokens, x-ratelimit-remaining-tokens, x-ratelimit-reset-tokens, retry-after]
+      note: "Limits apply per organisation. The requests headers are the daily request limit; the tokens headers are the per-minute token limit. Free-plan numbers are only on the console limits page (login)."
+    connection:
+      method: paste_key
+      key_url: https://console.groq.com/keys
+      card_required: unknown
+      phone_required: unknown
+      minutes_estimate: 4
+      usable_on_phone: unknown
+      test: {url: https://api.groq.com/openai/v1/models, auth: bearer}
+      steps:
+        - id: open-page
+          title: {en: "Open Groq's key page", zh-TW: "打開 Groq 的金鑰頁面"}
+          detail: {en: "Muse opens console.groq.com/keys. Sign in, or sign up there if you do not have an account yet.", zh-TW: "Muse 會打開 console.groq.com/keys。請在那裡登入；還沒有帳號的話就先註冊。"}
+        - id: create-key
+          title: {en: "Create a key", zh-TW: "建立金鑰"}
+          detail: {en: "Create a new API key on that page. Muse does not click anything for you.", zh-TW: "在該頁面建立一組新的 API 金鑰。Muse 不會替你點擊任何東西。"}
+        - id: copy-key
+          title: {en: "Copy the key", zh-TW: "複製金鑰"}
+          detail: {en: "Copy it, then come back here and paste it when asked.", zh-TW: "複製後回到這裡，等 Muse 詢問時貼上。"}
+    terms_flags: {one_account_per_person: unknown, aggregation_or_reselling: prohibited, automation_of_console: unknown, hosted_in: unknown}
+    checked_on: "2026-11-15"
+    confidence: M
+    source_urls:
+      - https://console.groq.com/docs/models
+      - https://console.groq.com/docs/vision
+      - https://console.groq.com/docs/model/qwen/qwen3.8-27b
+      - https://console.groq.com/docs/rate-limits
+      - https://console.groq.com/docs/deprecations
+      - https://console.groq.com/docs/legal/services-agreement
+      - https://console.groq.com/docs/api-reference
+    notes: >-
+      Public models page lists openai/gpt-oss-20b and openai/gpt-oss-120b as
+      production models (131,072 context). That page's rate-limit column is the
+      Developer plan (250K TPM, 1K RPM). Free-plan caps are lower and are shown
+      at https://console.groq.com/settings/limits. The models API returned 401
+      without a key. llama-3.3-70b-versatile is enterprise-only on that page.
+    deployments:
+      - id: groq-gpt-oss-20b
+        model: groq/openai/gpt-oss-20b
+        mode: chat
+        # 2026-11-13: owner's observation, not provider documentation: gpt-oss reasons first;
+        # empty answer at max_tokens 16-20, fine at 300 (2026-11-12). The first skills run on
+        # real keys (2026-11-13, research-report) still had 21 of 62 answers empty at the light
+        # ceiling of 300, which the old floor of 256 never raised: 1024 leaves room to answer.
+        min_output_tokens: 1024
+        # reasoning_effort low|medium|high is documented for GPT-OSS 20B/120B on
+        # https://console.groq.com/docs/reasoning (read 2026-11-13); LiteLLM 1.108.5 passes it
+        # through for groq/ (get_supported_openai_params). Less thinking on short tasks.
+        reasoning: {param: reasoning_effort, light: low, everyday: low}
+        aliases: [fast, cheap]
+        order: 1
+        rpm: 30
+        context_tokens: 131072
+        join: always
+        verified: groq-models-page-and-litellm-1.108.5
+        notes: About 1,000 tokens/sec on the Groq models page. 131k context, so it is not in long-context.
+      - id: groq-gpt-oss-120b
+        model: groq/openai/gpt-oss-120b
+        mode: chat
+        # 2026-11-13: owner's observation, not provider documentation: gpt-oss reasons first;
+        # empty answer at max_tokens 16-20, fine at 300 (2026-11-12). The first skills run on
+        # real keys (2026-11-13, research-report) still had 21 of 62 answers empty at the light
+        # ceiling of 300, which the old floor of 256 never raised: 1024 leaves room to answer.
+        min_output_tokens: 1024
+        # reasoning_effort low|medium|high is documented for GPT-OSS 20B/120B on
+        # https://console.groq.com/docs/reasoning (read 2026-11-13); LiteLLM 1.108.5 passes it
+        # through for groq/ (get_supported_openai_params). Less thinking on short tasks.
+        reasoning: {param: reasoning_effort, light: low, everyday: low}
+        aliases: [smart]
+        order: 1
+        rpm: 20
+        context_tokens: 131072
+        join: always
+        verified: groq-models-page-and-litellm-1.108.5
+        notes: Larger GPT-OSS model. Same 131,072 context. Not in long-context.
+      - id: groq-qwen3-8-27b
+        model: groq/qwen/qwen3.8-27b
+        mode: chat
+        aliases: [vision]
+        order: 1
+        rpm: 30
+        context_tokens: 131072
+        join: always
+        verified: groq-vision-docs-and-litellm-1.108.6
+        notes: >-
+          Preview model (not the production list). Groq's vision page names
+          qwen/qwen3.8-27b: text and images, up to 3 images, 20 MB, each image
+          2,048 tokens, 131,072 context. The rate-limits page (read 2026-11-15)
+          lists the same free-tier caps as gpt-oss: 30 RPM, 1,000 RPD, 8,000 TPM,
+          200,000 TPD. qwen/qwen3.6-27b was shut down on 2026-09-14. No output
+          floor: the 1024 floor is an observation on gpt-oss only. 131,072
+          context, so not in long-context.
+
+  - id: cohere
+    env: COHERE_API_KEY
+    tier: trial
+    # Cohere's rate-limit docs: trial keys get 1,000 API calls a month in total.
+    quota:
+      requests_per_month: 1000
+    policy:
+      trains_on_inputs: unknown
+      human_review: unknown
+      region: us
+      commercial_use: prohibited
+      terms_url: https://cohere.com/pricing
+      note: "Trial keys are not permitted for production or commercial use (1,000 calls a month). One account only. The 2022 Terms of Use are written for business use and exclude personal or household purposes; read them before relying on a trial key."
+    key_url: https://dashboard.cohere.com/api-keys
+    name: Cohere
+    one_off: false
+    kind_of_allowance: [monthly]
+    good_for: [everyday, quick_answers, long_documents, embeddings, reranking]
+    allowance:
+      - {window: month, limit: 1000, unit: requests, scope: "trial key, all endpoints together", headline: true}
+      - {window: minute, limit: 20, unit: requests, scope: "chat, trial key"}
+      - {window: minute, limit: 10, unit: requests, scope: "rerank, trial key"}
+      - {window: minute, limit: 2000, unit: inputs, scope: "embed, trial key"}
+    reset: {rule: unknown}
+    read_remaining:
+      method: unknown
+      note: "The rate-limits page does not say how the monthly limit resets or how to read what is left."
+    connection:
+      method: paste_key
+      key_url: https://dashboard.cohere.com/api-keys
+      card_required: unknown
+      phone_required: unknown
+      minutes_estimate: 4
+      usable_on_phone: unknown
+      test: {url: https://api.cohere.com/v1/models, auth: bearer}
+      steps:
+        - id: open-page
+          title: {en: "Open Cohere's key page", zh-TW: "打開 Cohere 的金鑰頁面"}
+          detail: {en: "Muse opens dashboard.cohere.com/api-keys. Sign in, or sign up there if you do not have an account yet.", zh-TW: "Muse 會打開 dashboard.cohere.com/api-keys。請在那裡登入；還沒有帳號的話就先註冊。"}
+        - id: find-key
+          title: {en: "Find your trial key", zh-TW: "找到你的試用金鑰"}
+          detail: {en: "Trial keys are free but limited. Find your trial key on that page.", zh-TW: "試用金鑰免費，但有次數限制。請在該頁面找到你的試用金鑰。"}
+        - id: copy-key
+          title: {en: "Copy the key", zh-TW: "複製金鑰"}
+          detail: {en: "Copy it, then come back here and paste it when asked.", zh-TW: "複製後回到這裡，等 Muse 詢問時貼上。"}
+    terms_flags: {one_account_per_person: unknown, aggregation_or_reselling: unknown, automation_of_console: unknown, hosted_in: unknown}
+    checked_on: "2026-11-12"
+    confidence: M
+    source_urls:
+      - https://docs.cohere.com/docs/rate-limits
+      - https://docs.cohere.com/docs/how-does-cohere-pricing-work
+      - https://docs.cohere.com/reference/list-models
+    notes: >-
+      Trial keys are free and, per Cohere's rate-limit docs, capped at 1,000
+      calls per month. Chat is additionally about 20 requests per minute.
+      Order 2 so Gemini and Groq absorb traffic first.
+    deployments:
+      - id: cohere-command-r7b
+        model: cohere_chat/command-r7b-12-2024
+        mode: chat
+        aliases: [fast, cheap]
+        order: 2
+        rpm: 5
+        context_tokens: 128000
+        join: always
+        verified: cohere-models-page-and-litellm-1.108.5
+        notes: Small Command model, 128k context, 4k max output on the models page.
+      - id: cohere-command-a
+        model: cohere_chat/command-a-03-2025
+        mode: chat
+        aliases: [smart, long-context]
+        order: 2
+        rpm: 4
+        context_tokens: 256000
+        join: always
+        verified: cohere-models-page-and-litellm-1.108.5
+        notes: Command A, 256k context. command-a-plus-05-2026 is newer but the models page lists it at 128k, so it is not the long-context pick.
+      - id: cohere-embed-v5-fast
+        model: cohere/embed-v5.0-fast
+        mode: embedding
+        aliases: [embed]
+        order: 2
+        rpm: 5
+        join: always
+        verified: cohere-models-page-and-litellm-1.108.5
+        notes: Default output dimension on the models page is 2048, with 256/512/768/1024/1536/2048 available. Do not mix these vectors with Gemini or Jina vectors.
+      - id: cohere-rerank-v4-fast
+        model: cohere/rerank-v4.0-fast
+        mode: rerank
+        aliases: [rerank]
+        order: 1
+        rpm: 5
+        join: always
+        verified: cohere-models-page-and-litellm-1.108.5
+        notes: Live on the models page (32k). Cohere recommends rerank-v5.0-fast for new projects; that id is not in the LiteLLM 1.108.5 price map, so v4.0-fast is what the proxy is configured to call.
+
+  - id: openrouter
+    env: OPENROUTER_API_KEY
+    tier: free
+    policy:
+      trains_on_inputs: yes
+      human_review: unknown
+      region: varies
+      commercial_use: unknown
+      terms_url: https://openrouter.ai/terms
+      note: "Some free models store or train on inputs. Extra accounts or keys do not raise limits and are prohibited. No reselling or transferring access."
+    key_url: https://openrouter.ai/keys
+    name: OpenRouter
+    one_off: false
+    kind_of_allowance: [daily]
+    good_for: [everyday, quick_answers, long_documents]
+    allowance:
+      - {window: minute, limit: 20, unit: requests, scope: free models}
+      - {window: day, limit: 50, unit: requests, scope: free models, condition: "fewer than 10 credits bought, all time", headline: true}
+      - {window: day, limit: 1000, unit: requests, scope: free models, condition: "10 or more credits bought, all time"}
+    reset: {rule: utc_day}
+    read_remaining:
+      method: api_endpoint
+      endpoint: https://openrouter.ai/api/v1/key
+      fields: [data.free_model_daily_requests.limit, data.free_model_daily_requests.used, data.free_model_daily_requests.remaining]
+      note: "Free-model requests for the current UTC day. muse/probes.py reads this."
+    connection:
+      method: oauth_pkce
+      auth_url: https://openrouter.ai/auth
+      exchange_url: https://openrouter.ai/api/v1/auth/keys
+      key_url: https://openrouter.ai/keys
+      card_required: unknown
+      phone_required: unknown
+      minutes_estimate: 1
+      usable_on_phone: unknown
+      test: {url: https://openrouter.ai/api/v1/key, auth: bearer}
+      steps:
+        - id: approve
+          title: {en: "Approve on OpenRouter's own page", zh-TW: "在 OpenRouter 自己的頁面核准"}
+          detail: {en: "Muse opens OpenRouter's approval page in your browser. Sign in or sign up there if asked, then approve. Muse never clicks anything for you.", zh-TW: "Muse 會在你的瀏覽器打開 OpenRouter 的核准頁面。如果需要，請先在那裡登入或註冊，再按核准。Muse 不會替你點擊任何東西。"}
+        - id: come-back
+          title: {en: "Come back here", zh-TW: "回到這裡"}
+          detail: {en: "OpenRouter sends the key straight to Muse on this computer. You do not copy or paste anything.", zh-TW: "OpenRouter 會把金鑰直接交給這台電腦上的 Muse，你不需要複製或貼上任何東西。"}
+    terms_flags: {one_account_per_person: yes, aggregation_or_reselling: prohibited, automation_of_console: unknown, hosted_in: unknown}
+    checked_on: "2026-11-12"
+    confidence: H
+    source_urls:
+      - https://openrouter.ai/docs/use-cases/oauth-pkce
+      - https://openrouter.ai/docs/api-reference/limits
+      - https://openrouter.ai/docs/guides/privacy/logging
+      - https://openrouter.ai/terms
+    extra_headers:
+      HTTP-Referer: https://github.com/zandis/muse-stack
+      X-Title: Muse AIMedics
+    notes: >-
+      Last resort. Only :free catalog ids, plus the openrouter/free router.
+      The id list was taken from the public models API on 2026-11-11 (zero
+      prompt and completion price). Free variants are removed without notice
+      and are rate-limited per account. A fallback from a :free model to a
+      paid OpenRouter model would bill; this catalog does not list paid ids.
+    deployments:
+      - id: openrouter-gemma-4-26b-free
+        model: openrouter/google/gemma-4-26b-a4b-it:free
+        mode: chat
+        aliases: [fast]
+        order: 9
+        rpm: 2
+        context_tokens: 262144
+        join: always
+        verified: openrouter-models-api-2026-11-11
+        notes: 262,144 context on the public catalog.
+      - id: openrouter-lfm-free
+        model: openrouter/liquid/lfm-2.5-2.6b:free
+        mode: chat
+        aliases: [cheap]
+        order: 9
+        rpm: 2
+        context_tokens: 65536
+        join: always
+        verified: openrouter-models-api-2026-11-11
+        notes: Small free model, 65,536 context.
+      - id: openrouter-gemma-4-31b-free
+        model: openrouter/google/gemma-4-31b-it:free
+        mode: chat
+        aliases: [smart]
+        order: 9
+        rpm: 2
+        context_tokens: 262144
+        join: always
+        verified: openrouter-models-api-2026-11-11
+      - id: openrouter-nemotron-ultra-free
+        model: openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
+        mode: chat
+        aliases: [smart, long-context]
+        order: 9
+        rpm: 1
+        context_tokens: 1000000
+        join: always
+        verified: openrouter-models-api-2026-11-11
+        notes: Catalog context 1,000,000. Free endpoints for a model this large are often slow or busy.
+      - id: openrouter-nemotron-lightning-free
+        model: openrouter/nvidia/nemotron-3.5-lightning:free
+        mode: chat
+        aliases: [long-context]
+        order: 9
+        rpm: 1
+        context_tokens: 1000000
+        join: always
+        verified: openrouter-models-api-2026-11-11
+      - id: openrouter-free-router
+        model: openrouter/openrouter/free
+        mode: chat
+        aliases: [fast, cheap, smart, long-context]
+        order: 9
+        rpm: 1
+        context_tokens: 200000
+        join: always
+        verified: openrouter-models-api-2026-11-11
+        notes: OpenRouter's free-models router. It picks a different free model per request, so answers are not stable. Catalog context 200,000.
+
+  - id: siliconflow
+    env: SILICONFLOW_API_KEY
+    tier: metered
+    policy:
+      trains_on_inputs: unknown
+      human_review: unknown
+      region: unknown
+      commercial_use: unknown
+      terms_url: https://siliconflow.com/terms
+      note: "Not checked."
+    key_url: https://cloud.siliconflow.com/account/ak
+    name: SiliconFlow
+    one_off: false
+    kind_of_allowance: []
+    good_for: [everyday, quick_answers, embeddings, reranking]
+    allowance: []
+    reset: {rule: unknown}
+    read_remaining: {method: unknown}
+    connection:
+      method: paste_key
+      key_url: https://cloud.siliconflow.com/account/ak
+      card_required: unknown
+      phone_required: unknown
+      usable_on_phone: unknown
+      steps:
+        - id: create-account
+          title: {en: "Create a SiliconFlow account", zh-TW: "建立 SiliconFlow 帳號"}
+          detail: {en: "Muse opens cloud.siliconflow.com. Sign up or sign in there.", zh-TW: "Muse 會打開 cloud.siliconflow.com。請在那裡註冊或登入。"}
+        - id: create-key
+          title: {en: "Create an API key", zh-TW: "建立 API 金鑰"}
+          detail: {en: "Open the API Keys page (cloud.siliconflow.com/account/ak) and create a key. Muse does not click anything for you.", zh-TW: "打開 API 金鑰頁面（cloud.siliconflow.com/account/ak）並建立一組金鑰。Muse 不會替你點擊任何東西。"}
+        - id: copy-key
+          title: {en: "Copy the key", zh-TW: "複製金鑰"}
+          detail: {en: "Copy it, then come back here and paste it when asked.", zh-TW: "複製後回到這裡，等 Muse 詢問時貼上。"}
+    terms_flags: {one_account_per_person: unknown, aggregation_or_reselling: unknown, automation_of_console: unknown, hosted_in: unknown}
+    checked_on: "2026-11-12"
+    confidence: L
+    source_urls:
+      - https://docs.siliconflow.com/en/userguide/quickstart
+      - https://docs.siliconflow.com/en/legals/privacy-policy
+    api_base: https://api.siliconflow.com/v1
+    notes: >-
+      International OpenAI-compatible endpoint. LiteLLM 1.108.5 has no
+      siliconflow/ provider, so chat and embeddings use the openai/ prefix
+      with this api_base, and rerank uses hosted_vllm (which posts to
+      {api_base}/rerank, i.e. https://api.siliconflow.com/v1/rerank).
+      The models API returned 401 without a key. The pricing page offers $1
+      of starting credit and did not list permanently free model ids in the
+      HTML that was fetched.
+    deployments:
+      - id: siliconflow-qwen-3-5-9b
+        model: openai/Qwen/Qwen3.5-9B
+        mode: chat
+        aliases: [fast, cheap]
+        order: 3
+        rpm: 5
+        join: always
+        verified: partial
+        notes: >-
+          NOT VERIFIED as an API id. The pricing page (fetched 2026-11-11)
+          shows the display name Qwen3.5-9B. The Qwen/ prefix is the usual
+          SiliconFlow pattern. If this 404s, the router cools the deployment
+          and continues. Confirm the id in the SiliconFlow console and edit
+          this file.
+      - id: siliconflow-bge-m3
+        model: openai/BAAI/bge-m3
+        mode: embedding
+        aliases: [embed]
+        order: 2
+        rpm: 5
+        join: always
+        verified: siliconflow-docs-example
+        notes: BAAI/bge-m3 is the embedding id in SiliconFlow's own FastGPT guide. Output dimension is 1024 for bge-m3. Free-of-charge status was not on the pricing HTML that was fetched.
+      - id: siliconflow-bge-reranker
+        model: hosted_vllm/BAAI/bge-reranker-v2-m3
+        mode: rerank
+        aliases: [rerank]
+        order: 2
+        rpm: 5
+        join: always
+        verified: siliconflow-rerank-api-example
+        notes: The rerank API docs use model BAAI/bge-reranker-v2-m3 and POST /v1/rerank.
+
+  - id: jina
+    env: JINA_API_KEY
+    tier: trial
+    policy:
+      trains_on_inputs: unknown
+      human_review: unknown
+      region: unknown
+      commercial_use: unknown
+      terms_url: https://jina.ai/legal
+      note: "Not checked."
+    key_url: https://jina.ai/api-dashboard
+    name: Jina
+    one_off: false
+    kind_of_allowance: []
+    good_for: [embeddings, reranking]
+    allowance: []
+    reset: {rule: unknown}
+    read_remaining: {method: unknown, note: "The free token allowance was not found on the dashboard page and is not confirmed."}
+    connection:
+      method: paste_key
+      key_url: https://jina.ai/api-dashboard
+      card_required: unknown
+      phone_required: unknown
+      minutes_estimate: 4
+      usable_on_phone: unknown
+      steps:
+        - id: open-page
+          title: {en: "Open the provider's key page", zh-TW: "打開服務商的金鑰頁面"}
+          detail: {en: "Sign in, or sign up if you do not have an account yet, on the provider's own page. Muse only opens the page; it never fills in or clicks anything there.", zh-TW: "在服務商自己的頁面登入；還沒有帳號的話，就在那裡註冊。Muse 只會幫你打開頁面，不會在上面填寫或點擊任何東西。"}
+        - id: copy-key
+          title: {en: "Create a key and copy it", zh-TW: "建立金鑰並複製"}
+          detail: {en: "Create an API key on that page and copy it. Come back here and paste it when asked.", zh-TW: "在該頁面建立一組 API 金鑰並複製，再回到這裡，等 Muse 詢問時貼上。"}
+    terms_flags: {one_account_per_person: unknown, aggregation_or_reselling: unknown, automation_of_console: unknown, hosted_in: unknown}
+    checked_on: "2026-11-12"
+    confidence: L
+    source_urls:
+      - https://jina.ai/api-dashboard/
+    notes: >-
+      LiteLLM reads JINA_API_KEY (also JINA_AI_API_KEY). Embeddings go to
+      https://api.jina.ai/v1/embeddings. The current free token allowance was
+      not re-checked; treat the key as metered until you confirm it in the
+      Jina dashboard.
+    deployments:
+      - id: jina-embeddings-v3
+        model: jina_ai/jina-embeddings-v3
+        mode: embedding
+        aliases: [embed]
+        order: 2
+        rpm: 5
+        join: always
+        verified: jina-site-and-litellm-docs
+        notes: jina-embeddings-v3 is on jina.ai and is the LiteLLM Jina example. Default dimension 1024. The site also advertises v5 embeddings, which are not wired here.
+      - id: jina-reranker-v2
+        model: jina_ai/jina-reranker-v2-base-multilingual
+        mode: rerank
+        aliases: [rerank]
+        order: 2
+        rpm: 5
+        join: always
+        verified: jina-reranker-page-and-litellm-1.108.5
+        notes: Pointwise reranker, present in the LiteLLM 1.108.5 price map. The site also lists jina-reranker-v3 and v3.5 (listwise); those were not wired.
+
+  - id: novita
+    env: NOVITA_API_KEY
+    tier: paid
+    policy:
+      trains_on_inputs: unknown
+      human_review: unknown
+      region: unknown
+      commercial_use: unknown
+      terms_url: https://novita.ai/legal/terms-of-service
+      note: "Not checked."
+    key_url: https://novita.ai/settings/key-management
+    name: Novita
+    one_off: false
+    kind_of_allowance: []
+    good_for: [everyday, quick_answers, long_documents]
+    allowance: []
+    reset: {rule: none}
+    read_remaining: {method: unknown}
+    connection:
+      method: paste_key
+      key_url: https://novita.ai/settings/key-management
+      card_required: unknown
+      phone_required: unknown
+      usable_on_phone: unknown
+      steps:
+        - id: open-page
+          title: {en: "Open the provider's key page", zh-TW: "打開服務商的金鑰頁面"}
+          detail: {en: "Sign in, or sign up if you do not have an account yet, on the provider's own page. Muse only opens the page; it never fills in or clicks anything there.", zh-TW: "在服務商自己的頁面登入；還沒有帳號的話，就在那裡註冊。Muse 只會幫你打開頁面，不會在上面填寫或點擊任何東西。"}
+        - id: copy-key
+          title: {en: "Create a key and copy it", zh-TW: "建立金鑰並複製"}
+          detail: {en: "Create an API key on that page and copy it. Come back here and paste it when asked.", zh-TW: "在該頁面建立一組 API 金鑰並複製，再回到這裡，等 Muse 詢問時貼上。"}
+    terms_flags: {one_account_per_person: unknown, aggregation_or_reselling: unknown, automation_of_console: unknown, hosted_in: unknown}
+    checked_on: "2026-11-12"
+    confidence: L
+    source_urls:
+      - https://novita.ai/legal/privacy-policy
+    api_base: https://api.novita.ai/v3/openai
+    notes: >-
+      Prices below are from the public models list at
+      https://api.novita.ai/v3/openai/models on 2026-11-11 (USD per 1M tokens).
+      There is no permanent free chat tier in that list. Deployments stay off
+      the public aliases unless MUSE_ALLOW_PAID_FALLBACK=true. The direct
+      model name still works when the key is set.
+    deployments:
+      - id: novita-llama-3.1-8b
+        model: novita/meta-llama/llama-3.1-8b-instruct
+        mode: chat
+        aliases: [fast, cheap]
+        order: 4
+        rpm: 10
+        context_tokens: 16384
+        join: paid_fallback
+        verified: novita-models-api-2026-11-11
+        notes: $0.02 / $0.05 per 1M tokens. Context 16,384.
+      - id: novita-gpt-oss-120b
+        model: novita/openai/gpt-oss-120b
+        mode: chat
+        # 2026-11-13: owner's observation, not provider documentation: gpt-oss reasons first;
+        # empty answer at max_tokens 16-20, fine at 300 (2026-11-12). The first skills run on
+        # real keys (2026-11-13, research-report) still had 21 of 62 answers empty at the light
+        # ceiling of 300, which the old floor of 256 never raised: 1024 leaves room to answer.
+        min_output_tokens: 1024
+        aliases: [cheap, smart]
+        order: 4
+        rpm: 8
+        context_tokens: 131072
+        join: paid_fallback
+        verified: novita-models-api-2026-11-11
+        notes: $0.05 / $0.25 per 1M tokens. Context 131,072.
+      - id: novita-qwen3.8-flash
+        model: novita/qwen/qwen3.8-flash
+        mode: chat
+        aliases: [long-context]
+        order: 4
+        rpm: 6
+        context_tokens: 1000000
+        join: paid_fallback
+        verified: novita-models-api-2026-11-11
+        notes: $0.15 / $0.47 per 1M tokens. Context 1,000,000.
+
+  - id: deepseek
+    env: DEEPSEEK_API_KEY
+    tier: paid
+    policy:
+      trains_on_inputs: unknown
+      human_review: unknown
+      region: cn
+      commercial_use: unknown
+      terms_url: https://platform.deepseek.com/downloads/DeepSeek%20Open%20Platform%20Terms%20of%20Service.html
+      note: "Hosted in the PRC. Not checked further."
+    key_url: https://platform.deepseek.com/api_keys
+    name: DeepSeek
+    one_off: false
+    kind_of_allowance: []
+    good_for: [everyday, long_documents]
+    allowance: []
+    reset: {rule: none}
+    read_remaining:
+      method: api_endpoint
+      endpoint: https://api.deepseek.com/user/balance
+      fields: [is_available, balance_infos]
+      note: "Money balance (CNY or USD), not a request allowance. The docs page does not show the authorization header."
+    connection:
+      method: paste_key
+      key_url: https://platform.deepseek.com/api_keys
+      card_required: unknown
+      phone_required: unknown
+      usable_on_phone: unknown
+      steps:
+        - id: open-page
+          title: {en: "Open the provider's key page", zh-TW: "打開服務商的金鑰頁面"}
+          detail: {en: "Sign in, or sign up if you do not have an account yet, on the provider's own page. Muse only opens the page; it never fills in or clicks anything there.", zh-TW: "在服務商自己的頁面登入；還沒有帳號的話，就在那裡註冊。Muse 只會幫你打開頁面，不會在上面填寫或點擊任何東西。"}
+        - id: copy-key
+          title: {en: "Create a key and copy it", zh-TW: "建立金鑰並複製"}
+          detail: {en: "Create an API key on that page and copy it. Come back here and paste it when asked.", zh-TW: "在該頁面建立一組 API 金鑰並複製，再回到這裡，等 Muse 詢問時貼上。"}
+    terms_flags: {one_account_per_person: unknown, aggregation_or_reselling: unknown, automation_of_console: unknown, hosted_in: cn}
+    checked_on: "2026-11-12"
+    confidence: L
+    source_urls:
+      - https://api-docs.deepseek.com/api/get-user-balance
+      - https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html
+    api_base: https://api.deepseek.com/v1
+    notes: >-
+      Paid. Official pricing page (fetched 2026-11-11) lists deepseek-flash
+      (DeepSeek-V4.1-Flash-1017) and deepseek-v4-pro (DeepSeek-V4-Pro-0813),
+      both 1M context, base URL https://api.deepseek.com. The legacy names
+      deepseek-chat and deepseek-reasoner are gone. LiteLLM's default base is
+      the /beta FIM host, so api_base is set explicitly. Off the public
+      aliases unless MUSE_ALLOW_PAID_FALLBACK=true.
+    deployments:
+      - id: deepseek-flash
+        model: deepseek/deepseek-flash
+        mode: chat
+        aliases: [cheap, smart, long-context]
+        order: 6
+        rpm: 8
+        context_tokens: 1000000
+        join: paid_fallback
+        verified: deepseek-pricing-page-and-litellm-1.108.5
+        notes: Cache-miss input about $0.15 off-peak / $0.30 peak per 1M; output $0.60 / $1.20. Peak hours are on the pricing page.
+      - id: deepseek-v4-pro
+        model: deepseek/deepseek-v4-pro
+        mode: chat
+        aliases: [smart, long-context]
+        order: 6
+        rpm: 4
+        context_tokens: 1000000
+        join: paid_fallback
+        verified: deepseek-pricing-page-and-litellm-1.108.5
+        notes: Cache-miss input about $0.66 off-peak / $1.32 peak per 1M; output $1.98 / $3.96.
+
+  - id: voyage
+    env: VOYAGE_API_KEY
+    tier: paid
+    policy:
+      trains_on_inputs: unknown
+      human_review: unknown
+      region: us
+      commercial_use: unknown
+      terms_url: https://www.voyageai.com/tos
+      note: "Not checked."
+    key_url: https://dash.voyageai.com/api-keys
+    name: Voyage
+    one_off: true
+    kind_of_allowance: [one_off]
+    good_for: [embeddings, reranking]
+    allowance:
+      - {window: total, limit: 200000000, unit: tokens, scope: "voyage-4-lite text embeddings, free for every account; not for the Batch API", headline: true}
+    reset: {rule: none}
+    read_remaining: {method: unknown}
+    connection:
+      method: paste_key
+      key_url: https://dash.voyageai.com/api-keys
+      card_required: unknown
+      phone_required: unknown
+      usable_on_phone: unknown
+      steps:
+        - id: open-page
+          title: {en: "Open the provider's key page", zh-TW: "打開服務商的金鑰頁面"}
+          detail: {en: "Sign in, or sign up if you do not have an account yet, on the provider's own page. Muse only opens the page; it never fills in or clicks anything there.", zh-TW: "在服務商自己的頁面登入；還沒有帳號的話，就在那裡註冊。Muse 只會幫你打開頁面，不會在上面填寫或點擊任何東西。"}
+        - id: copy-key
+          title: {en: "Create a key and copy it", zh-TW: "建立金鑰並複製"}
+          detail: {en: "Create an API key on that page and copy it. Come back here and paste it when asked.", zh-TW: "在該頁面建立一組 API 金鑰並複製，再回到這裡，等 Muse 詢問時貼上。"}
+    terms_flags: {one_account_per_person: unknown, aggregation_or_reselling: unknown, automation_of_console: unknown, hosted_in: unknown}
+    checked_on: "2026-11-12"
+    confidence: L
+    source_urls:
+      - https://docs.voyageai.com/docs/pricing
+    notes: >-
+      Paid embeddings and rerank. voyage-4-lite and rerank-3-lite are the
+      current low-latency models on the Voyage docs. Off the public aliases
+      unless MUSE_ALLOW_PAID_FALLBACK=true. voyage-4-lite defaults to 1024
+      dimensions.
+    deployments:
+      - id: voyage-4-lite
+        model: voyage/voyage-4-lite
+        mode: embedding
+        aliases: [embed]
+        order: 5
+        rpm: 5
+        join: paid_fallback
+        verified: voyage-embeddings-docs-and-litellm-1.108.5
+        notes: 32,000 token context. Dimensions 1024 (default), 256, 512, 2048. Same vector space as the rest of the voyage-4 series, not as Gemini or Jina.
+      - id: voyage-rerank-3-lite
+        model: voyage/rerank-3-lite
+        mode: rerank
+        aliases: [rerank]
+        order: 5
+        rpm: 5
+        join: paid_fallback
+        verified: voyage-reranker-docs-and-litellm-1.108.5
+        notes: 32,000 token context. Scores are not comparable with Cohere or Jina scores.
+
+  - id: nvidia_nim
+    env: NVIDIA_NIM_API_KEY
+    tier: paid
+    policy:
+      trains_on_inputs: unknown
+      human_review: unknown
+      region: us
+      commercial_use: unknown
+      terms_url: https://build.nvidia.com
+      note: "Not checked."
+    key_url: https://build.nvidia.com/settings/api-keys
+    name: NVIDIA NIM
+    one_off: false
+    kind_of_allowance: []
+    good_for: [everyday, quick_answers, long_documents, embeddings]
+    allowance: []
+    reset: {rule: unknown}
+    read_remaining: {method: unknown}
+    connection:
+      method: paste_key
+      key_url: https://build.nvidia.com/settings/api-keys
+      card_required: unknown
+      phone_required: unknown
+      usable_on_phone: unknown
+      steps:
+        - id: open-page
+          title: {en: "Open the provider's key page", zh-TW: "打開服務商的金鑰頁面"}
+          detail: {en: "Sign in, or sign up if you do not have an account yet, on the provider's own page. Muse only opens the page; it never fills in or clicks anything there.", zh-TW: "在服務商自己的頁面登入；還沒有帳號的話，就在那裡註冊。Muse 只會幫你打開頁面，不會在上面填寫或點擊任何東西。"}
+        - id: copy-key
+          title: {en: "Create a key and copy it", zh-TW: "建立金鑰並複製"}
+          detail: {en: "Create an API key on that page and copy it. Come back here and paste it when asked.", zh-TW: "在該頁面建立一組 API 金鑰並複製，再回到這裡，等 Muse 詢問時貼上。"}
+    terms_flags: {one_account_per_person: unknown, aggregation_or_reselling: unknown, automation_of_console: unknown, hosted_in: unknown}
+    checked_on: "2026-11-12"
+    confidence: L
+    source_urls:
+    api_base: https://integrate.api.nvidia.com/v1
+    notes: >-
+      Optional. build.nvidia.com keys are credit-metered. Model ids below were
+      on the unauthenticated GET https://integrate.api.nvidia.com/v1/models
+      response on 2026-11-11. Listing does not mean a trial key can call them.
+      Off the public aliases unless MUSE_ALLOW_PAID_FALLBACK=true.
+      nvidia/nemotron-3.5-embed-1b is pinned only; its dimension was not verified,
+      so it is not placed in the shared embed alias.
+    deployments:
+      - id: nim-gpt-oss-20b
+        model: nvidia_nim/openai/gpt-oss-20b
+        mode: chat
+        # 2026-11-13: owner's observation, not provider documentation: gpt-oss reasons first;
+        # empty answer at max_tokens 16-20, fine at 300 (2026-11-12). The first skills run on
+        # real keys (2026-11-13, research-report) still had 21 of 62 answers empty at the light
+        # ceiling of 300, which the old floor of 256 never raised: 1024 leaves room to answer.
+        min_output_tokens: 1024
+        aliases: [fast, cheap]
+        order: 5
+        rpm: 5
+        join: paid_fallback
+        verified: nvidia-models-list-2026-11-11
+        notes: Present on the public NIM model list. Credit cost was not verified.
+      - id: nim-nemotron-3-ultra
+        model: nvidia_nim/nvidia/nemotron-3-ultra-550b-a55b
+        mode: chat
+        aliases: [smart, long-context]
+        order: 5
+        rpm: 2
+        context_tokens: 1000000
+        join: paid_fallback
+        verified: partial
+        notes: Id is on the NIM model list. The 1,000,000 context figure is from the OpenRouter free catalog entry for the same model name, not from an NVIDIA context page.
+      - id: nim-embed
+        model: nvidia_nim/nvidia/nemotron-3.5-embed-1b
+        mode: embedding
+        aliases: []
+        order: 5
+        rpm: 2
+        join: paid_fallback
+        verified: nvidia-models-list-2026-11-11
+        notes: Pinned as nim-embed only. Dimension not verified. Do not insert these vectors into an index built with embed.
+
+  - id: cerebras
+    name: Cerebras
+    env: CEREBRAS_API_KEY
+    tier: trial
+    policy:
+      trains_on_inputs: unknown
+      human_review: unknown
+      region: unknown
+      commercial_use: unknown
+      terms_url: https://www.cerebras.ai/terms-of-service
+      note: "There is no renewing free tier. New accounts get a one-time $5 credit after a verified payment method; it expires 30 days after it is granted, and API access stops when it is used up or expires. Training and review terms for the API were not confirmed, so the private class skips it. The pricing page says the trial is not for production use."
+    key_url: https://cloud.cerebras.ai
+    one_off: true
+    kind_of_allowance: [one_off]
+    good_for: [everyday]
+    allowance:
+      - {window: day, limit: 1000000, unit: tokens, scope: "gpt-oss-120b only, while the $5 trial credit lasts; not a renewing free tier", headline: true}
+      - {window: minute, limit: 5, unit: requests, scope: "gpt-oss-120b, free trial"}
+      - {window: minute, limit: 300, unit: requests, scope: "qwen-3.8-27b, free trial; no hourly or daily token cap on this model"}
+    reset: {rule: unknown}
+    read_remaining:
+      method: unknown
+      note: "The rate-limits page says to read the current quotas in the Cloud Console. It does not name response headers."
+    connection:
+      method: paste_key
+      key_url: https://cloud.cerebras.ai
+      card_required: yes
+      phone_required: unknown
+      minutes_estimate: 4
+      usable_on_phone: unknown
+      test: {url: https://api.cerebras.ai/v1/models, auth: bearer}
+      steps:
+        - id: sign-in
+          title: {en: "Sign up or log in to Cerebras Cloud", zh-TW: "註冊或登入 Cerebras Cloud"}
+          detail: {en: "Muse opens cloud.cerebras.ai. Sign up or log in there.", zh-TW: "Muse 會打開 cloud.cerebras.ai。請在那裡註冊或登入。"}
+        - id: create-key
+          title: {en: "Open API Keys and create a key", zh-TW: "打開 API Keys 並建立金鑰"}
+          detail: {en: "Choose API Keys in the left menu and create a key. Muse does not click anything for you.", zh-TW: "在左側選單選 API Keys，然後建立一組金鑰。Muse 不會替你點擊任何東西。"}
+        - id: copy-key
+          title: {en: "Copy the key", zh-TW: "複製金鑰"}
+          detail: {en: "Copy it, then come back here and paste it when asked.", zh-TW: "複製後回到這裡，等 Muse 詢問時貼上。"}
+    terms_flags: {one_account_per_person: unknown, aggregation_or_reselling: unknown, automation_of_console: unknown, hosted_in: unknown}
+    checked_on: "2026-11-15"
+    confidence: M
+    source_urls:
+      - https://inference-docs.cerebras.ai/support/rate-limits
+      - https://inference-docs.cerebras.ai/console/account-billing
+      - https://www.cerebras.ai/pricing
+      - https://inference-docs.cerebras.ai/quickstart
+      - https://www.cerebras.ai/terms-of-service
+    notes: >-
+      Not a free provider. The rate-limits FAQ (read 2026-11-15) says there is
+      no permanently free tier: $5 of credits after a verified payment method,
+      expiring 30 days after they are granted. While that credit lasts,
+      gpt-oss-120b is 5 RPM and 1M tokens a day; qwen-3.8-27b is 300 RPM with
+      no hourly or daily token cap. Deployments stay callable by their direct
+      names and do not join fast, cheap or smart. LiteLLM 1.108.6 routes
+      cerebras/<model> to https://api.cerebras.ai/v1. Context windows come from
+      that map.
+    deployments:
+      - id: cerebras-gpt-oss-120b
+        model: cerebras/gpt-oss-120b
+        mode: chat
+        # 2026-11-13: owner's observation, not provider documentation: gpt-oss reasons first;
+        # empty answer at max_tokens 16-20, fine at 300 (2026-11-12). The first skills run on
+        # real keys (2026-11-13, research-report) still had 21 of 62 answers empty at the light
+        # ceiling of 300, which the old floor of 256 never raised: 1024 leaves room to answer.
+        min_output_tokens: 1024
+        # reasoning_effort low|medium (default)|high for gpt-oss-120b, reasoning tokens count toward
+        # max_completion_tokens: https://inference-docs.cerebras.ai/capabilities/reasoning (read
+        # 2026-11-13); LiteLLM 1.108.5 passes it through for cerebras/.
+        reasoning: {param: reasoning_effort, light: low, everyday: low}
+        aliases: []
+        order: 2
+        rpm: 5
+        context_tokens: 131072
+        join: paid_fallback
+        verified: cerebras-rate-limits-page-and-litellm-1.108.6
+        notes: Trial-only. Not in the free aliases. 131,072 context from the LiteLLM map. Call it by the deployment id.
+      - id: cerebras-qwen-3-8-27b
+        model: cerebras/qwen-3.8-27b
+        mode: chat
+        aliases: []
+        order: 2
+        rpm: 5
+        context_tokens: 65536
+        join: paid_fallback
+        verified: cerebras-rate-limits-page-and-litellm-1.108.6
+        notes: Trial-only. The rate-limits page (2026-11-15) lists 300 RPM and no daily token cap. Not in the free aliases. 65,536 context from the LiteLLM map.
+
+  - id: cloudflare
+    name: Cloudflare Workers AI
+    env: CLOUDFLARE_API_KEY
+    also_env: [CLOUDFLARE_ACCOUNT_ID]
+    tier: free
+    policy:
+      trains_on_inputs: no
+      human_review: unknown
+      region: unknown
+      commercial_use: unknown
+      terms_url: https://developers.cloudflare.com/workers-ai/platform/data-usage/
+      note: "Cloudflare says it does not use Customer Content processed by Workers AI to train models, and does not keep inputs or outputs of plain inference requests. Human review is not addressed, so the private class still skips it."
+    key_url: https://dash.cloudflare.com/
+    one_off: false
+    kind_of_allowance: [daily]
+    good_for: [everyday, quick_answers]
+    allowance:
+      - {window: day, limit: 10000, unit: neurons, scope: "all Workers AI models, free plan", headline: true}
+    reset: {rule: utc_day}
+    read_remaining:
+      method: unknown
+      note: "The pricing page says limits reset at 00:00 UTC and that requests fail once the free amount is used. It does not say how to read what is left."
+    connection:
+      method: paste_key
+      key_url: https://dash.cloudflare.com/
+      card_required: unknown
+      phone_required: unknown
+      minutes_estimate: 8
+      usable_on_phone: unknown
+      steps:
+        - id: sign-in
+          title: {en: "Sign up or log in to Cloudflare", zh-TW: "註冊或登入 Cloudflare"}
+          detail: {en: "Muse opens dash.cloudflare.com. Sign up or log in there.", zh-TW: "Muse 會打開 dash.cloudflare.com。請在那裡註冊或登入。"}
+        - id: account-id
+          title: {en: "Copy your Account ID", zh-TW: "複製你的帳號 ID（Account ID）"}
+          detail: {en: "Open the Workers AI page, choose Use REST API, and copy the Account ID. Come back here and paste it when asked.", zh-TW: "打開 Workers AI 頁面，選「Use REST API」，複製 Account ID。回到這裡，等 Muse 詢問時貼上。"}
+        - id: create-token
+          title: {en: "Create a Workers AI API token", zh-TW: "建立 Workers AI API 權杖"}
+          detail: {en: "On the same page choose Create a Workers AI API Token, review the prefilled details and create it. Muse does not click anything for you.", zh-TW: "在同一頁選「Create a Workers AI API Token」，確認預填內容後建立。Muse 不會替你點擊任何東西。"}
+        - id: copy-token
+          title: {en: "Copy the token", zh-TW: "複製權杖"}
+          detail: {en: "Copy the token, then come back here and paste it when asked.", zh-TW: "複製權杖，再回到這裡，等 Muse 詢問時貼上。"}
+    terms_flags: {one_account_per_person: unknown, aggregation_or_reselling: unknown, automation_of_console: unknown, hosted_in: unknown}
+    checked_on: "2026-11-12"
+    confidence: M
+    source_urls:
+      - https://developers.cloudflare.com/workers-ai/platform/pricing/
+      - https://developers.cloudflare.com/workers-ai/get-started/rest-api/
+      - https://developers.cloudflare.com/workers-ai/configuration/open-ai-compatibility/
+      - https://developers.cloudflare.com/workers-ai/platform/data-usage/
+      - https://developers.cloudflare.com/workers-ai/models/
+    notes: >-
+      Workers AI free plan: 10,000 neurons a day, reset at 00:00 UTC (pricing
+      page, 2026-11-12). LiteLLM 1.108.5 routes cloudflare/<@cf model> to
+      https://api.cloudflare.com/client/v4/accounts/<account id>/ai/v1 and reads
+      the account id from CLOUDFLARE_ACCOUNT_ID, so the provider needs both
+      variables (also_env). Model ids are on the Workers AI models page.
+      Context windows come from the LiteLLM price map, not from Cloudflare.
+    deployments:
+      - id: cloudflare-llama-3-1-8b
+        model: cloudflare/@cf/meta/llama-3.1-8b-instruct-fp8
+        mode: chat
+        aliases: [fast, cheap]
+        order: 3
+        rpm: 10
+        context_tokens: 32000
+        join: always
+        verified: cloudflare-models-page-and-litellm-1.108.5
+        notes: Small Llama. The neurons one request costs depend on the model; this one is the cheapest of the two.
+      - id: cloudflare-llama-3-3-70b
+        model: cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast
+        mode: chat
+        aliases: [smart]
+        order: 3
+        rpm: 5
+        context_tokens: 24000
+        join: always
+        verified: cloudflare-models-page-and-litellm-1.108.5
+        notes: Larger Llama. Uses the free neurons faster than the 8B model. 24,000 context from the LiteLLM map.
+
+  - id: sambanova
+    name: SambaNova Cloud
+    env: SAMBANOVA_API_KEY
+    tier: free
+    policy:
+      trains_on_inputs: unknown
+      human_review: unknown
+      region: unknown
+      commercial_use: unknown
+      terms_url: https://docs.sambanova.ai/docs/en/models/rate-limits
+      note: "Free tier applies when no payment method is linked. The pages read on 2026-11-15 do not say whether API prompts are used for training or human review, so the private class skips it."
+    key_url: https://cloud.sambanova.ai/
+    one_off: false
+    kind_of_allowance: [daily]
+    good_for: [everyday]
+    allowance:
+      - {window: day, limit: 20, unit: requests, scope: "free tier, per production model, no payment method", headline: true}
+      - {window: minute, limit: 20, unit: requests, scope: "free tier, per production model"}
+      - {window: day, limit: 200000, unit: tokens, scope: "free tier, per production model"}
+    reset: {rule: unknown}
+    read_remaining:
+      method: headers
+      fields: [x-ratelimit-limit-requests, x-ratelimit-remaining-requests, x-ratelimit-reset-requests, x-ratelimit-limit-requests-day, x-ratelimit-remaining-requests-day, x-ratelimit-reset-requests-day]
+      note: "The rate-limits page says every response carries the minute and day request headers."
+    connection:
+      method: paste_key
+      key_url: https://cloud.sambanova.ai/
+      card_required: no
+      phone_required: unknown
+      minutes_estimate: 5
+      usable_on_phone: unknown
+      steps:
+        - id: sign-in
+          title: {en: "Sign up or log in to SambaCloud", zh-TW: "註冊或登入 SambaCloud"}
+          detail: {en: "Muse opens cloud.sambanova.ai. Sign up or log in there. The free tier does not need a payment method.", zh-TW: "Muse 會打開 cloud.sambanova.ai。請在那裡註冊或登入。免費層不需要付款方式。"}
+        - id: create-key
+          title: {en: "Create an API key", zh-TW: "建立 API 金鑰"}
+          detail: {en: "Open the API section of the portal and create a key. Muse does not click anything for you. Save it: it cannot be shown again.", zh-TW: "打開入口網站的 API 區並建立金鑰。Muse 不會替你點擊任何東西。請立刻保存，之後無法再顯示。"}
+        - id: copy-key
+          title: {en: "Copy the key", zh-TW: "複製金鑰"}
+          detail: {en: "Copy it, then come back here and paste it when asked.", zh-TW: "複製後回到這裡，等 Muse 詢問時貼上。"}
+    terms_flags: {one_account_per_person: unknown, aggregation_or_reselling: unknown, automation_of_console: unknown, hosted_in: unknown}
+    checked_on: "2026-11-15"
+    confidence: M
+    source_urls:
+      - https://docs.sambanova.ai/docs/en/models/rate-limits
+      - https://docs.sambanova.ai/docs/en/models/sambacloud-models
+      - https://docs.sambanova.ai/docs/en/get-started/api-keys-urls
+    notes: >-
+      Free tier (no payment method): 20 RPM, 20 RPD and 200,000 TPD per
+      production model, read 2026-11-15. Production model ids on that date:
+      DeepSeek-V3.1, Meta-Llama-3.3-70B-Instruct, gpt-oss-120b, each 128k
+      context, text only. LiteLLM 1.108.6 routes sambanova/<id> to
+      https://api.sambanova.ai/v1 and has DeepSeek-V3.1 in its price map
+      (131,072 tokens). One deployment is enough for the smart backup. Preview
+      models (DeepSeek-V3.2, gemma-4-31B-it) were left out.
+    deployments:
+      - id: sambanova-deepseek-v3-1
+        model: sambanova/DeepSeek-V3.1
+        mode: chat
+        aliases: [smart]
+        order: 3
+        rpm: 2
+        context_tokens: 131072
+        join: always
+        verified: sambanova-models-page-and-litellm-1.108.6
+        notes: >-
+          Step 3 of smart, the same band as Cloudflare (order 3). rpm 2 against
+          Cloudflare's 5 so the 20 requests a day are not taken first. 131,072
+          context, so not in long-context. The key starts empty; the provider
+          is omitted until SAMBANOVA_API_KEY is set.
+
+  - id: ollama
+    kind: local
+    name: Ollama
+    terms_flags: {hosted_in: local}
+    base_env: OLLAMA_API_BASE
+    tier: local
+    policy:
+      trains_on_inputs: no
+      human_review: no
+      region: local
+      commercial_use: depends-on-model-licence
+      terms_url: https://ollama.com
+      note: "Runs on this machine. Check each model's licence before commercial use."
+    notes: >-
+      Ollama on the user's machine. Default base http://127.0.0.1:11434, or
+      http://host.docker.internal:11434 from inside the container.
+    deployments: []
+
+  - id: lmstudio
+    kind: local
+    name: LM Studio
+    terms_flags: {hosted_in: local}
+    base_env: LM_STUDIO_API_BASE
+    tier: local
+    policy:
+      trains_on_inputs: no
+      human_review: no
+      region: local
+      commercial_use: depends-on-model-licence
+      terms_url: https://lmstudio.ai
+      note: "Runs on this machine."
+    notes: LM Studio local server. Default base http://127.0.0.1:1234/v1.
+    deployments: []
+
+  - id: local_openai
+    kind: local
+    name: Local OpenAI-compatible server
+    terms_flags: {hosted_in: local}
+    base_env: MUSE_LOCAL_OPENAI_BASE
+    tier: local
+    policy:
+      trains_on_inputs: no
+      human_review: no
+      region: local
+      commercial_use: depends-on-model-licence
+      terms_url: ""
+      note: "Any OpenAI-compatible server on this machine (llama.cpp, MLX, vLLM, Jan)."
+    notes: Generic OpenAI-compatible local server. Models use the openai/ prefix.
+    deployments: []

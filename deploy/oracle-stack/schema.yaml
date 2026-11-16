@@ -1,0 +1,248 @@
+# The form Oracle shows for this stack. Plain words; one required choice.
+# Format: Oracle's "Extend Console Pages Using Schema Documents".
+
+title: "Muse always-on helper"
+description: "A small computer in your Oracle account that keeps your Muse chores running when your own devices are off."
+informationalText: "Free within Oracle's Always Free allowance: 2 processors and 12 GB of memory. Nothing on it can be reached from the internet."
+schemaVersion: 1.1.0
+version: "20261113"
+locale: "en"
+
+variableGroups:
+  - title: "Filled in for you"
+    visible: false
+    variables:
+      - tenancy_ocid
+      - muse_version
+      - muse_release_url
+      - muse_release_sha256
+      - image_ocid
+      - name_suffix
+
+  - title: "Where to create it"
+    variables:
+      - region
+      - compartment_ocid
+      - availability_domain
+
+  - title: "Advanced (the defaults are fine)"
+    variables:
+      - show_advanced
+      - ocpus
+      - memory_in_gbs
+      - boot_volume_size_in_gbs
+      - time_zone
+      - enable_backups
+      - create_identity_resources
+      - backup_keep
+      - backup_expire_days
+      - account_type
+      - idle_guard
+      - update_manifest_url
+      - update_public_key
+
+  - title: "Early testers only"
+    variables:
+      - ssh_public_key
+      - ssh_source_cidr
+
+variables:
+  tenancy_ocid:
+    type: string
+    title: "Tenancy"
+    visible: false
+
+  region:
+    type: oci:identity:region:name
+    title: "Region"
+    description: "Choose your home region (the one you picked when you opened the account). The free allowance only applies there."
+    required: true
+
+  compartment_ocid:
+    type: oci:identity:compartment:id
+    title: "Compartment"
+    description: "A folder in your Oracle account. If you have never made one, keep the one already chosen."
+    required: true
+
+  availability_domain:
+    type: oci:identity:availabilitydomain:name
+    title: "Availability domain"
+    description: "Which of the region's data centres to use. Any will do. If Oracle answers 'out of host capacity', come back, pick another one and press Apply again."
+    required: true
+    dependsOn:
+      compartmentId: ${compartment_ocid}
+
+  show_advanced:
+    type: boolean
+    title: "Show advanced settings"
+    default: false
+
+  ocpus:
+    type: integer
+    title: "Processors"
+    description: "The free allowance covers 2."
+    default: 2
+    minimum: 1
+    maximum: 2
+    visible: show_advanced
+
+  memory_in_gbs:
+    type: integer
+    title: "Memory (GB)"
+    description: "The free allowance covers 12."
+    default: 12
+    minimum: 6
+    maximum: 12
+    visible: show_advanced
+
+  boot_volume_size_in_gbs:
+    type: integer
+    title: "Disk size (GB)"
+    description: "The free allowance covers 200 GB of disk in total across your account."
+    default: 50
+    minimum: 50
+    maximum: 200
+    visible: show_advanced
+
+  time_zone:
+    type: string
+    title: "Time zone"
+    description: "Used for chore schedules and the nightly maintenance window (around 03:00)."
+    default: "Asia/Taipei"
+    visible: show_advanced
+
+  enable_backups:
+    type: boolean
+    title: "Make a daily encrypted backup"
+    default: true
+    visible: show_advanced
+
+  create_identity_resources:
+    type: boolean
+    title: "Let the helper save backups to its own private bucket"
+    description: "Needs administrator rights in the account, which you have if you opened it. If Apply fails with a permissions message about a dynamic group or a policy, switch this off: backups then stay on the helper's own disk only."
+    default: true
+    visible: show_advanced
+
+  backup_keep:
+    type: integer
+    title: "Backups to keep"
+    default: 14
+    minimum: 1
+    maximum: 60
+    visible: show_advanced
+
+  backup_expire_days:
+    type: integer
+    title: "Delete backups older than (days)"
+    default: 35
+    minimum: 7
+    maximum: 365
+    visible: show_advanced
+
+  account_type:
+    type: enum
+    title: "Oracle account type"
+    description: "always_free if you have not upgraded your Oracle account; paid if you have (pay as you go). It only sets the default below."
+    enum:
+      - always_free
+      - paid
+    default: "always_free"
+    visible: show_advanced
+
+  idle_guard:
+    type: enum
+    title: "Keep the helper from being reclaimed as idle"
+    description: "Oracle may take back a free instance that looks unused for 7 days. auto: on for a free account, off for a paid one. When on, about one minute in ten the helper runs its processor at a quarter of capacity unless real work already did; it never uses extra memory or network. See the README, 'Idle guard'."
+    enum:
+      - auto
+      - "on"
+      - "off"
+    default: "auto"
+    visible: show_advanced
+
+  update_manifest_url:
+    type: string
+    title: "Muse update address"
+    description: "Leave empty unless you were given one. Operating-system security updates are always on."
+    default: ""
+    visible: show_advanced
+
+  update_public_key:
+    type: string
+    title: "Muse update signing key"
+    description: "Leave empty unless you were given one."
+    default: ""
+    visible: show_advanced
+
+  ssh_public_key:
+    type: string
+    title: "SSH public key (leave empty)"
+    description: "Only for early testers who need a terminal on the helper. Empty means there is no SSH access at all."
+    default: ""
+
+  ssh_source_cidr:
+    type: string
+    title: "SSH allowed from (leave empty)"
+    description: "Only with a key above: your own internet address followed by /32, for example 203.0.113.7/32."
+    default: ""
+
+  muse_version:
+    type: string
+    visible: false
+
+  muse_release_url:
+    type: string
+    visible: false
+
+  muse_release_sha256:
+    type: string
+    visible: false
+
+  image_ocid:
+    type: string
+    visible: false
+
+  name_suffix:
+    type: string
+    visible: false
+
+outputs:
+  instance_name:
+    type: string
+    title: "Helper"
+  size:
+    type: string
+    title: "Size"
+  muse_version:
+    type: string
+    title: "Muse version"
+  backup_bucket:
+    type: string
+    title: "Backups go to"
+  inbound_access:
+    type: string
+    title: "Reachable from the internet"
+  next_step:
+    type: string
+    title: "What to do now"
+  instance_ocid:
+    type: copyableString
+    title: "Identifier (for support)"
+  tester_ssh_address:
+    type: string
+    title: "Tester SSH address"
+
+outputGroups:
+  - title: "Your always-on helper"
+    outputs:
+      - ${instance_name}
+      - ${size}
+      - ${muse_version}
+      - ${backup_bucket}
+      - ${inbound_access}
+      - ${next_step}
+  - title: "Details"
+    outputs:
+      - ${instance_ocid}
+      - ${tester_ssh_address}
