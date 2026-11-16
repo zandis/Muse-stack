@@ -99,12 +99,31 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--env-file", type=Path, default=ROOT / ".env")
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--strict", action="store_true", help="Fail if any public alias is missing.")
+    parser.add_argument(
+        "--only",
+        action="append",
+        default=[],
+        help="Call only these aliases. A missing alias fails. The updater uses --only fast.",
+    )
     args = parser.parse_args(argv)
 
     environ = dict(os.environ)
     load_dotenv(args.env_file, environ)
     key = environ.get("LITELLM_MASTER_KEY", "").strip()
     base = args.base_url.rstrip("/")
+
+    known = dict(ALIASES)
+    selected = list(ALIASES)
+    if args.only:
+        if not key:
+            print("FAIL  --only needs LITELLM_MASTER_KEY in the env file")
+            return 2
+        selected = []
+        for name in args.only:
+            if name not in known:
+                print(f"FAIL  unknown alias {name}")
+                return 2
+            selected.append((name, known[name]))
 
     try:
         status, body = request(f"{base}/health/liveliness", key="", payload=None, timeout=10)
@@ -124,11 +143,13 @@ def main(argv: list[str] | None = None) -> int:
     print(f"ok    /v1/models ({len(available)} ids)")
 
     failed = False
-    for name, kind in ALIASES:
+    for name, kind in selected:
         if name not in available:
-            print(f"skip  {name}  (no deployment; provider key missing or disabled)")
-            if args.strict:
+            if args.only or args.strict:
+                print(f"FAIL  {name}  (not in /v1/models)")
                 failed = True
+            else:
+                print(f"skip  {name}  (no deployment; provider key missing or disabled)")
             continue
         ok, detail = call_alias(base, name, kind, key, args.timeout)
         if ok:

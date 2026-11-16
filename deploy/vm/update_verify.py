@@ -14,16 +14,23 @@ Exits 1 with a reason on standard error otherwise.
 The manifest (the owner publishes it; nothing here invents its address):
 
     {"channel": "stable", "version": "0.2.0",
-     "url": "https://.../muse-0.2.0.tar.gz", "sha256": "<64 hex>"}
+     "url": "https://.../muse-0.2.0.tar.gz", "sha256": "<64 hex>",
+     "expires": "2026-12-15T00:00:00Z"}
 
 The signature file holds the base64 of an Ed25519 signature over the manifest's
 exact bytes. PUBLIC_KEY is the base64 of the raw 32-byte Ed25519 public key
-(MUSE_UPDATE_PUBKEY). Uses `cryptography`, pinned by hash in
-requirements/proxy.lock.
+(MUSE_UPDATE_PUBKEY). A comma-separated second key is accepted too, so the
+owner can install MUSE_UPDATE_PUBKEY_NEXT before a rotation and only then
+retire the old key. Uses `cryptography`. On the Docker VM that package is
+Ubuntu's python3-cryptography; the native layout uses the hash-locked copy in
+the release's virtual environment.
 
 Refused: a bad signature; a version that is a branch or a moving name (main,
 latest, ...); an address that is not https; a checksum that is not a SHA-256;
-a channel other than the one asked for (MUSE_UPDATE_CHANNEL, default stable).
+a channel other than the one asked for (MUSE_UPDATE_CHANNEL, default stable);
+a missing, unparseable, expired, or too-distant `expires`. `expires` is what
+stops a freeze: an old but still-signed manifest cannot be replayed forever.
+The window is 90 days, with 10 minutes of clock skew.
 """
 
 from __future__ import annotations
@@ -34,9 +41,12 @@ import json
 import os
 import re
 import sys
+from datetime import datetime, timedelta, timezone
 
 VERSION = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)([.+-][0-9A-Za-z.]+)?$")
 FLOATING = {"main", "master", "latest", "stable", "head", "dev", "develop", "nightly", "edge"}
+MAX_AGE = timedelta(days=90)
+CLOCK_SKEW = timedelta(minutes=10)
 
 
 class Refused(RuntimeError):
@@ -48,6 +58,35 @@ def parse_version(text: str) -> tuple[int, int, int]:
     if text.lower() in FLOATING or match is None:
         raise Refused(f"'{text}' is not a fixed version (expected something like 0.2.0)")
     return int(match.group(1)), int(match.group(2)), int(match.group(3))
+
+
+def split_keys(public_key_b64: str) -> list[str]:
+    keys = [part.strip() for part in (public_key_b64 or "").split(",") if part.strip()]
+    if not keys:
+        raise Refused("no public key is set (MUSE_UPDATE_PUBKEY); updates stay off")
+    return keys
+
+
+def check_expires(value: object, now: datetime) -> None:
+    """Refuse a manifest that can be replayed indefinitely."""
+    if not isinstance(value, str) or not value.strip():
+        raise Refused("the manifest has no expires time")
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        stamp = datetime.fromisoformat(text)
+    except ValueError:
+        raise Refused("the manifest's expires is not a UTC timestamp") from None
+    if stamp.tzinfo is None:
+        raise Refused("the manifest's expires is not a UTC timestamp")
+    stamp = stamp.astimezone(timezone.utc)
+    moment = now if now.tzinfo is not None else now.replace(tzinfo=timezone.utc)
+    moment = moment.astimezone(timezone.utc)
+    if stamp + CLOCK_SKEW <= moment:
+        raise Refused("the manifest has expired")
+    if stamp > moment + MAX_AGE + CLOCK_SKEW:
+        raise Refused("the manifest's expires is more than 90 days away")
 
 
 def verify_signature(manifest: bytes, signature_b64: bytes, public_key_b64: str) -> None:
@@ -67,10 +106,26 @@ def verify_signature(manifest: bytes, signature_b64: bytes, public_key_b64: str)
         raise Refused("the manifest's signature does not match the public key") from None
 
 
-def decide(manifest: bytes, signature_b64: bytes, public_key_b64: str, current: str, channel: str = "stable") -> str:
-    if not public_key_b64.strip():
-        raise Refused("no public key is set (MUSE_UPDATE_PUBKEY); updates stay off")
-    verify_signature(manifest, signature_b64, public_key_b64.strip())
+def decide(
+    manifest: bytes,
+    signature_b64: bytes,
+    public_key_b64: str,
+    current: str,
+    channel: str = "stable",
+    now: datetime | None = None,
+) -> str:
+    keys = split_keys(public_key_b64)
+    last = "the manifest's signature does not match the public key"
+    matched = False
+    for key in keys:
+        try:
+            verify_signature(manifest, signature_b64, key)
+            matched = True
+            break
+        except Refused as exc:
+            last = str(exc)
+    if not matched:
+        raise Refused(last)
     try:
         doc = json.loads(manifest)
     except ValueError:
@@ -85,6 +140,7 @@ def decide(manifest: bytes, signature_b64: bytes, public_key_b64: str, current: 
         raise Refused("the release address is not https")
     if not re.fullmatch(r"[0-9a-f]{64}", sha256):
         raise Refused("the manifest's sha256 is not a SHA-256")
+    check_expires(doc.get("expires"), now or datetime.now(timezone.utc))
     try:
         old = parse_version(current)
     except Refused:
