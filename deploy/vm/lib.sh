@@ -30,6 +30,7 @@ promote_env() {
         old="MUSE_${suffix}"
         if [ -z "${!old:-}" ] && [ -n "${!name:-}" ]; then
           printf -v "$old" '%s' "${!name}"
+          # shellcheck disable=SC2163
           export "$old"
         fi
         ;;
