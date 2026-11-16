@@ -24,7 +24,10 @@ jobs:
 
   unit:
     # The resource manager without LiteLLM installed: ledger, quota parsing,
-    # privacy policy, key store, local discovery, CLI, dashboard.
+    # privacy policy, key store, local discovery, CLI, dashboard, and the
+    # draft-only AgentMail adapter (tests/test_agentmail.py).
+    # The former test workflow is this job: checkout, Python 3.12,
+    # `pip install -e ".[dev]"`, then pytest. GitHub-hosted ubuntu-latest only.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
