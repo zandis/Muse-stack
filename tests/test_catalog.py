@@ -16,7 +16,7 @@ from muse import catalog, cli
 from muse.catalog import CATALOG_PATH, RESOURCES_DIR
 from muse.status import build_snapshot
 
-TODAY = date(2026, 11, 13)
+TODAY = date(2026, 11, 15)
 
 
 def real() -> dict:
@@ -293,9 +293,10 @@ def test_ranking_order_and_local_last():
     order = names()
     assert order[0] == "openrouter"  # one tap first
     assert order[-1] == "local"
-    assert order.index("cerebras") < order.index("cohere") < order.index("gemini")  # verified gain per minute before unconfirmed
+    assert order.index("cohere") < order.index("sambanova")  # both need no confirmed card; Cohere's monthly gain is larger per minute
+    assert order.index("sambanova") < order.index("cerebras")  # cerebras needs a card; the trial is not a free tier
     assert order.index("cloudflare") < order.index("gemini")  # a verified (non-convertible) gain before none
-    assert set(order) == {"openrouter", "cerebras", "cohere", "cloudflare", "gemini", "groq", "jina", "local"}
+    assert set(order) == {"openrouter", "sambanova", "cerebras", "cohere", "cloudflare", "gemini", "groq", "jina", "local"}
     assert [s.rank for s in catalog.suggest_next(set(), {})] == list(range(1, len(order) + 1))
 
 
@@ -331,7 +332,9 @@ def test_gain_only_from_verified_numbers():
     by = {s.provider_id: s for s in catalog.suggest_next(set(), {})}
     assert by["openrouter"].gain_text("en") == "adds roughly 50 requests a day"
     assert by["cohere"].gain_text("en") == "adds roughly 1,000 requests a month"
-    assert by["cerebras"].gain_text("en") == "adds roughly 1,000,000 tokens a day"
+    assert by["cerebras"].gain_text("en") == "adds roughly 1,000,000 tokens a day"  # trial cap while the $5 credit lasts, not a free tier
+    assert by["sambanova"].gain_text("en") == "adds roughly 20 requests a day"
+    assert by["sambanova"].card == "no" and by["cerebras"].card == "yes"
     assert by["cloudflare"].gain_text("en").startswith("adds roughly 10,000 neurons a day")
     for pid in ("gemini", "groq", "jina"):
         assert by[pid].gain is None and by[pid].gain_text("en") == "allowance not confirmed"
@@ -428,7 +431,7 @@ def test_snapshot_additions(_isolated_muse_home: Path):
     json.dumps(snap)
     gemini = next(p for p in snap["providers"] if p["id"] == "gemini")
     assert gemini["connection_method"] == "paste_key" and gemini["minutes_estimate"] == 4
-    assert gemini["good_for"] and gemini["kind_of_allowance"] == ["daily"] and gemini["checked_on"] == "2026-11-12" and gemini["confidence"] == "M"
+    assert gemini["good_for"] and gemini["kind_of_allowance"] == ["daily"] and gemini["checked_on"] == "2026-11-15" and gemini["confidence"] == "M"
     assert next(p for p in snap["providers"] if p["id"] == "openrouter")["connection_method"] == "oauth_pkce"
     ids = [s["id"] for s in snap["suggestions"]]
     assert ids[0] == "openrouter" and "groq" not in ids and ids[-1] == "local"
@@ -663,7 +666,7 @@ def test_renderer_writes_the_floor_on_every_entry_of_a_floored_deployment():
     cat = real()
     got = floors(render_config.render(cat, all_keys(cat))[0])
     assert got["groq-gpt-oss-20b"] == 1024 and got["groq-gpt-oss-20b__fast"] == 1024 and got["groq-gpt-oss-20b__cheap"] == 1024
-    assert got["groq-gpt-oss-120b__smart"] == 1024 and got["cerebras-gpt-oss-120b__smart"] == 1024
+    assert got["groq-gpt-oss-120b__smart"] == 1024 and got["cerebras-gpt-oss-120b"] == 1024  # trial only; not in the free aliases
     assert got["novita-gpt-oss-120b"] == 1024 and got["nim-gpt-oss-20b"] == 1024
     for dep_id, value in got.items():
         assert (value == 1024) == ("gpt-oss" in dep_id), dep_id

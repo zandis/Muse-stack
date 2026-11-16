@@ -13,6 +13,15 @@ Classes, least to most restrictive:
   local     local models only
 Missing or malformed model_info fails closed: cloud, trains unknown, review unknown.
 
+Clinical and medical requests are a separate gate, not a privacy class. A request
+the detector marks clinical is never sent to a deployment whose
+muse_clinical_use is "forbidden", on every class including the default
+standard, whether or not MUSE_AUTO_PRIVACY is on. Anything else (including
+"unknown") is unchanged. Gemini's terms forbid clinical practice and medical
+advice on every tier, so that provider is forbidden. Raising the class to
+private is the wrong tool for this: private also drops every cloud provider
+whose training or human-review terms are still unknown.
+
 Detector limits: only the first MAX_SCAN_CHARS and last TAIL_SCAN_CHARS characters
 of a longer text are scanned (a linear-time bound, not a security boundary).
 Contact items (email, phone) are flagged only with another finding kind or with
@@ -95,8 +104,20 @@ def _facts(model_info: Any) -> tuple[str, str, str]:
     )
 
 
-def allowed(model_info: Mapping[str, Any], privacy: str) -> bool:
-    """True if a deployment with this model_info may receive a `privacy` request."""
+def clinical_use(model_info: Any) -> str:
+    """forbidden | allowed | unknown. Missing or malformed is unknown, not forbidden."""
+    value = _field(model_info, "muse_clinical_use", "unknown")
+    return value if value in {"forbidden", "allowed", "unknown"} else "unknown"
+
+
+def allowed(model_info: Mapping[str, Any], privacy: str, *, clinical: bool = False) -> bool:
+    """True if a deployment with this model_info may receive this request.
+
+    `clinical` is independent of the privacy class. A forbidden provider is
+    excluded on public and standard as well as on private and local.
+    """
+    if clinical and clinical_use(model_info) == "forbidden":
+        return False
     cls = normalise_class(privacy)
     kind, trains, review = _facts(model_info)
     if cls in ("public", "standard"):
@@ -106,23 +127,28 @@ def allowed(model_info: Mapping[str, Any], privacy: str) -> bool:
     return kind == "local" or (trains == "no" and review == "no")
 
 
-def filter_deployments(deployments: list[dict], privacy: str) -> list[dict]:
-    """Keep deployments allowed for `privacy`, in order, without mutating the input."""
+def filter_deployments(deployments: list[dict], privacy: str, *, clinical: bool = False) -> list[dict]:
+    """Keep deployments allowed for this request, in order, without mutating the input."""
     normalise_class(privacy)  # fail on a bad class even for an empty list
     out: list[dict] = []
     for dep in deployments:
         info = dep.get("model_info") if isinstance(dep, Mapping) else None
-        if allowed(info if isinstance(info, Mapping) else {}, privacy):
+        if allowed(info if isinstance(info, Mapping) else {}, privacy, clinical=clinical):
             out.append(dep)
     return out
 
 
-def explain(model_info: Mapping[str, Any], privacy: str) -> str:
+def explain(model_info: Mapping[str, Any], privacy: str, *, clinical: bool = False) -> str:
     """One short sentence saying why a deployment is or is not allowed."""
     cls = normalise_class(privacy)
     kind, trains, review = _facts(model_info)
     name = _field(model_info, "provider", "this deployment")
-    ok = allowed(model_info, cls)
+    if clinical and clinical_use(model_info) == "forbidden":
+        return (
+            f"Blocked: {name} must not receive clinical or medical requests "
+            "(its terms forbid that use on every tier)."
+        )
+    ok = allowed(model_info, cls, clinical=False)
     if cls in ("public", "standard"):
         return f"Allowed: {cls} requests may use any deployment."
     if cls == "local":
@@ -294,6 +320,15 @@ _HEALTH_MARKERS: dict[str, re.Pattern[str]] = {
 
 _CONTACT_KINDS = frozenset({"email", "tw_mobile", "phone"})
 _MIN_CONTACT_ONLY = 3
+# One strong phrase is enough. These are the words in Gemini's own prohibition
+# (clinical practice, medical advice) plus the same request in Chinese. A single
+# "diagnosis" is not here: that word also means a bug. Clinical documents are
+# the two-marker rule above.
+_MEDICAL_REQUEST = re.compile(
+    r"(?i)\b(?:medical advice|clinical advice|clinical practice|clinical use|medical diagnosis)\b"
+    r"|醫療建議|醫療諮詢|臨床|處方|用藥|就醫"
+)
+CLINICAL_KINDS = frozenset({"clinical_document", "medical_request"})
 
 
 def _scan(text: str, base: int, out: list[Finding]) -> None:
@@ -358,6 +393,9 @@ def _scan(text: str, base: int, out: list[Finding]) -> None:
             key=lambda m: m.start(),
         )
         add("clinical_document", first.start(), first.end())
+    medical = _MEDICAL_REQUEST.search(text)
+    if medical:
+        add("medical_request", medical.start(), medical.end())
 
     for m in _RX["email"].finditer(text):
         domain = m.group(0).rsplit("@", 1)[1].lower()
@@ -396,6 +434,14 @@ def detect_sensitive(text: str) -> list[Finding]:
     if contacts and not others and len(contacts) < _MIN_CONTACT_ONLY:
         accepted = []
     return sorted(accepted, key=lambda f: (f.start, f.end, f.kind))
+
+
+def request_is_clinical(findings: list[Finding]) -> bool:
+    """True when the detector saw a clinical document or a medical request.
+
+    Offsets only; the caller does not need the text again.
+    """
+    return any(f.kind in CLINICAL_KINDS for f in findings)
 
 
 def effective_class(

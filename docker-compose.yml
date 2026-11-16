@@ -39,6 +39,7 @@ services:
       COHERE_API_KEY:
       OPENROUTER_API_KEY:
       CEREBRAS_API_KEY:
+      SAMBANOVA_API_KEY:
       CLOUDFLARE_API_KEY:
       CLOUDFLARE_ACCOUNT_ID:
       SILICONFLOW_API_KEY:
@@ -52,6 +53,9 @@ services:
       MUSE_LOCAL_OPENAI_BASE:
       MUSE_LOCAL_ORDER: ${MUSE_LOCAL_ORDER:-5}
       MUSE_DEFAULT_PRIVACY: ${MUSE_DEFAULT_PRIVACY:-standard}
+      # The port mapping above uses this same value. The renderer refuses to
+      # boot with an empty master key unless it is loopback.
+      MUSE_BIND: ${MUSE_BIND:-127.0.0.1}
       # 1/true/on: muse/hook.py raises a request to private when it spots sensitive content.
       MUSE_AUTO_PRIVACY: ${MUSE_AUTO_PRIVACY:-}
       # Rationing between apps (muse/ration.py). Unset means the documented default.

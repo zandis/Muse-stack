@@ -107,7 +107,7 @@ def test_schema_file_is_a_json_schema_and_the_document_matches_it():
         "ai_services", "other_allowances", "subscriptions", "changes",
     }
     assert pub.schema_problems(DOC, schema) == []
-    assert DOC["schema_version"] == catalog.PUBLIC_SCHEMA_VERSION == "1.0" and (ROOT / DOC["schema"]).is_file()
+    assert DOC["schema_version"] == catalog.PUBLIC_SCHEMA_VERSION == "1.1" and (ROOT / DOC["schema"]).is_file()
     # every object in the schema is closed, so a new field cannot slip out unnoticed
     def closed(node, path="$"):
         if isinstance(node, dict):

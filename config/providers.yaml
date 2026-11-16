@@ -66,6 +66,9 @@
 #   yes | no | unknown. "unknown" is treated as "yes" by the private class, so
 #   a provider only receives private prompts once someone has checked its terms
 #   and written "no" here. commercial_use is allowed | prohibited | unknown.
+#   clinical_use is forbidden | allowed | unknown. A clinical or medical request
+#   is never sent to forbidden, on every privacy class, including the default
+#   standard. unknown is not forbidden. Gemini is forbidden on every tier.
 #
 # kind: local providers have no key. They are enabled when base_env is set
 #   (e.g. OLLAMA_API_BASE) and their deployments come from the local catalog
@@ -125,6 +128,8 @@ aliases:
   long-context:
     mode: chat
     fallbacks: [smart]
+  vision:
+    mode: chat
   embed:
     mode: embedding
   rerank:
@@ -139,8 +144,9 @@ providers:
       human_review: yes
       region: us
       commercial_use: allowed
+      clinical_use: forbidden
       terms_url: https://aistudio.google.com/docs/terms
-      note: "Unpaid tier: Google uses prompts and responses to improve products, human reviewers may read them, and the terms say not to submit sensitive, confidential or personal information. Must be 18+. Apps offered to EEA/UK/CH users must use the paid tier. Outputs may not be used to build competing models."
+      note: "Unpaid tier: Google uses prompts and responses to improve products, human reviewers may read them, and the terms say not to submit sensitive, confidential or personal information. The same terms, on every tier including paid, forbid clinical practice and medical advice. Must be 18+. Apps offered to EEA/UK/CH users must use the paid tier. Outputs may not be used to build competing models."
     key_url: https://aistudio.google.com/apikey
     name: Gemini
     one_off: false
@@ -170,16 +176,25 @@ providers:
           title: {en: "Copy the key", zh-TW: "複製金鑰"}
           detail: {en: "Copy the key shown on the page, then come back here and paste it when asked.", zh-TW: "複製頁面上的金鑰，再回到這裡，等 Muse 詢問時貼上。"}
     terms_flags: {one_account_per_person: unknown, aggregation_or_reselling: unknown, automation_of_console: unknown, hosted_in: unknown}
-    checked_on: "2026-11-12"
+    checked_on: "2026-11-15"
     confidence: M
     source_urls:
+      - https://ai.google.dev/gemini-api/docs/pricing
+      - https://ai.google.dev/gemma/docs/core/gemma_on_gemini_api
+      - https://aistudio.google.com/docs/terms
       - https://aistudio.google.com/docs/rate-limits
       - https://aistudio.google.com/docs/api-key
       - https://aistudio.google.com/docs/quickstart
     notes: >-
-      Google AI Studio free tier. The pricing page marks the models below
-      "Free of charge" and says free-tier content is used to improve Google's
-      products. Numeric RPM/RPD are shown in AI Studio and were not copied here.
+      Google AI Studio free tier. The pricing page (read 2026-11-15) marks the
+      deployed Gemini and Gemma models "Free of charge" and says free-tier
+      content is used to improve Google's products. Numeric RPM/RPD are shown
+      in AI Studio and were not copied here. gemini-2.5-flash, gemini-2.5-flash-lite
+      and gemini-2.5-pro are not deployed: a new AI Studio key gets HTTP 404 for
+      them, and the pricing page says 2.5 Pro and 2.5 Flash are deprecated.
+      gemini-4-hydrogen is free of charge with a 1M window on that page, but
+      gemini/gemini-4-hydrogen is not in LiteLLM 1.108.6's model map, so it is
+      not deployed. Gemma 4 image input is documented and is not wired here.
     deployments:
       - id: gemini-3.1-flash-lite
         model: gemini/gemini-3.1-flash-lite
@@ -190,17 +205,7 @@ providers:
         context_tokens: 1048576
         join: always
         verified: gemini-pricing-and-litellm-1.108.5
-        notes: Free of charge on the Gemini pricing page. 1,048,576-token window is from the LiteLLM 1.108.5 model map.
-      - id: gemini-2.5-flash-lite
-        model: gemini/gemini-2.5-flash-lite
-        mode: chat
-        aliases: [cheap]
-        order: 1
-        rpm: 15
-        context_tokens: 1048576
-        join: always
-        verified: gemini-pricing-and-litellm-1.108.5
-        notes: Free of charge. Older Flash-Lite, kept because free-tier quotas are often higher than newer Flash models.
+        notes: Free of charge on the Gemini pricing page. 1,048,576-token window is from the LiteLLM 1.108.6 model map. Answers on a new AI Studio key (checked 2026-11-12).
       - id: gemini-3.5-flash-lite
         model: gemini/gemini-3.5-flash-lite
         mode: chat
@@ -210,7 +215,7 @@ providers:
         context_tokens: 1048576
         join: always
         verified: gemini-pricing-and-litellm-1.108.5
-        notes: Free of charge on the standard tier of the pricing page.
+        notes: Free of charge on the standard tier of the pricing page. Answers on a new AI Studio key (checked 2026-11-12).
       - id: gemini-3.8-flash
         model: gemini/gemini-3.8-flash
         mode: chat
@@ -220,27 +225,36 @@ providers:
         context_tokens: 1048576
         join: always
         verified: gemini-pricing-and-litellm-1.108.5
-        notes: Free of charge. Pricing page calls it the most capable Flash model. The 1,048,576 window is from LiteLLM's map; the pricing page did not restate it.
-      - id: gemini-2.5-flash
-        model: gemini/gemini-2.5-flash
+        notes: Free of charge. Pricing page calls it the most capable Flash model. The 1,048,576 window is from LiteLLM 1.108.6's map. A new key can get HTTP 503 while demand is high; that is transient, so the deployment stays.
+      - id: gemini-gemma-4-26b
+        model: gemini/gemma-4-26b-a4b-it
         mode: chat
-        aliases: [long-context]
-        order: 1
-        rpm: 8
-        context_tokens: 1048576
+        aliases: [fast, cheap, long-context]
+        order: 2
+        rpm: 10
+        context_tokens: 262144
         join: always
-        verified: gemini-pricing-page
-        notes: Free of charge. Pricing page states a 1M token context window.
-      - id: gemini-2.5-pro
-        model: gemini/gemini-2.5-pro
+        verified: gemma-on-gemini-api-and-litellm-1.108.6
+        notes: >-
+          Gemma 4 26B MoE. Ids gemma-4-26b-a4b-it and gemma-4-31b-it are the
+          Gemini API's hosted Gemma 4 models (read 2026-11-15). The pricing page
+          marks Gemma 4 free of charge and says the free tier is used to improve
+          Google's products. LiteLLM 1.108.6 maps this id to 262,144 input tokens.
+          Order 2 so Flash-Lite and Groq stay first. Text only here: image input
+          is documented but not routed.
+      - id: gemini-gemma-4-31b
+        model: gemini/gemma-4-31b-it
         mode: chat
         aliases: [smart, long-context]
         order: 2
-        rpm: 3
-        context_tokens: 1048576
+        rpm: 8
+        context_tokens: 262144
         join: always
-        verified: gemini-pricing-and-litellm-1.108.5
-        notes: Free of charge, but historically a much tighter daily cap than Flash. Order 2 so Flash and Groq are preferred.
+        verified: gemma-on-gemini-api-and-litellm-1.108.6
+        notes: >-
+          Gemma 4 31B. Same free-tier terms as the 26B model. Order 2 on smart,
+          after Gemini 3.8 Flash and Groq gpt-oss-120b. 262,144 input tokens from
+          the LiteLLM 1.108.6 map, so it qualifies for long-context.
       - id: gemini-embedding-2
         model: gemini/gemini-embedding-2
         mode: embedding
@@ -291,10 +305,14 @@ providers:
           title: {en: "Copy the key", zh-TW: "複製金鑰"}
           detail: {en: "Copy it, then come back here and paste it when asked.", zh-TW: "複製後回到這裡，等 Muse 詢問時貼上。"}
     terms_flags: {one_account_per_person: unknown, aggregation_or_reselling: prohibited, automation_of_console: unknown, hosted_in: unknown}
-    checked_on: "2026-11-12"
+    checked_on: "2026-11-15"
     confidence: M
     source_urls:
+      - https://console.groq.com/docs/models
+      - https://console.groq.com/docs/vision
+      - https://console.groq.com/docs/model/qwen/qwen3.8-27b
       - https://console.groq.com/docs/rate-limits
+      - https://console.groq.com/docs/deprecations
       - https://console.groq.com/docs/legal/services-agreement
       - https://console.groq.com/docs/api-reference
     notes: >-
@@ -342,6 +360,23 @@ providers:
         join: always
         verified: groq-models-page-and-litellm-1.108.5
         notes: Larger GPT-OSS model. Same 131,072 context. Not in long-context.
+      - id: groq-qwen3-8-27b
+        model: groq/qwen/qwen3.8-27b
+        mode: chat
+        aliases: [vision]
+        order: 1
+        rpm: 30
+        context_tokens: 131072
+        join: always
+        verified: groq-vision-docs-and-litellm-1.108.6
+        notes: >-
+          Preview model (not the production list). Groq's vision page names
+          qwen/qwen3.8-27b: text and images, up to 3 images, 20 MB, each image
+          2,048 tokens, 131,072 context. The rate-limits page (read 2026-11-15)
+          lists the same free-tier caps as gpt-oss: 30 RPM, 1,000 RPD, 8,000 TPM,
+          200,000 TPD. qwen/qwen3.6-27b was shut down on 2026-09-14. No output
+          floor: the 1024 floor is an observation on gpt-oss only. 131,072
+          context, so not in long-context.
 
   - id: cohere
     env: COHERE_API_KEY
@@ -997,31 +1032,30 @@ providers:
   - id: cerebras
     name: Cerebras
     env: CEREBRAS_API_KEY
-    tier: free
+    tier: trial
     policy:
       trains_on_inputs: unknown
       human_review: unknown
       region: unknown
       commercial_use: unknown
       terms_url: https://www.cerebras.ai/terms-of-service
-      note: "Training and review terms for the API were not confirmed, so the private class skips it. The website terms say Cerebras's right to monitor content does not give it the right to train on it; the pricing page footnote says the free offer is not intended for production use."
+      note: "There is no renewing free tier. New accounts get a one-time $5 credit after a verified payment method; it expires 30 days after it is granted, and API access stops when it is used up or expires. Training and review terms for the API were not confirmed, so the private class skips it. The pricing page says the trial is not for production use."
     key_url: https://cloud.cerebras.ai
-    one_off: false
-    kind_of_allowance: [daily]
-    good_for: [everyday, quick_answers]
+    one_off: true
+    kind_of_allowance: [one_off]
+    good_for: [everyday]
     allowance:
-      - {window: day, limit: 1000000, unit: tokens, scope: "gpt-oss-120b, free trial, per model", headline: true}
-      - {window: minute, limit: 5, unit: requests, scope: "gpt-oss-120b, free trial, per model"}
-      - {window: day, limit: 1000000, unit: tokens, scope: "qwen-3.8-27b, free trial, per model"}
-      - {window: minute, limit: 5, unit: requests, scope: "qwen-3.8-27b, free trial, per model"}
-    reset: {rule: rolling}
+      - {window: day, limit: 1000000, unit: tokens, scope: "gpt-oss-120b only, while the $5 trial credit lasts; not a renewing free tier", headline: true}
+      - {window: minute, limit: 5, unit: requests, scope: "gpt-oss-120b, free trial"}
+      - {window: minute, limit: 300, unit: requests, scope: "qwen-3.8-27b, free trial; no hourly or daily token cap on this model"}
+    reset: {rule: unknown}
     read_remaining:
       method: unknown
-      note: "Quota replenishes continuously rather than at fixed times. The rate-limits page does not mention headers that report what is left."
+      note: "The rate-limits page says to read the current quotas in the Cloud Console. It does not name response headers."
     connection:
       method: paste_key
       key_url: https://cloud.cerebras.ai
-      card_required: unknown
+      card_required: yes
       phone_required: unknown
       minutes_estimate: 4
       usable_on_phone: unknown
@@ -1037,19 +1071,23 @@ providers:
           title: {en: "Copy the key", zh-TW: "複製金鑰"}
           detail: {en: "Copy it, then come back here and paste it when asked.", zh-TW: "複製後回到這裡，等 Muse 詢問時貼上。"}
     terms_flags: {one_account_per_person: unknown, aggregation_or_reselling: unknown, automation_of_console: unknown, hosted_in: unknown}
-    checked_on: "2026-11-12"
+    checked_on: "2026-11-15"
     confidence: M
     source_urls:
       - https://inference-docs.cerebras.ai/support/rate-limits
+      - https://inference-docs.cerebras.ai/console/account-billing
+      - https://www.cerebras.ai/pricing
       - https://inference-docs.cerebras.ai/quickstart
       - https://www.cerebras.ai/terms-of-service
-      - https://www.cerebras.ai/pricing
     notes: >-
-      Cerebras Inference free trial. Limits are per model and were read from the
-      rate-limits page on 2026-11-12 (gpt-oss-120b and qwen-3.8-27b: 5 requests a
-      minute, 1M tokens a day). LiteLLM 1.108.5 routes cerebras/<model> to
-      https://api.cerebras.ai/v1 and has both models in its price map. Context
-      windows come from that map.
+      Not a free provider. The rate-limits FAQ (read 2026-11-15) says there is
+      no permanently free tier: $5 of credits after a verified payment method,
+      expiring 30 days after they are granted. While that credit lasts,
+      gpt-oss-120b is 5 RPM and 1M tokens a day; qwen-3.8-27b is 300 RPM with
+      no hourly or daily token cap. Deployments stay callable by their direct
+      names and do not join fast, cheap or smart. LiteLLM 1.108.6 routes
+      cerebras/<model> to https://api.cerebras.ai/v1. Context windows come from
+      that map.
     deployments:
       - id: cerebras-gpt-oss-120b
         model: cerebras/gpt-oss-120b
@@ -1063,23 +1101,23 @@ providers:
         # max_completion_tokens: https://inference-docs.cerebras.ai/capabilities/reasoning (read
         # 2026-11-13); LiteLLM 1.108.5 passes it through for cerebras/.
         reasoning: {param: reasoning_effort, light: low, everyday: low}
-        aliases: [smart]
+        aliases: []
         order: 2
         rpm: 5
         context_tokens: 131072
-        join: always
-        verified: cerebras-rate-limits-page-and-litellm-1.108.5
-        notes: Free-trial model on the rate-limits page. 131,072 context from the LiteLLM map, so not in long-context.
+        join: paid_fallback
+        verified: cerebras-rate-limits-page-and-litellm-1.108.6
+        notes: Trial-only. Not in the free aliases. 131,072 context from the LiteLLM map. Call it by the deployment id.
       - id: cerebras-qwen-3-8-27b
         model: cerebras/qwen-3.8-27b
         mode: chat
-        aliases: [fast, cheap]
+        aliases: []
         order: 2
         rpm: 5
         context_tokens: 65536
-        join: always
-        verified: cerebras-rate-limits-page-and-litellm-1.108.5
-        notes: Free-trial model on the rate-limits page and the quickstart. 65,536 context from the LiteLLM map.
+        join: paid_fallback
+        verified: cerebras-rate-limits-page-and-litellm-1.108.6
+        notes: Trial-only. The rate-limits page (2026-11-15) lists 300 RPM and no daily token cap. Not in the free aliases. 65,536 context from the LiteLLM map.
 
   - id: cloudflare
     name: Cloudflare Workers AI
@@ -1160,6 +1198,78 @@ providers:
         join: always
         verified: cloudflare-models-page-and-litellm-1.108.5
         notes: Larger Llama. Uses the free neurons faster than the 8B model. 24,000 context from the LiteLLM map.
+
+  - id: sambanova
+    name: SambaNova Cloud
+    env: SAMBANOVA_API_KEY
+    tier: free
+    policy:
+      trains_on_inputs: unknown
+      human_review: unknown
+      region: unknown
+      commercial_use: unknown
+      terms_url: https://docs.sambanova.ai/docs/en/models/rate-limits
+      note: "Free tier applies when no payment method is linked. The pages read on 2026-11-15 do not say whether API prompts are used for training or human review, so the private class skips it."
+    key_url: https://cloud.sambanova.ai/
+    one_off: false
+    kind_of_allowance: [daily]
+    good_for: [everyday]
+    allowance:
+      - {window: day, limit: 20, unit: requests, scope: "free tier, per production model, no payment method", headline: true}
+      - {window: minute, limit: 20, unit: requests, scope: "free tier, per production model"}
+      - {window: day, limit: 200000, unit: tokens, scope: "free tier, per production model"}
+    reset: {rule: unknown}
+    read_remaining:
+      method: headers
+      fields: [x-ratelimit-limit-requests, x-ratelimit-remaining-requests, x-ratelimit-reset-requests, x-ratelimit-limit-requests-day, x-ratelimit-remaining-requests-day, x-ratelimit-reset-requests-day]
+      note: "The rate-limits page says every response carries the minute and day request headers."
+    connection:
+      method: paste_key
+      key_url: https://cloud.sambanova.ai/
+      card_required: no
+      phone_required: unknown
+      minutes_estimate: 5
+      usable_on_phone: unknown
+      steps:
+        - id: sign-in
+          title: {en: "Sign up or log in to SambaCloud", zh-TW: "註冊或登入 SambaCloud"}
+          detail: {en: "Muse opens cloud.sambanova.ai. Sign up or log in there. The free tier does not need a payment method.", zh-TW: "Muse 會打開 cloud.sambanova.ai。請在那裡註冊或登入。免費層不需要付款方式。"}
+        - id: create-key
+          title: {en: "Create an API key", zh-TW: "建立 API 金鑰"}
+          detail: {en: "Open the API section of the portal and create a key. Muse does not click anything for you. Save it: it cannot be shown again.", zh-TW: "打開入口網站的 API 區並建立金鑰。Muse 不會替你點擊任何東西。請立刻保存，之後無法再顯示。"}
+        - id: copy-key
+          title: {en: "Copy the key", zh-TW: "複製金鑰"}
+          detail: {en: "Copy it, then come back here and paste it when asked.", zh-TW: "複製後回到這裡，等 Muse 詢問時貼上。"}
+    terms_flags: {one_account_per_person: unknown, aggregation_or_reselling: unknown, automation_of_console: unknown, hosted_in: unknown}
+    checked_on: "2026-11-15"
+    confidence: M
+    source_urls:
+      - https://docs.sambanova.ai/docs/en/models/rate-limits
+      - https://docs.sambanova.ai/docs/en/models/sambacloud-models
+      - https://docs.sambanova.ai/docs/en/get-started/api-keys-urls
+    notes: >-
+      Free tier (no payment method): 20 RPM, 20 RPD and 200,000 TPD per
+      production model, read 2026-11-15. Production model ids on that date:
+      DeepSeek-V3.1, Meta-Llama-3.3-70B-Instruct, gpt-oss-120b, each 128k
+      context, text only. LiteLLM 1.108.6 routes sambanova/<id> to
+      https://api.sambanova.ai/v1 and has DeepSeek-V3.1 in its price map
+      (131,072 tokens). One deployment is enough for the smart backup. Preview
+      models (DeepSeek-V3.2, gemma-4-31B-it) were left out.
+    deployments:
+      - id: sambanova-deepseek-v3-1
+        model: sambanova/DeepSeek-V3.1
+        mode: chat
+        aliases: [smart]
+        order: 3
+        rpm: 2
+        context_tokens: 131072
+        join: always
+        verified: sambanova-models-page-and-litellm-1.108.6
+        notes: >-
+          Step 3 of smart, the same band as Cloudflare (order 3). rpm 2 against
+          Cloudflare's 5 so the 20 requests a day are not taken first. 131,072
+          context, so not in long-context. The key starts empty; the provider
+          is omitted until SAMBANOVA_API_KEY is set.
 
   - id: ollama
     kind: local

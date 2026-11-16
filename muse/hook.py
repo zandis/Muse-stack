@@ -760,7 +760,27 @@ class MuseHook(CustomLogger):
             await self._record_ration(app, model, outcome.decision, now)
         return outcome
 
-    def _cooling(self, model: str, healthy: list, privacy: str) -> list[dict]:
+    def _clinical(self, data: Mapping[str, Any] | None, messages: list | None = None) -> bool:
+        """Whether this request is clinical. The pre-call hook's flag wins.
+
+        A filter that runs without that flag scans the text itself. A detector
+        error fails closed (treat as clinical) so a forbidden provider is not used.
+        """
+        from muse import policy
+
+        meta = _metadata(data)
+        if "muse_clinical" in meta:
+            return meta.get("muse_clinical") is True
+        view = dict(data or {})
+        if messages is not None and not view.get("messages"):
+            view["messages"] = messages
+        try:
+            return policy.request_is_clinical(policy.detect_sensitive(_request_text(view)))
+        except Exception as exc:
+            self._fault("auto_privacy", exc)
+            return True
+
+    def _cooling(self, model: str, healthy: list, privacy: str, *, clinical: bool = False) -> list[dict]:
         """Deployments of this group that the proxy is cooling down and that this privacy class may use.
 
         Read-only look at the router's own list. Any problem means "none", which
@@ -778,7 +798,7 @@ class MuseHook(CustomLogger):
             rows = router.get_model_list(model_name=model) or []
             missing = [dict(d) for d in rows
                        if isinstance(d, Mapping) and str((d.get("model_info") or {}).get("id", "")) not in present]
-            return policy.filter_deployments(missing, privacy) if missing else []
+            return policy.filter_deployments(missing, privacy, clinical=clinical) if missing else []
         except Exception as exc:
             self._fault("cooling", exc)
             return []
@@ -836,16 +856,20 @@ class MuseHook(CustomLogger):
             if requested is not None and not requested.strip():
                 requested = None
             try:
-                text = _request_text(data) if auto else ""
+                # Always scan. Clinical exclusion does not depend on MUSE_AUTO_PRIVACY;
+                # that switch only raises the privacy class.
+                text = _request_text(data)
                 cls, findings = policy.effective_class(requested, default, text, auto)
+                clinical = policy.request_is_clinical(findings)
             except policy.PolicyError:
                 raise
-            except Exception as exc:  # detector crashed: fail closed to at least private
+            except Exception as exc:  # detector crashed: fail closed
                 self._fault("auto_privacy", exc)
                 cls = policy.normalise_class(requested, default)
                 if auto:
                     cls = policy.stricter(cls, "private")
                 findings = []
+                clinical = True  # do not send a request we could not classify to a forbidden provider
         except policy.PolicyError as exc:
             raise HTTPException(
                 status_code=400,
@@ -855,11 +879,12 @@ class MuseHook(CustomLogger):
         if not any(isinstance(data.get(key), dict) for key in ("metadata", "litellm_metadata")):
             metadata = data["metadata"] = {}
         metadata["muse_privacy"] = cls
+        metadata["muse_clinical"] = clinical  # boolean only; the matched text is not stored
         metadata.pop("muse_output_ceiling", None)  # only _apply_task may say a task ceiling was applied
         app = app_of(data)
         metadata["muse_app"] = app.name  # informational; rules read user_api_key_metadata
         metadata["muse_priority"] = app.priority
-        if findings:
+        if auto and findings:
             metadata["muse_privacy_findings"] = sorted({f.kind for f in findings})  # kinds only, never text
         self._apply_task(data, call_type, app, metadata)
         return data
@@ -922,9 +947,11 @@ class MuseHook(CustomLogger):
         from muse import policy
 
         # Privacy first decides what is allowed at all. Fails closed.
+        # Clinical exclusion is applied in the same pass, including on standard.
         try:
             privacy = self.privacy_of(request_kwargs)
-            allowed = policy.filter_deployments(list(healthy_deployments), privacy)
+            clinical = self._clinical(request_kwargs, messages)
+            allowed = policy.filter_deployments(list(healthy_deployments), privacy, clinical=clinical)
         except policy.PolicyError as exc:
             raise MusePrivacyError(f"invalid {PRIVACY_HEADER}: {exc}", status_code=400) from None
         except Exception as exc:
@@ -933,14 +960,18 @@ class MuseHook(CustomLogger):
         # LiteLLM hands over only the deployments it is not cooling down. One it
         # cooled after a provider error is still part of the picture: it is why
         # the list is short, and its quota block says when to come back.
-        cooling = self._cooling(model, healthy_deployments, privacy)
+        cooling = self._cooling(model, healthy_deployments, privacy, clinical=clinical)
         if not allowed and not cooling:
+            if clinical:
+                why = "a clinical or medical request cannot use a provider whose terms forbid that, and no other deployment is allowed"
+            elif privacy == "local":
+                why = "only local models qualify"
+            else:
+                why = "it needs a local model or a provider that does not train on inputs or allow human review"
             raise MusePrivacyError(
                 f"no deployment of '{model}' may receive a '{privacy}' request "
-                f"({len(healthy_deployments)} not cooling right now, none allowed: "
-                + ("only local models qualify" if privacy == "local" else
-                   "it needs a local model or a provider that does not train on inputs or allow human review")
-                + "). Not falling back to other providers."
+                f"({len(healthy_deployments)} not cooling right now, none allowed: {why}). "
+                "Not falling back to other providers."
             )
 
         # An exact repeat needs no allowance: answer it from the cache (deployment hook).
@@ -1026,7 +1057,8 @@ class MuseHook(CustomLogger):
             sent.sent[str(info["id"])] = dict(info)  # after a fallback, request data holds a stale model_info
         try:
             privacy = self.privacy_of(kwargs)
-            ok = policy.allowed(info, privacy)
+            clinical = self._clinical(kwargs)
+            ok = policy.allowed(info, privacy, clinical=clinical)
         except policy.PolicyError as exc:
             raise MusePrivacyError(f"invalid {PRIVACY_HEADER}: {exc}", status_code=400) from None
         except Exception as exc:
@@ -1034,7 +1066,8 @@ class MuseHook(CustomLogger):
             raise MusePrivacyError(f"privacy check failed ({type(exc).__name__}); refusing to send") from None
         if not ok:
             raise MusePrivacyError(
-                f"deployment '{info.get('id')}' may not receive a '{privacy}' request: {policy.explain(info, privacy)}"
+                f"deployment '{info.get('id')}' may not receive a '{privacy}' request: "
+                f"{policy.explain(info, privacy, clinical=clinical)}"
             )
 
         # An exact repeat: answer from the cache, nothing is sent and nothing is held.

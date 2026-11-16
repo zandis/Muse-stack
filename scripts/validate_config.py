@@ -31,8 +31,13 @@ CATALOG_PATH = ROOT / "config" / "providers.yaml"
 ENV_EXAMPLE = ROOT / ".env.example"
 GITIGNORE = ROOT / ".gitignore"
 
-REQUIRED_ALIAS = ("fast", "cheap", "smart", "long-context", "embed", "rerank")
+REQUIRED_ALIAS = ("fast", "cheap", "smart", "long-context", "vision", "embed", "rerank")
 CHAT_ALIASES = {"fast", "cheap", "smart", "long-context"}
+# A new AI Studio key gets HTTP 404 for the 2.5 ids. The pricing page
+# (2026-11-15) also marks 2.5 Pro and 2.5 Flash deprecated.
+RETIRED_GEMINI = ("gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro")
+# gemini-4-hydrogen is free of charge on that page but absent from LiteLLM 1.108.6's map.
+NOT_DEPLOYED = ("gemini-4-hydrogen",)
 
 
 class Failure(Exception):
@@ -533,7 +538,10 @@ def scenario_oneoff_and_also_env() -> None:
     check("a" * 32 not in text, "the account id must stay an environment reference")
     check(ids_for(both, "fast") == ["cloudflare-llama-3-1-8b__fast"], "cloudflare should join fast")
     cerebras, enabled = render(catalog, env_with(CEREBRAS_API_KEY="x"))
-    check(enabled == ["cerebras"] and "cerebras-gpt-oss-120b__smart" in ids_for(cerebras, "smart"), "cerebras should join smart")
+    check(enabled == ["cerebras"], f"cerebras should still render by name: {enabled}")
+    check(ids_for(cerebras, "cerebras-gpt-oss-120b") == ["cerebras-gpt-oss-120b"], "cerebras pin missing")
+    for alias in ("fast", "cheap", "smart", "long-context"):
+        check(not any(item.startswith("cerebras") for item in ids_for(cerebras, alias)), f"cerebras joined the free alias {alias}")
     for provider in catalog["providers"]:
         for extra in provider.get("also_env") or []:
             check(extra in ENV_EXAMPLE.read_text(encoding="utf-8"), f"{extra} missing from .env.example")
@@ -697,6 +705,51 @@ def tracked_files() -> list[Path]:
     return [p for p in ROOT.rglob("*") if p.is_file() and not skip & set(p.relative_to(ROOT).parts)]
 
 
+def scenario_catalogue_refresh() -> None:
+    """Gemini 2.5 is gone, SambaNova is smart order 3, Cerebras is off the free aliases, vision exists."""
+    catalog = load_catalog(CATALOG_PATH)
+    models = [str(d.get("model", "")) for p in catalog["providers"] for d in p.get("deployments") or []]
+    for retired in RETIRED_GEMINI:
+        check(not any(retired in model for model in models), f"{retired} is still a deployment")
+    for absent in NOT_DEPLOYED:
+        check(not any(absent in model for model in models), f"{absent} was added without a LiteLLM 1.108.6 route")
+    gemini = next(p for p in catalog["providers"] if p["id"] == "gemini")
+    check(gemini["policy"].get("clinical_use") == "forbidden", "gemini must forbid clinical use on every tier")
+    live = {d["id"] for d in gemini["deployments"]}
+    for need in ("gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-3.8-flash",
+                 "gemini-gemma-4-26b", "gemini-gemma-4-31b", "gemini-embedding-2"):
+        check(need in live, f"gemini is missing {need}")
+    config, enabled = render(catalog, env_with(GEMINI_API_KEY="g", GROQ_API_KEY="q", SAMBANOVA_API_KEY="s"))
+    check(enabled == ["gemini", "groq", "sambanova"], f"unexpected providers: {enabled}")
+    rendered = dumps(config, enabled)
+    for retired in RETIRED_GEMINI:
+        check(retired not in rendered, f"rendered config still names {retired}")
+    for entry in config["model_list"]:
+        info = entry["model_info"]
+        if info["provider"] == "gemini":
+            check(info.get("muse_clinical_use") == "forbidden", f"{info['id']} lost the clinical ban")
+        else:
+            check(info.get("muse_clinical_use") == "unknown", f"{info['id']} clinical flag {info.get('muse_clinical_use')!r}")
+    smart = _orders(config, "smart")
+    check(smart.get("sambanova-deepseek-v3-1__smart") == 3, f"sambanova smart order: {smart}")
+    check(smart.get("gemini-3.8-flash__smart") == 1, "smart lost gemini-3.8-flash at order 1")
+    check("groq-qwen3-8-27b__vision" in ids_for(config, "vision"), "vision alias is missing the Groq qwen model")
+    vision_model = next(e for e in config["model_list"] if e["model_info"]["id"] == "groq-qwen3-8-27b__vision")
+    check(vision_model["litellm_params"]["model"] == "groq/qwen/qwen3.8-27b", "vision model id drifted")
+    # An empty key omits the provider. The slot is the variable name only.
+    without, enabled = render(catalog, env_with(GEMINI_API_KEY="g"))
+    check("sambanova" not in enabled and not any("sambanova" in i for i in ids_for(without, "smart")), "empty SambaNova key still routed")
+    try:
+        render(catalog, {"MUSE_BIND": "0.0.0.0"})
+    except SystemExit:
+        pass
+    else:
+        raise Failure("an empty master key on a public bind was allowed to render")
+    loopback, _ = render(catalog, {"MUSE_BIND": "127.0.0.1"})
+    check(loopback["general_settings"].get("dangerously_permit_weak_or_unset_master_key") is True,
+          "loopback with no master key should still boot")
+
+
 def scenario_supply_chain() -> None:
     """LiteLLM is only ever obtained by digest (image) or exact version / lock file (pip).
 
@@ -842,6 +895,7 @@ def main() -> int:
         scenario_oneoff_and_also_env,
         scenario_min_output_tokens,
         scenario_reasoning,
+        scenario_catalogue_refresh,
         scenario_native_retry_after,
         scenario_supply_chain,
         scenario_optional_extras,

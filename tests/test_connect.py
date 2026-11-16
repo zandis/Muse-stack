@@ -230,7 +230,7 @@ def test_one_tap_happy_path(rig, capsys, caplog):
     assert "Free requests left today: 50 of 50" in out
     assert "50 requests a day" in out and "1,000 a day" in out and "learn from what you send" in out  # both honest caveats, numbers from the catalogue
     assert "muse up" in out  # proxy not running
-    assert "Next best helper:" in out and "Cerebras" in out
+    assert "Next best helper:" in out and "Cohere" in out  # Cerebras needs a card now, so it is no longer the next free step
     assert "Muse does not click anything for you" in out
     no_canary(rig, capsys, caplog)
 
@@ -643,7 +643,9 @@ def test_unknown_helper_is_not_echoed(capsys):
 def test_overview_lists_connected_and_ranked_suggestions(capsys, tmp_path, monkeypatch):
     monkeypatch.setenv("MUSE_ENV_FILE", str(tmp_path / "dotenv"))
     monkeypatch.setattr(keys, "_keyring", lambda: None)
-    for name in ("GROQ_API_KEY", "GEMINI_API_KEY"):
+    # A key left in the process environment (OPENROUTER_API_KEY on a dev machine)
+    # would mark that provider connected and change the ranking.
+    for name in keys.KNOWN_KEYS:
         monkeypatch.delenv(name, raising=False)
     (tmp_path / "dotenv").write_text("GROQ_API_KEY=gsk_x\n")
     assert cli.main(["connect", "--lang", "en"]) == 0

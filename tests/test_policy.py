@@ -18,6 +18,7 @@ from muse.policy import (
     explain,
     filter_deployments,
     normalise_class,
+    request_is_clinical,
     stricter,
 )
 
@@ -369,6 +370,47 @@ def test_conn_string_placeholders_ignored():
 
 
 # ------------------------------------------------------------------- health
+
+
+def _info(**fields):
+    base = {"provider": "gemini", "muse_kind": "cloud", "muse_tier": "free",
+            "muse_trains": "yes", "muse_human_review": "yes", "muse_clinical_use": "forbidden"}
+    base.update(fields)
+    return base
+
+
+def test_clinical_request_never_uses_gemini_on_any_class():
+    """Gemini is forbidden for clinical use on every tier, including standard and private."""
+    gemini_free = _info()
+    gemini_paid = _info(muse_tier="paid", muse_trains="no", muse_human_review="no")
+    groq = {"provider": "groq", "muse_kind": "cloud", "muse_trains": "unknown",
+            "muse_human_review": "unknown", "muse_clinical_use": "unknown"}
+    for cls in PRIVACY_CLASSES:
+        assert allowed(gemini_free, cls, clinical=True) is False
+        assert allowed(gemini_paid, cls, clinical=True) is False
+        assert "clinical" in explain(gemini_free, cls, clinical=True)
+    assert allowed(gemini_free, "standard", clinical=False) is True
+    assert allowed(groq, "standard", clinical=True) is True
+    assert allowed(gemini_paid, "private", clinical=False) is True  # paid terms would pass private
+    assert allowed(gemini_paid, "private", clinical=True) is False  # the clinical ban still holds
+    deps = [
+        {"model_name": "smart", "model_info": gemini_free},
+        {"model_name": "smart", "model_info": gemini_paid},
+        {"model_name": "smart", "model_info": groq},
+    ]
+    kept = filter_deployments(deps, "standard", clinical=True)
+    assert [d["model_info"]["provider"] for d in kept] == ["groq"]
+    assert filter_deployments(deps[:2], "standard", clinical=True) == []
+    assert filter_deployments(deps[:2], "private", clinical=True) == []
+
+
+def test_medical_request_phrases_are_clinical_and_a_single_diagnosis_is_not():
+    assert request_is_clinical(detect_sensitive("Please give me medical advice about this rash"))
+    assert request_is_clinical(detect_sensitive("請給我醫療建議"))
+    assert request_is_clinical(detect_sensitive("MRN: 55\nDiagnosis: asthma"))
+    assert not request_is_clinical(detect_sensitive("What is the capital of France?"))
+    assert not request_is_clinical(detect_sensitive("診斷"))  # one marker is not a clinical document
+    assert not request_is_clinical(detect_sensitive("help me diagnose this failing test"))
 
 
 def test_clinical_needs_two_markers():

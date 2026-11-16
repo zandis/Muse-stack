@@ -28,13 +28,14 @@ def run(coro):
 
 
 def dep(dep_id: str, provider: str, model: str, kind: str = "cloud", trains: str = "yes", review: str = "yes", order: int = 1,
-        tier: str = "free") -> dict:
+        tier: str = "free", clinical: str = "unknown") -> dict:
     # muse_tier is always rendered; a deployment without one counts as paid (muse/ration.py).
     return {
         "model_name": dep_id.split("__")[-1],
         "litellm_params": {"model": model, "order": order},
         "model_info": {"id": dep_id, "provider": provider, "muse_upstream": f"{provider}:{model}",
-                       "muse_kind": kind, "muse_trains": trains, "muse_human_review": review, "muse_tier": tier},
+                       "muse_kind": kind, "muse_trains": trains, "muse_human_review": review, "muse_tier": tier,
+                       "muse_clinical_use": clinical},
     }
 
 
@@ -156,6 +157,34 @@ def test_blocks_leave_nothing_raises_rate_limit_with_reset(h, db):
 ])
 def test_privacy_filter(h, privacy, deployments, expected):
     assert filt(h, deployments, req(privacy)) == expected
+
+
+def test_clinical_request_never_routes_to_gemini_under_default_standard(h):
+    """MUSE_AUTO_PRIVACY is off. A medical request stays on standard and still skips Gemini, paid or free."""
+    gemini = dep("gemini-3.8-flash__smart", "gemini", "gemini/gemini-3.8-flash", clinical="forbidden")
+    paid = dep("gemini-paid__smart", "gemini", "gemini/gemini-3.8-flash", tier="paid", trains="no", review="no", clinical="forbidden")
+    groq = dep("groq-gpt-oss-120b__smart", "groq", "groq/openai/gpt-oss-120b", trains="unknown", review="unknown")
+    messages = [{"role": "user", "content": "Please give me medical advice about this rash"}]
+    data = run(h.async_pre_call_hook(None, None, {**req(None), "messages": messages}, "completion"))
+    assert data["metadata"]["muse_privacy"] == "standard" and data["metadata"]["muse_clinical"] is True
+    assert "medical advice" not in json.dumps(data["metadata"])
+    assert filt(h, [gemini, paid, groq], data, model="smart") == [groq]
+    with pytest.raises(MusePrivacyError) as err:
+        filt(h, [gemini, paid], data, model="smart")
+    assert err.value.status_code == 403 and is_guardrail_intervention(err.value)
+    with pytest.raises(MusePrivacyError) as direct:
+        run(h.async_pre_call_deployment_hook({**data, "model_info": paid["model_info"]}, None))
+    assert direct.value.status_code == 403 and "clinical" in direct.value.message
+    private = run(h.async_pre_call_hook(None, None, {**req("private"), "messages": messages}, "completion"))
+    local = dep("ollama__smart", "ollama", "ollama/x", kind="local", trains="no", review="no")
+    assert filt(h, [gemini, groq, local], private, model="smart") == [local]
+    chart = [{"role": "user", "content": "MRN: 55\nDiagnosis: asthma"}]
+    charted = run(h.async_pre_call_hook(None, None, {**req(None), "messages": chart}, "completion"))
+    assert charted["metadata"]["muse_clinical"] is True
+    assert filt(h, [gemini, groq], charted, model="smart") == [groq]
+    plain = run(h.async_pre_call_hook(None, None, {**req(None), "messages": [{"role": "user", "content": "hello"}]}, "completion"))
+    assert plain["metadata"]["muse_clinical"] is False
+    assert filt(h, [gemini, groq], plain, model="smart") == [gemini, groq]
 
 
 def test_privacy_leaving_nothing_fails_closed_without_fallback(h, db):
