@@ -782,7 +782,7 @@ def test_first_boot_failure_leaves_a_marker_and_nothing_running(tmp_path):
 HARDENING = ["NoNewPrivileges=yes", "ProtectSystem=strict", "PrivateTmp=yes", "ProtectHome=", "ReadWritePaths=", "RestrictAddressFamilies=",
              "MemoryMax=", "CPUQuota="]
 LOCAL_ONLY = {"muse-home.service", "muse-queue.service", "muse-chores.service", "muse-vm-monitor.service"}
-NEEDS_INTERNET = {"muse-proxy.service", "muse-catalog-check.service", "muse-backup.service", "muse-update.service"}
+NEEDS_INTERNET = {"muse-proxy.service", "muse-catalog-check.service", "muse-backup.service", "muse-update.service", "muse-heartbeat.service"}
 
 
 def unit_files() -> list[Path]:
@@ -797,7 +797,8 @@ def test_expected_units_exist():
     names = {p.name for p in unit_files()}
     assert names == {"muse-proxy.service", "muse-home.service", "muse-queue.service", "muse-chores.service", "muse-chores.timer",
                      "muse-catalog-check.service", "muse-catalog-check.timer", "muse-backup.service", "muse-backup.timer",
-                     "muse-update.service", "muse-update.timer", "muse-vm-monitor.service"}
+                     "muse-update.service", "muse-update.timer", "muse-heartbeat.service", "muse-heartbeat.timer",
+                     "muse-vm-monitor.service"}
     assert LOCAL_ONLY | NEEDS_INTERNET == {n for n in names if n.endswith(".service")}
     listed = re.search(r'ALL="([^"]*)"', (VM / "install-services.sh").read_text()).group(1).split()
     assert set(listed) == names
@@ -871,7 +872,8 @@ def test_units_call_commands_the_cli_really_has():
     parser.parse_args(match.group(1).split())
     assert "--pages" in match.group(1) and "--json" in match.group(1)
     for timer, service in (("muse-chores.timer", "muse-chores.service"), ("muse-catalog-check.timer", "muse-catalog-check.service"),
-                           ("muse-backup.timer", "muse-backup.service"), ("muse-update.timer", "muse-update.service")):
+                           ("muse-backup.timer", "muse-backup.service"), ("muse-update.timer", "muse-update.service"),
+                           ("muse-heartbeat.timer", "muse-heartbeat.service")):
         assert f"Unit={service}" in unit_lines(UNITS / timer) and "WantedBy=timers.target" in unit_lines(UNITS / timer)
     assert "OnCalendar=minutely" in unit_lines(UNITS / "muse-chores.timer")
     assert any(line.startswith("OnCalendar=Sun ") for line in unit_lines(UNITS / "muse-catalog-check.timer"))
@@ -1351,24 +1353,37 @@ def signed_manifest(doc: dict) -> tuple[bytes, bytes, str]:
 def test_update_manifest_must_be_signed_fixed_and_newer():
     pytest.importorskip("cryptography")
     verify = load_script("update_verify", VM / "update_verify.py")
-    good = {"channel": "stable", "version": "0.3.0", "url": "https://releases.example/muse-0.3.0.tar.gz", "sha256": SHA}
+    now = dt.datetime(2026, 11, 15, tzinfo=dt.timezone.utc)
+    good = {"channel": "stable", "version": "0.3.0", "url": "https://releases.example/muse-0.3.0.tar.gz",
+            "sha256": SHA, "expires": "2026-12-15T00:00:00Z"}
     manifest, signature, public = signed_manifest(good)
-    assert verify.decide(manifest, signature, public, "0.2.0") == f"newer 0.3.0 {good['url']} {SHA}"
-    assert verify.decide(manifest, signature, public, "0.3.0") == "same 0.3.0"
-    assert verify.decide(manifest, signature, public, "0.10.0") == "older 0.3.0", "versions compare as numbers; a downgrade is reported, not installed"
+    assert verify.decide(manifest, signature, public, "0.2.0", now=now) == f"newer 0.3.0 {good['url']} {SHA}"
+    assert verify.decide(manifest, signature, public, "0.3.0", now=now) == "same 0.3.0"
+    assert verify.decide(manifest, signature, public, "0.10.0", now=now) == "older 0.3.0", "versions compare as numbers; a downgrade is reported, not installed"
     with pytest.raises(verify.Refused, match="no public key"):
-        verify.decide(manifest, signature, "", "0.2.0")
+        verify.decide(manifest, signature, "", "0.2.0", now=now)
     with pytest.raises(verify.Refused, match="signature does not match"):
-        verify.decide(manifest.replace(b"0.3.0", b"0.3.1"), signature, public, "0.2.0")
+        verify.decide(manifest.replace(b"0.3.0", b"0.3.1"), signature, public, "0.2.0", now=now)
     _, _, other_public = signed_manifest(good)
     with pytest.raises(verify.Refused, match="signature does not match"):
-        verify.decide(manifest, signature, other_public, "0.2.0")
+        verify.decide(manifest, signature, other_public, "0.2.0", now=now)
+    # A second key is accepted so the owner can install the next public key before retiring the old one.
+    _, signature_b, public_b = signed_manifest(good)
+    assert verify.decide(manifest, signature, f"{public_b},{public}", "0.2.0", now=now).startswith("newer ")
+    with pytest.raises(verify.Refused, match="signature does not match"):
+        verify.decide(manifest, signature_b, public, "0.2.0", now=now)
+    unsigned = dict(good)
+    unsigned.pop("expires")
+    manifest, signature, public = signed_manifest(unsigned)
+    with pytest.raises(verify.Refused, match="no expires"):
+        verify.decide(manifest, signature, public, "0.2.0", now=now)
     for change, message in (({"version": "latest"}, "not a fixed version"), ({"version": "main"}, "not a fixed version"),
                             ({"url": "http://releases.example/m.tar.gz"}, "not https"), ({"sha256": "abc"}, "not a SHA-256"),
-                            ({"channel": "beta"}, "channel")):
+                            ({"channel": "beta"}, "channel"), ({"expires": "2020-01-01T00:00:00Z"}, "expired"),
+                            ({"expires": "2030-01-01T00:00:00Z"}, "90 days"), ({"expires": "tomorrow"}, "not a UTC")):
         manifest, signature, public = signed_manifest({**good, **change})
         with pytest.raises(verify.Refused, match=message):
-            verify.decide(manifest, signature, public, "0.2.0")
+            verify.decide(manifest, signature, public, "0.2.0", now=now)
 
 
 def test_updates_are_off_by_default_and_never_unverified(tmp_path):
@@ -1397,12 +1412,14 @@ def test_updates_are_off_by_default_and_never_unverified(tmp_path):
 
 def test_idle_guard_uses_the_processor_only_and_backs_off():
     monitor = load_script("muse_vm_monitor", VM / "muse-vm-monitor.py")
-    # The setting: auto by default, which is on for an Always Free account and off for a paid one.
+    # Off unless the operator opts in. auto still follows the account type.
     on, target, why = monitor.guard_settings({})
-    assert (on, target) == (True, 25.0) and "Always Free" in why
-    assert monitor.guard_settings({"MUSE_ACCOUNT_TYPE": "always_free"})[0] is True
+    assert (on, target) == (False, 25.0) and why == "MUSE_IDLE_GUARD=off"
+    assert monitor.guard_settings({"MUSE_ACCOUNT_TYPE": "always_free"})[0] is False
+    assert monitor.guard_settings({"MUSE_IDLE_GUARD": "auto", "MUSE_ACCOUNT_TYPE": "always_free"})[0] is True
     assert monitor.guard_settings({"MUSE_ACCOUNT_TYPE": "paid"})[:2] == (False, 25.0)
-    assert "paid" in monitor.guard_settings({"MUSE_ACCOUNT_TYPE": "paid"})[2]
+    assert monitor.guard_settings({"MUSE_ACCOUNT_TYPE": "paid"})[2] == "MUSE_IDLE_GUARD=off"
+    assert "paid" in monitor.guard_settings({"MUSE_ACCOUNT_TYPE": "paid", "MUSE_IDLE_GUARD": "auto"})[2]
     assert monitor.guard_settings({"MUSE_ACCOUNT_TYPE": "paid", "MUSE_IDLE_GUARD": "on"})[0] is True
     assert monitor.guard_settings({"MUSE_ACCOUNT_TYPE": "always_free", "MUSE_IDLE_GUARD": "off"})[0] is False
     assert monitor.guard_settings({"MUSE_IDLE_GUARD": "auto", "MUSE_ACCOUNT_TYPE": "nonsense"})[0] is True
@@ -1431,7 +1448,8 @@ def test_idle_guard_uses_the_processor_only_and_backs_off():
     assert not guard.running() and guard.busy_s > 0
     # The daily line says what it did and why, in one line.
     stats = {"guard_minutes": 140, "busy_minutes": 12, "backed_off": 3}
-    line = monitor.daily_line("2026-11-14", True, why, 25.0, stats)
+    _, _, auto_why = monitor.guard_settings({"MUSE_IDLE_GUARD": "auto"})
+    line = monitor.daily_line("2026-11-14", True, auto_why, 25.0, stats)
     assert "\n" not in line and "140 minutes" in line and "Always Free" in line and "backed off for real work 3 times" in line
     assert "never holds memory or sends traffic" in line
     off = monitor.daily_line("2026-11-14", False, "MUSE_IDLE_GUARD=off", 25.0, stats)
@@ -1607,7 +1625,12 @@ def test_no_second_copy_of_the_litellm_pin():
             continue
         text = path.read_text(encoding="utf-8")
         assert version not in text and digest not in text, f"{path.name} repeats the LiteLLM pin; it must come from requirements/proxy.lock"
-        assert not re.search(r"ghcr\.io/berriai|litellm/litellm|docker (run|pull|compose)", text), f"{path.name}: the VM stack runs natively, no image"
+        # Docker mode calls the compose client. The image digest stays in the signed
+        # release's compose file; these scripts must not name an image or pull one themselves.
+        if re.search(r"docker (run|pull|compose)", text):
+            assert path.name in {"lib.sh", "muse-update.sh", "migrate-from-clone.sh"}, path.name
+        assert "docker run" not in text and "docker pull" not in text, path.name
+        assert not re.search(r"ghcr\.io/berriai|litellm/litellm", text), path.name
         assert not re.search(r"(curl|wget)[^\n|]*\|\s*(sudo\s+)?(ba)?sh", text), f"{path.name} pipes a download into a shell"
 
 

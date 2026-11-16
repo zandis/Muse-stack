@@ -60,7 +60,7 @@ case "$ROOT $VENV $STATE" in /home/*|*" /home/"*|/root/*|*" /root/"*) PROTECT_HO
 
 ALL="muse-proxy.service muse-home.service muse-queue.service muse-chores.service muse-chores.timer
 muse-catalog-check.service muse-catalog-check.timer muse-backup.service muse-backup.timer
-muse-update.service muse-update.timer muse-vm-monitor.service"
+muse-update.service muse-update.timer muse-heartbeat.service muse-heartbeat.timer muse-vm-monitor.service"
 if [ -z "$UNITS" ]; then
   FILES="$ALL"
 else

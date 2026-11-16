@@ -80,7 +80,9 @@ The container prints the enabled providers on startup. A missing key is a line i
 
 ## Updates
 
-The pin stays on `v1.108.6` and its digest until you edit the compose file, so a pull can only ever fetch that exact image:
+The VM does not update itself with `git pull`. A nightly timer fetches a signed GitHub Release, checks it, and rolls back if the new release does not pass a smoke test. How to move the current clone onto that layout, turn the timer on, roll back, and rotate the signing key is in [docs/deploy/update.md](../docs/deploy/update.md).
+
+Until that migration has been run, the pin stays on `v1.108.6` and its digest, so a pull can only ever fetch that exact image:
 
 ```bash
 docker compose pull

@@ -1,0 +1,150 @@
+# Build a Muse release tarball and an unsigned manifest, and publish them as
+# a draft GitHub Release. Drafts are not served from /releases/latest, so the
+# VM cannot fetch a manifest that has no signature yet.
+#
+# Signing is done on the owner's machine (docs/deploy/update.md). That keeps
+# the private key off GitHub: a workflow change cannot sign a release by
+# itself. The sign job below is the fallback. It runs only when the repository
+# variable MUSE_SIGN_IN_CI is the string true, and only inside the "release"
+# environment, which the owner protects with a required reviewer. Do not set
+# that variable until the environment has a required reviewer.
+#
+# This file has no pull request trigger. Forks must not be able to publish.
+
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Fixed version to publish, for example 0.2.0"
+        required: true
+        type: string
+      ref:
+        description: "Commit or tag to package. Defaults to the selected revision."
+        required: false
+        type: string
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: muse-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'zandis/Muse-stack'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      sha256: ${{ steps.meta.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ inputs.ref || github.sha }}
+      - id: meta
+        name: Build the tarball and the unsigned manifest
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          VERSION="${VERSION#v}"
+          printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.+-][0-9A-Za-z.]+)?$'
+          mkdir -p dist
+          bash deploy/vm/build-release.sh --version "$VERSION" --ref HEAD --out dist
+          SHA="$(sha256sum "dist/muse-${VERSION}.tar.gz" | awk '{print $1}')"
+          COMMIT="$(git rev-parse HEAD)"
+          EXPIRES="$(python3 scripts/sign_manifest.py expires --days 30)"
+          URL="https://github.com/zandis/Muse-stack/releases/download/v${VERSION}/muse-${VERSION}.tar.gz"
+          python3 scripts/sign_manifest.py manifest \
+            --version "$VERSION" --url "$URL" --sha256 "$SHA" \
+            --commit "$COMMIT" --expires "$EXPIRES" --out dist/stable.json
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "sha256=${SHA}" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: muse-release
+          path: |
+            dist/muse-*.tar.gz
+            dist/stable.json
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: github.repository == 'zandis/Muse-stack'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: muse-release
+          path: dist
+      - name: Publish a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build.outputs.tag }}
+          VERSION: ${{ needs.build.outputs.version }}
+          SHA: ${{ needs.build.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          notes="Unsigned draft. The VM ignores drafts.
+
+          sha256: ${SHA}
+
+          Sign dist/stable.json without changing its bytes, upload stable.json.sig, then publish the release. See docs/deploy/update.md."
+          if state="$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            if [ "$state" = "true" ]; then
+              gh release upload "$TAG" dist/muse-*.tar.gz dist/stable.json --clobber
+            else
+              echo "Release $TAG is already published. Leaving its assets alone so a signature is not replaced by an unsigned manifest."
+            fi
+          else
+            gh release create "$TAG" dist/muse-*.tar.gz dist/stable.json \
+              --draft --target "${GITHUB_SHA}" --title "Muse ${VERSION}" --notes "$notes"
+          fi
+
+  sign:
+    needs: [build, publish]
+    if: github.repository == 'zandis/Muse-stack' && vars.MUSE_SIGN_IN_CI == 'true'
+    environment: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: muse-release
+          path: dist
+      - name: Sign the manifest and publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build.outputs.tag }}
+          MUSE_RELEASE_SIGNING_KEY: ${{ secrets.MUSE_RELEASE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          set +x
+          python -m pip install "cryptography>=42,<47"
+          python3 scripts/sign_manifest.py sign --manifest dist/stable.json --out dist/stable.json.sig
+          gh release upload "$TAG" dist/stable.json.sig --clobber
+          gh release edit "$TAG" --draft=false

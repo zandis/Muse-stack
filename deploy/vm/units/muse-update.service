@@ -1,7 +1,8 @@
 # Looks for a new Muse release in the signed manifest named by
 # MUSE_UPDATE_MANIFEST_URL. Disabled until both that address and
 # MUSE_UPDATE_PUBKEY are set. Runs as root because it installs under
-# @MUSE_BASE@ and restarts services; it never touches MUSE_HOME.
+# @MUSE_BASE@ and, in docker mode, talks to the Docker socket. It snapshots
+# MUSE_HOME and writes that directory only when rolling a failed release back.
 [Unit]
 Description=Muse update check
 After=network-online.target
@@ -11,6 +12,9 @@ Wants=network-online.target
 Type=oneshot
 EnvironmentFile=-@MUSE_CONF@
 Environment=PATH=/usr/sbin:/usr/bin:/sbin:/bin
+# ProtectHome hides /root. Compose and the docker CLI keep their files here.
+Environment=HOME=@MUSE_STATE@/vm
+Environment=DOCKER_CONFIG=@MUSE_STATE@/vm/docker
 ExecStart=/bin/bash @MUSE_ROOT@/deploy/vm/muse-update.sh
 TimeoutStartSec=60min
 MemoryMax=2G

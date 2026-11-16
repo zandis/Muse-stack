@@ -167,6 +167,67 @@ wait_for_proxy() {
   return 1
 }
 
+# Point a release's compose project at the VM's env file without copying it.
+# A regular .env inside the release is refused: that file would be secrets in
+# the tree, and replacing it would delete them. The link is created only after
+# unpack_release has finished chmod, so the chmod does not follow it onto the
+# real env file.
+link_release_env() {
+  local dir="$1" env_file="${MUSE_ENV_FILE:-}"
+  if [ -z "$env_file" ] || [ ! -f "$env_file" ]; then
+    warn "MUSE_ENV_FILE is missing; the release cannot see provider keys"
+    return 1
+  fi
+  if [ -e "$dir/.env" ] && [ ! -L "$dir/.env" ]; then
+    warn "the release contains a real .env file; refusing to replace it"
+    return 1
+  fi
+  ln -sfn "$env_file" "$dir/.env"
+}
+
+# Calls `docker compose` in one unpacked release. The image digest stays in
+# that release's compose file; it is not named here.
+#   compose_release RELEASE_DIR pull
+#   compose_release RELEASE_DIR up -d
+compose_release() {
+  local dir="$1"
+  shift
+  local bin="${MUSE_DOCKER:-docker}"
+  local project="${MUSE_COMPOSE_PROJECT:-muse-stack}"
+  local env_file="${MUSE_ENV_FILE:-}"
+  local -a cmd
+  cmd=("$bin" compose -p "$project" --project-directory "$dir" -f "$dir/docker-compose.yml")
+  if [ -n "$env_file" ]; then
+    cmd+=(--env-file "$env_file")
+  fi
+  "${cmd[@]}" "$@"
+}
+
+# Ping a healthchecks.io (or compatible) URL read from a file. The file holds
+# one https URL and nothing else. The URL is a secret: this never prints it,
+# and curl is silent so a failure does not copy the URL into the journal.
+#   ping_healthchecks start|success|fail [FILE]
+# A missing or empty file is "not configured" and returns 0.
+ping_healthchecks() {
+  local kind="$1" file="${2:-${MUSE_HEALTHCHECKS_URL_FILE:-}}" url target
+  [ -n "$file" ] && [ -r "$file" ] || return 0
+  url="$(tr -d '[:space:]' < "$file")"
+  [ -n "$url" ] || return 0
+  case "$url" in
+    https://*) ;;
+    *) warn "healthchecks URL is not https; not pinging"; return 0 ;;
+  esac
+  case "$kind" in
+    start) target="${url%/}/start" ;;
+    fail) target="${url%/}/fail" ;;
+    success) target="${url%/}" ;;
+    *) return 0 ;;
+  esac
+  curl --fail --silent --max-time 15 --output /dev/null \
+    --proto '=https' --proto-redir '=https' --retry 2 --retry-delay 2 \
+    -- "$target" || warn "healthchecks ping failed ($kind)"
+}
+
 # Used by the scripts that source this file (bootstrap.sh, muse-update.sh).
 # shellcheck disable=SC2034
 MUSE_LONG_RUNNING="muse-proxy.service muse-home.service muse-queue.service muse-vm-monitor.service"

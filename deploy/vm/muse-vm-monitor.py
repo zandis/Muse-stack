@@ -35,10 +35,11 @@ access (muse-vm-monitor.service). Two jobs:
 
    Be clear about what this is: deliberate processor use to stay above a
    threshold, not useful work. It is a setting: MUSE_IDLE_GUARD=on|off|auto.
-   `auto` (the default) means on for an Always Free account and off for a paid
-   one (MUSE_ACCOUNT_TYPE=always_free|paid, default always_free).
-   deploy/oracle-stack/README.md says what Oracle's page does and does not say
-   about it.
+   The default is off. `auto` means on for an Always Free account and off for
+   a paid one (MUSE_ACCOUNT_TYPE=always_free|paid). The Docker VM ships with
+   off; turning it on is a choice (docs/deploy/update.md). The stack form can
+   still write `auto`. deploy/oracle-stack/README.md says what Oracle's page
+   does and does not say about it.
 
    The metric it targets is the instance's CpuUtilization in the
    oci_computeagent metric namespace (OCI Console: the instance, Metrics,
@@ -49,7 +50,7 @@ access (muse-vm-monitor.service). Two jobs:
 Settings (environment, normally from /etc/muse/vm.conf):
     MUSE_VM_STATE                 where samples go (default /var/lib/muse/vm)
     MUSE_ACCOUNT_TYPE             always_free | paid (default always_free)
-    MUSE_IDLE_GUARD               auto | on | off (default auto)
+    MUSE_IDLE_GUARD               auto | on | off (default off)
     MUSE_IDLE_GUARD_TARGET_PCT    20.5 to 40 (default 25)
 
     muse-vm-monitor.py            run for ever
@@ -142,15 +143,17 @@ def guard_settings(environ: dict[str, str] | os._Environ[str]) -> tuple[bool, fl
     account = environ.get("MUSE_ACCOUNT_TYPE", "always_free").strip().lower() or "always_free"
     if account not in ("always_free", "paid"):
         account = "always_free"
-    setting = environ.get("MUSE_IDLE_GUARD", "auto").strip().lower() or "auto"
+    setting = environ.get("MUSE_IDLE_GUARD", "off").strip().lower() or "off"
     if setting in ("off", "0", "false", "no"):
         enabled, why = False, "MUSE_IDLE_GUARD=off"
     elif setting in ("on", "1", "true", "yes"):
         enabled, why = True, "MUSE_IDLE_GUARD=on"
-    elif account == "paid":
+    elif setting == "auto" and account == "paid":
         enabled, why = False, "paid account (MUSE_ACCOUNT_TYPE=paid, MUSE_IDLE_GUARD=auto)"
-    else:
+    elif setting == "auto":
         enabled, why = True, "Always Free account (MUSE_ACCOUNT_TYPE=always_free, MUSE_IDLE_GUARD=auto)"
+    else:
+        enabled, why = False, "MUSE_IDLE_GUARD=off"
     try:
         target = float(environ.get("MUSE_IDLE_GUARD_TARGET_PCT", "25"))
     except ValueError:
