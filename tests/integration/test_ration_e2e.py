@@ -17,8 +17,8 @@ import pytest
 import yaml
 
 from ration_catalog import MASTER_KEY, PRICE_IN, PRICE_OUT, build_ration_catalog
-from muse import apps
-from muse.ledger import Ledger
+from wardmuse import apps
+from wardmuse.ledger import Ledger
 
 CALL_COST = (11 * PRICE_IN + 7 * PRICE_OUT) / 1e6  # the fake upstream always reports 11 + 7 tokens
 

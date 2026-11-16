@@ -1,6 +1,7 @@
 """muse.home.auth: device tokens, and who may reach the home at all."""
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import json
 import logging
@@ -11,7 +12,7 @@ import stat
 import pytest
 
 from home_fakes import TOKEN, assert_error, client_for, running
-from muse.home import api, auth, server
+from wardmuse.home import api, auth, server
 
 
 @pytest.fixture()
@@ -39,7 +40,7 @@ def test_a_token_is_random_shown_once_and_stored_only_as_a_hash():
     data = json.loads(text)
     assert data["version"] == 1 and [d["name"] for d in data["devices"]] == ["desk", "mei-phone"]
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
-    assert path.parent == type(path)(os.environ["MUSE_HOME"])
+    assert path.parent == type(path)(envget(os.environ, "MUSE_HOME"))
     assert [d.name for d in auth.list_devices()] == ["desk", "mei-phone"]
 
 

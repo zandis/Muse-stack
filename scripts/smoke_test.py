@@ -7,6 +7,12 @@ set when the proxy rendered its config.
 """
 
 from __future__ import annotations
+import sys as _sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parents[1]
+if str(_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_ROOT))
+from wardmuse.envutil import envget, envhas
 
 import argparse
 import json
@@ -95,7 +101,7 @@ def call_alias(base: str, name: str, kind: str, key: str, timeout: float) -> tup
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Smoke-test muse-stack aliases.")
-    parser.add_argument("--base-url", default=os.environ.get("MUSE_BASE_URL", "http://127.0.0.1:4000"))
+    parser.add_argument("--base-url", default=envget(os.environ, "MUSE_BASE_URL", "http://127.0.0.1:4000"))
     parser.add_argument("--env-file", type=Path, default=ROOT / ".env")
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--strict", action="store_true", help="Fail if any public alias is missing.")

@@ -11,9 +11,9 @@ import pytest
 
 pytest.importorskip("litellm")
 
-from muse import apps, quota, ration  # noqa: E402
-from muse import hook as hook_module  # noqa: E402
-from muse.hook import (  # noqa: E402
+from wardmuse import apps, quota, ration  # noqa: E402
+from wardmuse import hook as hook_module  # noqa: E402
+from wardmuse.hook import (  # noqa: E402
     MuseHook,
     MuseRationError,
     _estimate_tokens,
@@ -23,7 +23,7 @@ from muse.hook import (  # noqa: E402
     min_output_header,
     min_output_of,
 )
-from muse.ledger import Ledger  # noqa: E402
+from wardmuse.ledger import Ledger  # noqa: E402
 
 NOW = 1_794_466_800.0  # 2026-11-12T07:00:00Z
 ENV = {"MUSE_TZ": "UTC"}
@@ -242,7 +242,7 @@ def test_an_error_in_the_floor_is_counted_and_the_request_goes_out_as_sent(h, mo
 
 
 def test_privacy_still_comes_first(h):
-    from muse.hook import MusePrivacyError
+    from wardmuse.hook import MusePrivacyError
 
     kwargs = {**req(max_tokens=16, headers={"x-muse-privacy": "local"}), "model_info": R["model_info"]}
     with pytest.raises(MusePrivacyError):
@@ -418,7 +418,7 @@ def test_paid_hold_with_no_cap_keeps_the_default_estimate(h, db):
 def test_the_raised_figure_can_fill_the_daily_cap(db, tmp_path):
     """The cap admits a call while the spend and holds before it are under the cap. Held at 16
     tokens the first call would leave room for a second; held at the 256 actually sent it does not."""
-    from muse.hook import MuseDirectRationError
+    from wardmuse.hook import MuseDirectRationError
 
     as_asked = (1 * 20 + 16 * 40) / 1e6
     as_sent = (1 * 20 + FLOOR * 40) / 1e6
@@ -575,7 +575,7 @@ def reasoner(dep_id="g__chat", setting=None):
 
 
 def test_reasoning_of_and_apply_reasoning():
-    from muse.hook import apply_reasoning, reasoning_of
+    from wardmuse.hook import apply_reasoning, reasoning_of
 
     info = reasoner()["model_info"]
     assert reasoning_of(info, "light") == ("reasoning_effort", "low") and reasoning_of(info, "heavy") is None

@@ -26,9 +26,9 @@ import anyio  # noqa: E402
 from mcp import ClientSession, StdioServerParameters, stdio_client  # noqa: E402
 
 from home_fakes import ROOT, client_for, running  # noqa: E402
-from muse.home import fake  # noqa: E402
-from muse.home.auth import StaticVerifier  # noqa: E402
-from muse.mcp import SCOPE_NOTE, tools  # noqa: E402
+from wardmuse.home import fake  # noqa: E402
+from wardmuse.home.auth import StaticVerifier  # noqa: E402
+from wardmuse.mcp import SCOPE_NOTE, tools  # noqa: E402
 
 HOST, HOST_TOKEN = "host-tools", "sk-muse-dev-CANARYstdioTOKEN0123456789abcdefXYZ"
 PHONE, PHONE_TOKEN = "my-phone", "phone-device-token-for-tests"
@@ -139,7 +139,7 @@ def test_initialize_and_list_tools(rig):
         return init, await session.list_tools()
 
     init, listed = rig.session(go)
-    assert init.server_info.name == "muse" and init.server_info.version
+    assert init.server_info.name == "wardmuse" and init.server_info.version
     assert init.capabilities.tools is not None
     assert SCOPE_NOTE in init.instructions
     assert [t.name for t in listed.tools] == [t.name for t in tools.TOOLS]
@@ -193,7 +193,7 @@ def test_muse_mcp_serve_is_the_same_server(rig):
         return init.server_info.name, [t.name for t in (await session.list_tools()).tools], await call("pause_status")
 
     name, names, (pause, is_error) = rig.session(go, module=["-m", "muse.cli", "mcp", "serve"], env=rig.env(MUSE_ENV_FILE=str(rig.tmp / "none.env")))
-    assert name == "muse" and names == [t.name for t in tools.TOOLS] and pause["paused"] is False and not is_error
+    assert name == "wardmuse" and names == [t.name for t in tools.TOOLS] and pause["paused"] is False and not is_error
 
 
 def test_the_token_can_come_from_the_environment_instead(rig):
@@ -396,7 +396,7 @@ def test_raw_json_rpc_and_letting_go_of_a_waiting_question_when_the_host_leaves(
             _send(proc, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
                 "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "raw-test", "version": "0"}}})
             init = _read(proc, 1)["result"]
-            assert init["protocolVersion"] == "2025-06-18" and init["serverInfo"]["name"] == "muse" and "tools" in init["capabilities"]
+            assert init["protocolVersion"] == "2025-06-18" and init["serverInfo"]["name"] == "wardmuse" and "tools" in init["capabilities"]
             _send(proc, {"jsonrpc": "2.0", "method": "notifications/initialized"})
             _send(proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
             listed = _read(proc, 2)["result"]["tools"]

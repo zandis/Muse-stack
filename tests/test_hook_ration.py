@@ -13,9 +13,9 @@ pytest.importorskip("litellm")
 import litellm  # noqa: E402
 from litellm.integrations.custom_guardrail import is_guardrail_intervention  # noqa: E402
 
-from muse import apps  # noqa: E402
-from muse.hook import MuseAppCapError, MuseDirectRationError, MuseHook, MuseRationError  # noqa: E402
-from muse.ledger import Ledger  # noqa: E402
+from wardmuse import apps  # noqa: E402
+from wardmuse.hook import MuseAppCapError, MuseDirectRationError, MuseHook, MuseRationError  # noqa: E402
+from wardmuse.ledger import Ledger  # noqa: E402
 
 NOW = 1_794_466_800.0  # 2026-11-12T07:00:00Z
 ENV = {"MUSE_TZ": "UTC"}
@@ -126,7 +126,7 @@ def test_app_cap_is_a_guardrail_429(h, db):
 
 
 def test_ration_crash_degrades_but_keeps_paid_out(h, monkeypatch):
-    from muse import ration
+    from wardmuse import ration
 
     monkeypatch.setattr(ration, "ration", lambda *a, **k: 1 / 0)
     assert filt(h, [A, PP, L], req(OWNER)) == [A, L]
@@ -159,7 +159,7 @@ def test_paid_cap_reached(h, db):
 
 
 def test_reserve_from_observed_headers(h, db):
-    from muse.quota import ObservedLimit
+    from wardmuse.quota import ObservedLimit
 
     db.record_limits("freea:a", [ObservedLimit("day", "requests", 100, 20, NOW + 5 * 3600)], now=NOW)
     assert filt(h, [A, B], req(BATCH)) == [B]
@@ -264,7 +264,7 @@ def test_failure_records_app_and_releases_hold(h, db):
 
 
 def test_own_ration_errors_are_not_provider_failures(h, db):
-    from muse import ration
+    from wardmuse import ration
 
     decision = ration.Decision("defer", "yield", "[muse] yielding", NOW + 5)
     for exc in (MuseRationError(decision, "chat"), MuseAppCapError(decision), MuseDirectRationError(decision)):
@@ -273,7 +273,7 @@ def test_own_ration_errors_are_not_provider_failures(h, db):
 
 
 def test_notes_are_bounded(h):
-    from muse import hook as hook_module
+    from wardmuse import hook as hook_module
 
     for i in range(hook_module.NOTE_MAX + 50):
         h._note(f"c{i}")

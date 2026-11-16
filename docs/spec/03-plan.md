@@ -1,4 +1,4 @@
-# Muse v1 specification, part 3: the build plan
+# Wardmuse v1 specification, part 3: the build plan
 
 Written 2026-11-13. Part 1 is the modules (`01-architecture.md`); part 2 is the experience (`02-ux.md`); part 4 (`04-execution-plan.md`) breaks these milestones into work packages with sizes, a critical path and gates, and corrects this part's twelve-week estimate. This replaces the phase list in `docs/muse-plan.md` §10. The two phase-0 tests there still decide whether the rest is worth building, and they are folded into milestone 1 below.
 

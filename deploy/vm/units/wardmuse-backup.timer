@@ -1,0 +1,11 @@
+[Unit]
+Description=Wardmuse backup: daily
+
+[Timer]
+OnCalendar=*-*-* 02:10:00
+RandomizedDelaySec=20min
+Persistent=true
+Unit=wardmuse-backup.service
+
+[Install]
+WantedBy=timers.target

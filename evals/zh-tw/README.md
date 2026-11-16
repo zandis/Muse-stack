@@ -1,7 +1,7 @@
 # zh-TW evaluation set
 
 200 short tasks in Traditional Chinese as it is written in Taiwan, used by
-`scripts/eval_models.py` to rank the models a Muse proxy can reach. Work package
+`scripts/eval_models.py` to rank the models a Wardmuse proxy can reach. Work package
 A10 in `docs/spec/04-execution-plan.md`. How to run it: `docs/evals.md`.
 
 **This set was written by an AI model (Claude), not by a person from Taiwan. No

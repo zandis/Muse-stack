@@ -37,7 +37,7 @@ export async function startFakeHome({ state = 'normal', port, quiet = true } = {
   if (!STATES.includes(state)) throw new Error(`state must be one of ${STATES.join(', ')}`);
   const usePort = port ?? (await freePort());
   const python = process.env.MUSE_PYTHON || 'python3';
-  const child = spawn(python, ['-m', 'muse.home', '--fake', '--tcp', String(usePort), '--state', state], {
+  const child = spawn(python, ['-m', 'wardmuse.home', '--fake', '--tcp', String(usePort), '--state', state], {
     cwd: REPO_ROOT,
     env: { ...process.env, PYTHONPATH: [REPO_ROOT, process.env.PYTHONPATH].filter(Boolean).join(':'), PYTHONDONTWRITEBYTECODE: '1' },
     stdio: quiet ? ['ignore', 'ignore', 'pipe'] : 'inherit',

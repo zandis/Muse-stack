@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 from home_fakes import CARD_SCHEMA_PATH, OPENAPI_PATH, card_schema
-from muse.home import API_VERSION, api, cards, server
+from wardmuse.home import API_VERSION, api, cards, server
 
 METHODS = ("get", "post", "put", "patch", "delete", "head", "options", "trace")
 APP_STATUS_FIELDS = {"money", "activity", "local_runtime", "restart_pending"}  # added to the snapshot by muse/home/app_api.py
@@ -139,7 +139,7 @@ def test_stated_limits_match_the_code(spec):
     assert "512 KiB" in text and api.MAX_BODY_BYTES == 512 * 1024
     assert f"127.0.0.1:{server.DEFAULT_TCP_PORT}" in spec["servers"][0]["url"]
     job = spec["components"]["schemas"]["NewJob"]["properties"]
-    from muse import queue
+    from wardmuse import queue
 
     assert job["prompt"]["maxLength"] == queue.MAX_PROMPT_CHARS and job["prompts"]["maxItems"] == queue.MAX_BATCH_ITEMS
     assert job["max_tokens"]["default"] == queue.DEFAULT_MAX_TOKENS and job["max_attempts"]["default"] == queue.DEFAULT_MAX_ATTEMPTS
@@ -167,7 +167,7 @@ def test_the_card_schema_is_the_one_file(spec):
 
 
 def test_app_and_status_shapes_match_what_is_served(spec):
-    from muse.types import Snapshot
+    from wardmuse.types import Snapshot
 
     status = spec["components"]["schemas"]["Status"]
     assert set(status["properties"]) == set(Snapshot.__annotations__) | {"api_version"} | APP_STATUS_FIELDS
@@ -179,7 +179,7 @@ def test_app_and_status_shapes_match_what_is_served(spec):
 
 
 def test_every_operation_states_its_scope_and_roles_and_they_match_the_server(spec):
-    from muse.home import auth
+    from wardmuse.home import auth
 
     for route in api.ROUTES:
         op = spec["paths"][route.path][route.method.lower()]

@@ -16,9 +16,9 @@ import litellm  # noqa: E402
 from fastapi import HTTPException  # noqa: E402
 from litellm.integrations.custom_guardrail import is_guardrail_intervention  # noqa: E402
 
-from muse import hook as hook_module  # noqa: E402
-from muse.hook import MuseBlockedError, MuseHook, MusePrivacyError  # noqa: E402
-from muse.ledger import Ledger  # noqa: E402
+from wardmuse import hook as hook_module  # noqa: E402
+from wardmuse.hook import MuseBlockedError, MuseHook, MusePrivacyError  # noqa: E402
+from wardmuse.ledger import Ledger  # noqa: E402
 
 NOW = 1_794_466_800.0  # 2026-11-12T07:00:00Z
 
@@ -106,7 +106,7 @@ def test_auto_privacy_raises_class_without_keeping_text(db):
 
 
 def test_auto_privacy_detector_crash_fails_closed(db, monkeypatch):
-    from muse import policy
+    from wardmuse import policy
 
     def boom(*a, **k):
         raise RuntimeError("detector bug")
@@ -227,7 +227,7 @@ def test_ledger_failure_degrades_but_privacy_holds(h, monkeypatch):
 
 
 def test_policy_crash_fails_closed(h, monkeypatch):
-    from muse import policy
+    from wardmuse import policy
 
     monkeypatch.setattr(policy, "filter_deployments", lambda *a: 1 / 0)
     with pytest.raises(MusePrivacyError):
@@ -547,7 +547,7 @@ def test_live_mode_leaves_the_provider_base_url_alone(h):
 
 
 def test_replay_mode_returns_the_rewritten_call(db, tmp_path):
-    from muse import cassette
+    from wardmuse import cassette
 
     hook = MuseHook(ledger=db, clock=lambda: NOW, environ={
         "MUSE_PROVIDER_MODE": "replay", "MUSE_CASSETTE_DIR": str(tmp_path),

@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from muse import cache
-from muse.cache import CacheSettings, ExactCache
+from wardmuse import cache
+from wardmuse.cache import CacheSettings, ExactCache
 
 MSG = [{"role": "user", "content": "hello"}]
 

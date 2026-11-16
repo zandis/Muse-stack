@@ -11,8 +11,8 @@ import json
 import pytest
 
 from home_fakes import assert_error, card_schema, client_for, running, schema_errors
-from muse.home import api, cards, fake
-from muse.home.auth import StaticVerifier
+from wardmuse.home import api, cards, fake
+from wardmuse.home.auth import StaticVerifier
 
 ASKER, ASKER_TOKEN = "host-tools", "asker-device-token-for-tests"
 PHONE, PHONE_TOKEN = "my-phone", "phone-device-token-for-tests"

@@ -1,6 +1,7 @@
 """Records over the home API: what the home writes down itself, what a device may report, and what a reader sees."""
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import hashlib
 import json
@@ -14,10 +15,10 @@ import pytest
 pytest.importorskip("cryptography")
 
 from home_fakes import assert_error  # noqa: E402
-from muse import cli, keys  # noqa: E402
-from muse.home import api, auth  # noqa: E402
-from muse.records import format as fmt  # noqa: E402
-from muse.records.home import HomeRecords, records_path  # noqa: E402
+from wardmuse import cli, keys  # noqa: E402
+from wardmuse.home import api, auth  # noqa: E402
+from wardmuse.records import format as fmt  # noqa: E402
+from wardmuse.records.home import HomeRecords, records_path  # noqa: E402
 
 KEY_CANARY = "gsk_CANARYkey0123456789abcdefABCDEF"
 OWNER = auth.Device("mei-phone", role="owner")
@@ -69,7 +70,7 @@ def brief(record: dict) -> tuple:
 def test_a_home_with_no_records_says_so(home):
     assert ok(home, OWNER, "GET", "/v1/receipts") == {
         "records": [], "order": "newest_first", "next_before": None, "verify": {"ok": True, "size": 0}, "sealed": None, "device": None}
-    assert not (Path(os.environ["MUSE_HOME"]) / "device.key").exists()  # looking makes no key
+    assert not (Path(envget(os.environ, "MUSE_HOME")) / "device.key").exists()  # looking makes no key
 
 
 def test_records_come_newest_first_in_bounded_pages(home):
@@ -114,7 +115,7 @@ def test_filter_by_the_permission_a_record_ran_under(home):
 
 
 def test_export_is_the_file_anyone_can_check_and_only_the_person_may_make_it(home):
-    from muse.records.seal import verify_export
+    from wardmuse.records.seal import verify_export
 
     assert_error(*call(home, OWNER, "POST", "/v1/receipts/export", {}), 409, "conflict")  # nothing to export yet
     ok(home, OWNER, "POST", "/v1/pause")
@@ -456,6 +457,6 @@ def test_the_home_actions_table_is_the_one_the_format_document_lists():
     for family in (*api.HOME_ACTIONS, api.HOST_FAMILY):
         assert f"`{family}`" in doc, family
     assert "`host.…`" in doc and "never merely claimed by a bot" in doc
-    from muse.mcp import tools
+    from wardmuse.mcp import tools
 
     assert tools.HOST_FAMILY == api.HOST_FAMILY

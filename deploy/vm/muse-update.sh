@@ -40,11 +40,12 @@ case "${1:-}" in
   *) die "unknown option: $1 (try --help)" ;;
 esac
 
-BASE="${MUSE_BASE:-/opt/muse}"
-STATE="${MUSE_VM_STATE:-/var/lib/muse/vm}/update"
+BASE="$(wm_dir BASE /opt/wardmuse /opt/muse /opt/muse-stack)"
+VM_STATE="$(wm_dir VM_STATE /var/lib/wardmuse/vm /var/lib/muse/vm)"
+STATE="$VM_STATE/update"
 RUN_USER="${MUSE_USER:-muse}"
-STATE_ROOT="${MUSE_STATE_ROOT:-/var/lib/muse}"
-HOME_DIR="${MUSE_HOME:-$STATE_ROOT/home}"
+STATE_ROOT="$(wm_dir STATE_ROOT /var/lib/wardmuse /var/lib/muse)"
+if val="$(wm_env HOME)"; then HOME_DIR="$val"; else HOME_DIR="$STATE_ROOT/home"; fi
 MANIFEST_URL="${MUSE_UPDATE_MANIFEST_URL:-}"
 PUBKEY="${MUSE_UPDATE_PUBKEY:-}"
 RUNTIME="${MUSE_RUNTIME:-native}"
@@ -116,8 +117,11 @@ smoke_release() {
 }
 
 validate_release() {
-  local dir="$1" out last
-  if ! out="$(compose_release "$dir" run --rm --no-deps --entrypoint python litellm /opt/muse/scripts/validate_config.py 2>&1)"; then
+  local dir="$1" out last inner="/opt/muse/scripts/validate_config.py"
+  if [ -f "$dir/docker-compose.yml" ] && grep -q '/opt/wardmuse/scripts/' "$dir/docker-compose.yml"; then
+    inner="/opt/wardmuse/scripts/validate_config.py"
+  fi
+  if ! out="$(compose_release "$dir" run --rm --no-deps --entrypoint python litellm "$inner" 2>&1)"; then
     return 1
   fi
   last="$(printf '%s\n' "$out" | awk 'NF { line = $0 } END { print line }' | tr -d '\r')"
@@ -326,7 +330,7 @@ if ! ( build_release_env "$NEW" \
 fi
 
 install_units() {  # release-dir
-  bash "$1/deploy/vm/install-services.sh" --user "$RUN_USER" --root "$BASE/current" --venv "$BASE/current/venv" \
+  bash "$1/deploy/vm/install-services.sh" --names "$(unit_prefix)" --user "$RUN_USER" --root "$BASE/current" --venv "$BASE/current/venv" \
        --state "$STATE_ROOT" --base "$BASE" >/dev/null
   systemctl daemon-reload
 }

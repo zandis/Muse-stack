@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Muse",
+  "productName": "Wardmuse",
   "version": "0.1.0",
-  "identifier": "app.muse.desktop",
+  "identifier": "app.wardmuse.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://127.0.0.1:5173",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Muse",
+        "title": "Wardmuse",
         "url": "/today",
         "width": 1180,
         "height": 800,
@@ -23,7 +23,7 @@
       },
       {
         "label": "tray",
-        "title": "Muse",
+        "title": "Wardmuse",
         "url": "/tray",
         "width": 360,
         "height": 540,

@@ -6,6 +6,7 @@ each one stops by itself. The rule for skills that are NOT shipped (always `requ
 """
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import os
 import sys
@@ -14,9 +15,9 @@ from typing import Any
 
 import pytest
 
-from muse import sandbox
-from muse.sandbox import Policy
-from muse.sandbox.policy import ENV_UNSAFE_HOME_SKILLS
+from wardmuse import sandbox
+from wardmuse.sandbox import Policy
+from wardmuse.sandbox.policy import ENV_UNSAFE_HOME_SKILLS
 from test_skills_support import chat, env, proxy  # noqa: F401  (fixtures)
 
 FIXTURES = Path(__file__).resolve().parent / "sandbox_skills"
@@ -68,7 +69,7 @@ def box(env, tmp_path, monkeypatch):  # noqa: F811
     monkeypatch.setenv("MUSE_CANARY_SECRET", CANARY_ENV)
     monkeypatch.setenv("GROQ_API_KEY", CANARY_ENV)
     env = dict(env, MUSE_SKILLS_DIR=str(FIXTURES), MUSE_CANARY_SECRET=CANARY_ENV, GROQ_API_KEY=CANARY_ENV)
-    home = Path(env["MUSE_HOME"])
+    home = Path(envget(env, "MUSE_HOME"))
     (home / "canary.txt").write_text(CANARY_HOME, encoding="utf-8")
     docs = tmp_path / "docs"
     docs.mkdir()

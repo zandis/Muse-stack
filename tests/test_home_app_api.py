@@ -5,6 +5,7 @@ service is a tiny server on 127.0.0.1, and the key test is stubbed.
 """
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import http.server
 import json
@@ -18,8 +19,8 @@ from decimal import Decimal
 import pytest
 
 from home_fakes import assert_error
-from muse import keys
-from muse.home import api, app_api, app_ask, app_connect, app_money, auth, fake
+from wardmuse import keys
+from wardmuse.home import api, app_api, app_ask, app_connect, app_money, auth, fake
 
 OWNER = auth.Device("my-laptop", role="owner")
 HOST = auth.Device("a-bot", role="host")
@@ -28,7 +29,7 @@ CANARY = "what is the airspeed of an unladen swallow"
 
 
 def demo_snapshot() -> dict:
-    from muse.dashboard.server import demo_snapshot as demo
+    from wardmuse.dashboard.server import demo_snapshot as demo
 
     return demo()
 
@@ -89,7 +90,7 @@ def test_a_new_home_shows_nt30_and_the_router_agrees_from_the_start(home):
 
 
 def test_the_router_default_is_the_same_constant_and_nothing_is_written_by_reading(home, tmp_path):
-    from muse.ration import DEFAULT_PAID_CAP_USD, Settings, parse_paid_cap
+    from wardmuse.ration import DEFAULT_PAID_CAP_USD, Settings, parse_paid_cap
 
     assert DEFAULT_PAID_CAP_USD == Decimal("30") / Decimal("32") == Decimal("0.9375")
     assert parse_paid_cap(None) == DEFAULT_PAID_CAP_USD and parse_paid_cap("") == DEFAULT_PAID_CAP_USD
@@ -298,7 +299,7 @@ def test_the_store_drops_the_oldest(monkeypatch, tmp_path):
 
 
 def test_the_real_send_uses_the_homes_own_app_and_the_documented_headers(home, monkeypatch):
-    from muse import apps, queue
+    from wardmuse import apps, queue
 
     seen: list[tuple[str, dict, dict]] = []
 
@@ -415,7 +416,7 @@ def test_a_choice_that_was_not_offered_is_refused(home):
 
 @pytest.fixture()
 def folders(home, tmp_path):
-    from muse.home import folders as folder_list
+    from wardmuse.home import folders as folder_list
 
     feeds, out = tmp_path / "feeds", tmp_path / "out"
     feeds.mkdir()
@@ -450,7 +451,7 @@ def test_a_chore_is_understood_then_saved_listed_paused_edited_run_and_deleted(h
     backend = app_api.backend(home)
 
     def run_chore(store, run):
-        from muse.skills import chores
+        from wardmuse.skills import chores
 
         ran.append(run.id)
         chores._finish(store, run, "done", "3 source(s) summarised, 0 not read; saved")
@@ -501,7 +502,7 @@ def test_the_homes_own_cards_carry_a_title_key_and_a_hosts_card_cannot(home):
     assert plain["title_key"] is None and plain["params"] == {}
     assert_error(*call(home, "POST", "/v1/cards", {"kind": "message", "title": "Send", "thing": "x", "extra": {"preview": "hi"},
                                                     "title_key": "save_file_chore"}), 400, "invalid_request")
-    from muse.home.cards import CardError
+    from wardmuse.home.cards import CardError
 
     for key, params in (("Bad Key", None), ("ok", {"x": ["list"]}), ("ok", {"x": "a\nb"}), (None, {"x": "y"}),
                         ("ok", {"k": "gsk_" + "a1B2c3D4" * 5})):
@@ -512,7 +513,7 @@ def test_the_homes_own_cards_carry_a_title_key_and_a_hosts_card_cannot(home):
 def test_cards_made_before_the_new_columns_still_read(home):
     import sqlite3
 
-    from muse.home import cards
+    from wardmuse.home import cards
 
     card_id = home.cards.create(kind="save_file", title="Save a file", thing="a.md", extra={"size_bytes": 1})
     conn = sqlite3.connect(str(home.cards.path))
@@ -550,7 +551,7 @@ def test_services_lists_what_is_connected_what_to_add_and_the_rest(home, monkeyp
 
 
 def test_a_key_is_tested_with_one_request_and_never_shown(home, monkeypatch):
-    from muse import connect
+    from wardmuse import connect
 
     key = "gsk_" + "a1B2" * 8
     ok(home, "POST", "/v1/keys/groq", {"key": key})
@@ -622,7 +623,7 @@ class _Exchange(http.server.BaseHTTPRequestHandler):
 
 @pytest.fixture()
 def oauth(home):
-    from muse import connect
+    from wardmuse import connect
 
     _Exchange.seen = []
     server = http.server.HTTPServer(("127.0.0.1", 0), _Exchange)

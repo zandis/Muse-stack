@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from muse import probes
+from wardmuse import probes
 
 NOW = datetime(2026, 11, 12, 15, 30, tzinfo=timezone.utc)
 
@@ -50,8 +50,8 @@ def test_probe_never_raises_and_sends_bearer():
 
 
 def test_run_probes_records_to_ledger_and_snapshot(tmp_path):
-    from muse.ledger import Ledger
-    from muse.status import build_snapshot
+    from wardmuse.ledger import Ledger
+    from wardmuse.status import build_snapshot
 
     env = {"MUSE_HOME": str(tmp_path), "OPENROUTER_API_KEY": "k"}
     ledger = Ledger(environ=env)

@@ -128,7 +128,7 @@ install_units() {
   if [ "$NO_START" != "yes" ] && [ "$(id -u)" -eq 0 ]; then
     enable=(--enable)
   fi
-  bash "$HERE/install-services.sh" \
+  bash "$HERE/install-services.sh" --names muse \
     --user "$RUN_USER" --root "$BASE/current" --venv /usr \
     --state "$STATE_ROOT" --base "$BASE" --conf "$CONF" \
     --dest "$PREFIX/etc/systemd/system" \

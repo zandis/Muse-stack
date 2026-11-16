@@ -1,6 +1,7 @@
 """GatewayLLM against a scriptable local HTTP server (no LiteLLM needed)."""
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import json
 import threading
@@ -10,8 +11,8 @@ from typing import Any
 
 import pytest
 
-from muse.trust.contracts import LLMRefused, LLMUnavailable
-from muse.trust.llm import GatewayLLM, RequestTooLarge, UnverifiedRoute
+from wardmuse.trust.contracts import LLMRefused, LLMUnavailable
+from wardmuse.trust.llm import GatewayLLM, RequestTooLarge, UnverifiedRoute
 
 KEY = "sk-muse-test-SECRET-0123456789abcdef"
 GOOD = {"x-muse-provider": "local_openai", "x-muse-deployment": "local-model__smart", "x-muse-privacy": "local"}

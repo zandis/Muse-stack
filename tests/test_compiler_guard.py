@@ -5,6 +5,7 @@ needs biscuit-python and skips without it; what must hold WITHOUT the library (a
 """
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import json
 import os
@@ -13,10 +14,10 @@ from pathlib import Path
 
 import pytest
 
-from muse import permissions as P
-from muse.compiler import guard as guard_mod
-from muse.home import api, auth, folders
-from muse.skills import runner
+from wardmuse import permissions as P
+from wardmuse.compiler import guard as guard_mod
+from wardmuse.home import api, auth, folders
+from wardmuse.skills import runner
 from queue_fakes import FakeProxy  # noqa: F401
 from test_skills_support import chat, env, proxy, write_skill  # noqa: F401  (fixtures)
 
@@ -40,7 +41,7 @@ CANARY = "CANARY-GUARD-91c2"
 
 
 def grant(env, *, actions, resources, limits=(), privacy="private", confirm=None, holder="helper:home", routine=(), days=1):
-    from muse.compiler.core import Compiler
+    from wardmuse.compiler.core import Compiler
 
     c = Compiler(env)
     now = int(time.time())
@@ -88,14 +89,14 @@ def test_a_skill_that_does_not_ship_with_muse_is_always_enforced(monkeypatch):
 
 def test_advise_without_permissions_set_up_changes_nothing(env, proxy, tmp_path):
     docs, _, out = folders_for(tmp_path)
-    write_skill(env["MUSE_HOME"], code=READER, **READS)
+    write_skill(envget(env, "MUSE_HOME"), code=READER, **READS)
     result = runner.run("echo", {"path": str(docs / "a.txt"), "write": "c.txt"}, folders=[docs], out_dir=out, environ=env)
     assert result.status == "done" and len(result.writes) == 1 and result.permissions is None
     assert "permissions" not in result.public()
 
 
 def test_an_unknown_setting_fails_the_run_with_a_plain_reason(env, proxy):
-    write_skill(env["MUSE_HOME"], code=READER, **READS)
+    write_skill(envget(env, "MUSE_HOME"), code=READER, **READS)
     result = runner.run("echo", {}, environ={**env, "MUSE_PERMISSIONS": "loose"})
     assert result.status == "failed" and "MUSE_PERMISSIONS must be one of" in result.notes[0] and proxy.requests == []
 
@@ -106,7 +107,7 @@ def test_an_unknown_setting_fails_the_run_with_a_plain_reason(env, proxy):
 @needs_library
 def test_enforce_without_any_permission_refuses_before_anything_is_read_or_sent(env, proxy, tmp_path):
     docs, _, _ = folders_for(tmp_path)
-    write_skill(env["MUSE_HOME"], code=READER, **READS)
+    write_skill(envget(env, "MUSE_HOME"), code=READER, **READS)
     result = runner.run("echo", {"path": str(docs / "a.txt")}, folders=[docs], environ={**env, "MUSE_PERMISSIONS": "enforce"})
     assert result.status == "failed" and proxy.requests == []
     assert "Stopped before it started" in result.notes[0] and "no permission in force covers this skill" in result.notes[0]
@@ -115,7 +116,7 @@ def test_enforce_without_any_permission_refuses_before_anything_is_read_or_sent(
 @needs_library
 def test_enforce_allows_what_the_permission_names_and_refuses_an_ungranted_folder(env, proxy, tmp_path):
     docs, other, _ = folders_for(tmp_path)
-    write_skill(env["MUSE_HOME"], code=READER, **READS)
+    write_skill(envget(env, "MUSE_HOME"), code=READER, **READS)
     grant(env, actions=("files.read", "llm.call"), resources=(("folder", str(docs)), ("provider", "router"), ("home", "skill/echo")), privacy="standard")
     run_env = {**env, "MUSE_PERMISSIONS": "enforce"}
     seen = Records()
@@ -130,13 +131,13 @@ def test_enforce_allows_what_the_permission_names_and_refuses_an_ungranted_folde
     assert [(a, f["outcome"]) for a, _, f in seen.rows] == [("mandate.check", "declined")]
     assert seen.rows[0][1].startswith("Refused the skill echo when it went to read a folder")
     # A permission that names another skill does not cover this one.
-    write_skill(env["MUSE_HOME"], name="other", code=READER, **READS)
+    write_skill(envget(env, "MUSE_HOME"), name="other", code=READER, **READS)
     assert runner.run("other", {"path": str(docs / "a.txt")}, folders=[docs], environ=run_env).status == "failed"
 
 
 @needs_library
 def test_a_model_call_above_the_permissions_privacy_class_is_refused_before_it_is_sent(env, proxy):
-    write_skill(env["MUSE_HOME"], code=READER, **READS)  # the skill's default class is `standard`
+    write_skill(envget(env, "MUSE_HOME"), code=READER, **READS)  # the skill's default class is `standard`
     grant(env, actions=("llm.call",), resources=(("provider", "router"),), privacy="private")
     run_env = {**env, "MUSE_PERMISSIONS": "enforce"}
     result = runner.run("echo", {}, environ=run_env)
@@ -147,7 +148,7 @@ def test_a_model_call_above_the_permissions_privacy_class_is_refused_before_it_i
 
 @needs_library
 def test_a_paid_call_over_the_limit_is_refused_before_it_is_sent_and_usage_is_counted(env, proxy):
-    write_skill(env["MUSE_HOME"], code=READER, **READS)
+    write_skill(envget(env, "MUSE_HOME"), code=READER, **READS)
     _, m = grant(env, actions=("llm.call", "llm.paid"), resources=(("provider", "router"),), privacy="standard",
                  limits=(P.Limit("spend", "USD", 2, "day", 10),), confirm=P.Confirm("over_amount", "USD", 2, 100))
     run_env = {**env, "MUSE_PERMISSIONS": "enforce"}
@@ -157,7 +158,7 @@ def test_a_paid_call_over_the_limit_is_refused_before_it_is_sent_and_usage_is_co
     proxy.push(*chat("GOOD", provider="paidp", cost="0.040000"))
     ok = runner.run("echo", {}, budget={"paid_usd": 0.05}, environ=run_env)
     assert ok.status == "done" and proxy.requests[0]["headers"]["x-muse-allow-paid"] == "true"
-    from muse.compiler.core import Compiler
+    from wardmuse.compiler.core import Compiler
 
     assert Compiler(env).usage(m)[("spend", "USD", "day")] == 4  # four cents, from the router's cost header
     again = runner.run("echo", {}, budget={"paid_usd": 0.07}, environ=run_env)  # 4 used + up to 7 > 10
@@ -166,7 +167,7 @@ def test_a_paid_call_over_the_limit_is_refused_before_it_is_sent_and_usage_is_co
 
 @needs_library
 def test_a_paid_call_that_needs_approval_asks_and_spends_the_approval_once(env, proxy):
-    write_skill(env["MUSE_HOME"], code=READER, **READS)
+    write_skill(envget(env, "MUSE_HOME"), code=READER, **READS)
     grant(env, actions=("llm.call", "llm.paid"), resources=(("provider", "router"),), privacy="standard",
           limits=(P.Limit("spend", "USD", 2, "day", 100),))  # each_write: every payment is asked about
     run_env = {**env, "MUSE_PERMISSIONS": "enforce"}
@@ -187,7 +188,7 @@ def test_a_paid_call_that_needs_approval_asks_and_spends_the_approval_once(env, 
 @needs_library
 def test_advise_computes_the_same_decisions_records_them_and_blocks_nothing(env, proxy, tmp_path):
     docs, other, _ = folders_for(tmp_path)
-    write_skill(env["MUSE_HOME"], code=READER, **READS)
+    write_skill(envget(env, "MUSE_HOME"), code=READER, **READS)
     grant(env, actions=("files.read", "llm.call"), resources=(("folder", str(docs)), ("provider", "router")))
     seen = Records()
     result = runner.run("echo", {"path": str(other / "b.txt")}, folders=[other], environ={**env, "MUSE_PERMISSIONS": "advise"},
@@ -207,11 +208,11 @@ def test_advise_computes_the_same_decisions_records_them_and_blocks_nothing(env,
 
 @needs_library
 def test_the_sandbox_asks_the_same_check_before_it_does_what_a_skill_asked(env, proxy, monkeypatch):
-    from muse import sandbox
+    from wardmuse import sandbox
 
     if not sandbox.probe().can_require:
         pytest.skip("this machine cannot isolate a skill")
-    write_skill(env["MUSE_HOME"], code=READER, **READS)
+    write_skill(envget(env, "MUSE_HOME"), code=READER, **READS)
     grant(env, actions=("llm.call",), resources=(("provider", "router"),), privacy="private")
     calls = []
     real = guard_mod.Guard.sandbox_authorize
@@ -262,7 +263,7 @@ def _call(home, who, method, path, body=None):
 @needs_library
 def test_a_write_under_enforce_becomes_a_card_and_is_applied_once_after_approval(env, proxy, tmp_path, monkeypatch):
     docs, _, out = folders_for(tmp_path)
-    write_skill(env["MUSE_HOME"], name="writer", code=READER, **READS)
+    write_skill(envget(env, "MUSE_HOME"), name="writer", code=READER, **READS)
     folders.add("notes", docs)
     folders.add("reports", out, output=True)
     monkeypatch.setenv("MUSE_PERMISSIONS", "enforce")
@@ -284,7 +285,7 @@ def test_a_write_under_enforce_becomes_a_card_and_is_applied_once_after_approval
     last = home.records().records()[-1]
     assert last["action"] == "files.write" and last["mandate"] == m.id
     # Replay: the approval was spent, at the table and in the spent set.
-    from muse.compiler.guard import settle_write
+    from wardmuse.compiler.guard import settle_write
 
     assert settle_write(env, card_id)["reason"] == "already_used"
     parent = c.store.load(approval["token_name"], c.keys.public())
@@ -296,7 +297,7 @@ def test_a_write_under_enforce_becomes_a_card_and_is_applied_once_after_approval
 @needs_library
 def test_an_approved_write_is_refused_once_the_permission_was_stopped(env, proxy, tmp_path, monkeypatch):
     docs, _, out = folders_for(tmp_path)
-    write_skill(env["MUSE_HOME"], name="writer", code=READER, **READS)
+    write_skill(envget(env, "MUSE_HOME"), name="writer", code=READER, **READS)
     folders.add("notes", docs)
     folders.add("reports", out, output=True)
     monkeypatch.setenv("MUSE_PERMISSIONS", "enforce")

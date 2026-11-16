@@ -1,0 +1,11 @@
+[Unit]
+Description=Wardmuse catalogue check: weekly
+
+[Timer]
+OnCalendar=Sun *-*-* 04:20:00
+RandomizedDelaySec=30min
+Persistent=true
+Unit=wardmuse-catalog-check.service
+
+[Install]
+WantedBy=timers.target

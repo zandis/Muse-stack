@@ -466,7 +466,7 @@ describe('Today', () => {
     await renderApp(home);
     const box = await screen.findByTestId('unreachable');
     expect(within(box).getByText('Can’t reach your always-on helper.')).toBeTruthy();
-    expect(within(box).getByText('Muse tries again by itself.')).toBeTruthy();
+    expect(within(box).getByText('Wardmuse tries again by itself.')).toBeTruthy();
     fireEvent.click(within(box).getByRole('button', { name: 'Use this device for now' }));
     expect(screen.getByTestId('using-this-device')).toBeTruthy();
     home.state.fail = null;
@@ -629,6 +629,6 @@ describe('navigation and the other screens', () => {
     expect(screen.getByTestId('spending').textContent).toContain('NT$0 of NT$32');
     expect(screen.getAllByTestId('card')).toHaveLength(1);
     expect(screen.queryByRole('navigation')).toBeNull();
-    expect(screen.getByRole('link', { name: 'Open Muse' }).getAttribute('href')).toBe('/today');
+    expect(screen.getByRole('link', { name: 'Open Wardmuse' }).getAttribute('href')).toBe('/today');
   });
 });

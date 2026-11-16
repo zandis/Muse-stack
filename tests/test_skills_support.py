@@ -11,8 +11,8 @@ from typing import Any
 import pytest
 import yaml
 
-from muse import keys
-from muse.skills import loader
+from wardmuse import keys
+from wardmuse.skills import loader
 from queue_fakes import FakeProxy, completion
 
 OK_HEADERS = {"x-muse-provider": "freea", "x-muse-deployment": "a-model", "x-muse-cost-usd": "0.000000",

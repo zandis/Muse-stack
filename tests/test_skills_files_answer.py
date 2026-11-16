@@ -4,6 +4,7 @@ No network and no real provider: the router is queue_fakes.FakeProxy with script
 """
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import json
 import re
@@ -13,9 +14,9 @@ from pathlib import Path
 
 import pytest
 
-from muse import cli
-from muse.skills import loader, runner
-from muse.skills.workspace import Workspace
+from wardmuse import cli
+from wardmuse.skills import loader, runner
+from wardmuse.skills.workspace import Workspace
 from queue_fakes import embeddings, privacy_403, ration_429
 from test_skills_support import chat, env, proxy  # noqa: F401  (fixtures)
 
@@ -489,7 +490,7 @@ def test_missing_inputs_stop_before_anything_is_read(env, proxy, docs):
     assert result.status == "failed" and "Give a question" in result.notes[0]
     result = runner.run("files-answer", {"question": "x"}, environ=env)
     assert result.status == "failed" and "Name at least one folder" in result.notes[0]
-    assert proxy.requests == [] and not (Path(env["MUSE_HOME"]) / "skills-data").exists()
+    assert proxy.requests == [] and not (Path(envget(env, "MUSE_HOME")) / "skills-data").exists()
 
 
 def test_a_privacy_refusal_is_returned_never_downgraded(env, proxy, docs):
@@ -620,7 +621,7 @@ def test_no_file_content_reaches_events_notes_usage_or_the_terminal_log(env, pro
     index_event = next(e for e in result.events if e["kind"] == "skill.index")
     assert index_event["seen"] == 3 and index_event["read"] == 3 and index_event["chunks"] == 3
     # Outside the skill's own index (which is the text, by design) and the answer, MUSE_HOME holds none of it.
-    home = Path(env["MUSE_HOME"])
+    home = Path(envget(env, "MUSE_HOME"))
     for path in home.rglob("*"):
         if path.is_file() and path.parent != home / "skills-data" / "files-answer":
             assert CANARY.encode() not in path.read_bytes(), path

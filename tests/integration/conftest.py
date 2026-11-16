@@ -1,6 +1,7 @@
 """Real LiteLLM proxy + fake upstream harness. Skipped when litellm is not installed."""
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import json
 import os
@@ -139,10 +140,10 @@ class Proxy:
         catalog = self.catalog_builder(self.upstream)
         self.catalog_path.write_text(yaml.safe_dump(catalog, sort_keys=False))
         config, _ = render_config.render(catalog, self.env)
-        if self.env.get("MUSE_DISABLE_HOOK", "").strip().lower() in {"1", "true", "yes", "on"}:
+        if envget(self.env, "MUSE_DISABLE_HOOK", "").strip().lower() in {"1", "true", "yes", "on"}:
             assert "callbacks" not in config["litellm_settings"]  # the plain proxy, for LiteLLM-only behaviour
         else:
-            assert config["litellm_settings"]["callbacks"] == ["muse.hook.handler"]
+            assert config["litellm_settings"]["callbacks"] == ["wardmuse.hook.handler"]
         if self.post_render is not None:
             self.post_render(config)
         path = self.workdir / "litellm.yaml"

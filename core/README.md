@@ -1,6 +1,6 @@
 # muse-core
 
-The portable core of Muse: the pure rules from the Python package (`muse/`),
+The portable core of Wardmuse: the pure rules from the Python package (`muse/`),
 in Rust, for the desktop (Tauri) and phone apps. It does no I/O: no network,
 no files, no clock (`now` is always an argument), no async, no `unsafe`.
 

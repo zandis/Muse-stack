@@ -633,7 +633,7 @@ def test_deployments_paid_targets_and_the_app_token(fake, tmp_path, capsys, slee
 
 
 def test_a_background_app_token_that_may_not_pay_keeps_mixed_aliases_in(fake, tmp_path, capsys, sleeps):
-    from muse import apps
+    from wardmuse import apps
 
     env = environ(tmp_path, DEEPSEEK_API_KEY=PROVIDER_KEY)
     code, report = run(fake, tmp_path, "--yes", "--limit", "1", env=env)  # the master key may pay, and every alias can reach DeepSeek

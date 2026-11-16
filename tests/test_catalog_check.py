@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from muse import catalog, catalog_check as cc
-from muse import cli
+from wardmuse import catalog, catalog_check as cc
+from wardmuse import cli
 
 ROOT = Path(__file__).resolve().parents[1]
 TODAY = date(2026, 11, 20)
@@ -168,8 +168,8 @@ def test_fetch_refuses_anything_but_plain_https(url):
 
 
 def test_module_cannot_write_the_catalogue_or_send_a_key():
-    source = (ROOT / "muse" / "catalog_check.py").read_text(encoding="utf-8")
-    for banned in ("yaml.safe_dump", "yaml.dump", "from muse import keys", "muse.keys", "Authorization", "api_key", "webbrowser", "method=\"POST\""):
+    source = (ROOT / "wardmuse" / "catalog_check.py").read_text(encoding="utf-8")
+    for banned in ("yaml.safe_dump", "yaml.dump", "from wardmuse import keys", "muse.keys", "Authorization", "api_key", "webbrowser", "method=\"POST\""):
         assert banned not in source, banned
     assert "CATALOG_PATH" not in source and "write_text" in source  # the only write is the fingerprint file
     assert source.count("write_text") == 1  # state and report share one private, atomic writer that refuses config/
@@ -319,7 +319,7 @@ def test_one_pause_between_requests_to_the_same_host_and_none_across_hosts():
 
 
 def test_requests_carry_a_generic_client_name_and_nothing_else():
-    source = (ROOT / "muse" / "catalog_check.py").read_text(encoding="utf-8")
+    source = (ROOT / "wardmuse" / "catalog_check.py").read_text(encoding="utf-8")
     assert cc.USER_AGENT == "muse-catalog-check"
     assert 'headers={"User-Agent": USER_AGENT, "Accept": "text/html,text/plain,*/*"}' in source and source.count("headers=") == 1
     for banned in ("Cookie", "Referer", "platform.", "gethostname", "getpass", "uuid", "__version__"):

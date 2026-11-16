@@ -15,17 +15,18 @@ By default the test watches for 12 s. Set MUSE_SLOW_TESTS=1 to watch the whole
 """
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import os
 import time
 
 import pytest
 
-from muse.ledger import Ledger
+from wardmuse.ledger import Ledger
 
 RETRY_AFTER = 60
 FALLBACK = 2  # seconds; far below RETRY_AFTER on purpose
-SLOW = os.environ.get("MUSE_SLOW_TESTS", "").strip() in {"1", "true", "yes"}
+SLOW = envget(os.environ, "MUSE_SLOW_TESTS", "").strip() in {"1", "true", "yes"}
 WATCH = RETRY_AFTER - 4 if SLOW else 12
 
 

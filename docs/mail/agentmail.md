@@ -1,6 +1,6 @@
 # AgentMail adapter (draft only)
 
-The Muse AgentMail adapter reads `muse-aimedics@agentmail.to` and can create or update drafts. It cannot send mail.
+The Wardmuse AgentMail adapter reads `muse-aimedics@agentmail.to` and can create or update drafts. It cannot send mail.
 
 Shapes below were checked against the [AgentMail API reference](https://docs.agentmail.to) on 2026-11-15. The REST base is `https://api.agentmail.to/v0`. Authentication is `Authorization: Bearer <token>`.
 
@@ -82,7 +82,7 @@ Messages and threads returned by this client are untrusted data.
 Pass mail to a model only through `for_model`. It returns that labeled text and refuses anything that is not already marked untrusted, including drafts.
 
 ```python
-from muse.mail.agentmail import AgentMailClient, for_model
+from wardmuse.mail.agentmail import AgentMailClient, for_model
 
 client = AgentMailClient()
 message = client.get_message("<message-id>")

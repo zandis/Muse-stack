@@ -23,7 +23,7 @@ tmp="$STATE/catalog-check.json.tmp.$$"
 trap 'rm -f "$tmp"' EXIT
 
 status=0
-"$PY" -m muse catalog check --pages --json > "$tmp" || status=$?
+"$PY" -m wardmuse catalog check --pages --json > "$tmp" || status=$?
 if [ -s "$tmp" ]; then
   mv -f "$tmp" "$STATE/catalog-check.json"
 fi

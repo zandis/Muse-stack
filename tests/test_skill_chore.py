@@ -4,6 +4,7 @@ No network and no real provider: the router is queue_fakes.FakeProxy with script
 """
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import json
 import os
@@ -18,10 +19,10 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from muse import apps, cli, queue
-from muse.home.cards import CardStore
-from muse.skills import chores, loader, runner, schedule
-from muse.skills.schedule import ChoreStore, Spec
+from wardmuse import apps, cli, queue
+from wardmuse.home.cards import CardStore
+from wardmuse.skills import chores, loader, runner, schedule
+from wardmuse.skills.schedule import ChoreStore, Spec
 from queue_fakes import CANARY_REPLY, Clock, ration_429
 from test_skills_support import chat, env, proxy  # noqa: F401  (fixtures)
 
@@ -575,7 +576,7 @@ def test_claiming_a_run_is_exclusive_and_a_dead_runner_is_recovered(env, tmp_pat
 
 TICKER = """
 import sys, time
-from muse.skills.schedule import ChoreStore
+from wardmuse.skills.schedule import ChoreStore
 home, start, now = sys.argv[1], float(sys.argv[2]), float(sys.argv[3])
 store = ChoreStore({"MUSE_HOME": home})
 while time.time() < start:
@@ -595,7 +596,7 @@ def test_two_processes_ticking_at_once_do_not_queue_a_run_twice(env, tmp_path):
     due = ts(TPE, 2026, 11, 13, 8, 0)
     start = time.time() + 2.0
     child_env = {**os.environ, "PYTHONPATH": str(Path(schedule.__file__).resolve().parents[2])}
-    procs = [subprocess.Popen([sys.executable, "-c", TICKER, env["MUSE_HOME"], str(start), str(due)], stdout=subprocess.PIPE,
+    procs = [subprocess.Popen([sys.executable, "-c", TICKER, envget(env, "MUSE_HOME"), str(start), str(due)], stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, env=child_env, text=True) for _ in range(4)]
     outs = [p.communicate(timeout=60) for p in procs]
     assert all(p.returncode == 0 for p in procs), [e for _, e in outs]
@@ -721,11 +722,11 @@ def test_file_contents_never_reach_events_notes_or_the_stores(env, proxy, feeds,
         assert secret not in json.dumps(direct.used) and secret not in json.dumps(summary, ensure_ascii=False)
         assert secret not in printed.out and secret not in printed.err
         for name in ("chores.sqlite", "cards.sqlite", "apps.yaml"):
-            path = Path(env["MUSE_HOME"]) / name
+            path = Path(envget(env, "MUSE_HOME")) / name
             assert not path.exists() or secret.encode() not in path.read_bytes(), (secret, name)
-        record = Path(env["MUSE_HOME"]) / "skills-data" / SKILL
+        record = Path(envget(env, "MUSE_HOME")) / "skills-data" / SKILL
         assert not record.exists() or all(secret.encode() not in p.read_bytes() for p in record.rglob("*") if p.is_file())
-    pending = Path(env["MUSE_HOME"]) / "chores-pending" / f"{run.id}.md"
+    pending = Path(envget(env, "MUSE_HOME")) / "chores-pending" / f"{run.id}.md"
     assert CANARY_REPLY in pending.read_text()  # the digest itself, waiting for the answer: owner-only
     assert stat.S_IMODE(pending.stat().st_mode) == 0o600 and stat.S_IMODE(pending.parent.stat().st_mode) == 0o700
 
@@ -893,7 +894,7 @@ def test_a_run_that_did_not_deliver_does_not_swallow_the_changes_it_saw(env, pro
     assert later.status == "done" and later.output["new"] == ["b.md"]  # still reported: r2 never delivered it
     after = run_chore(env, "summarise-folder-changes", [folder], **args, run_id="r4", last_ok_run="r3")
     assert after.output["new"] == [] and any("Nothing changed" in n for n in after.notes)
-    record = Path(env["MUSE_HOME"]) / "skills-data" / SKILL / "changes-feed0001.json"
+    record = Path(envget(env, "MUSE_HOME")) / "skills-data" / SKILL / "changes-feed0001.json"
     saved = json.loads(record.read_text())
     assert set(saved["candidate"]) == {"a.md", "b.md"} and "Second file" not in record.read_text()  # names and sizes only
     assert stat.S_IMODE(record.stat().st_mode) == 0o600
@@ -915,7 +916,7 @@ def test_folder_changes_outside_a_chore_still_work_run_after_run(env, proxy, tmp
 
 
 def seed_yesterday(env, day: datetime) -> None:
-    from muse.ledger import Ledger
+    from wardmuse.ledger import Ledger
 
     stamp = day.timestamp()
     ledger = Ledger(environ=env, clock=lambda: stamp)
@@ -964,7 +965,7 @@ def test_the_daily_brief_counts_yesterday_and_needs_no_model(env, proxy, monkeyp
 
 
 def test_the_daily_brief_degrades_cleanly_when_records_cannot_be_read(env, proxy, monkeypatch):
-    home = Path(env["MUSE_HOME"])
+    home = Path(envget(env, "MUSE_HOME"))
     (home / "queue.sqlite").write_bytes(b"this is not a database")
     (home / "cards.sqlite").write_bytes(b"neither is this")
     result = run_chore(env, "daily-brief", budget={"requests": 0})
@@ -1011,7 +1012,7 @@ def test_tick_runs_a_due_chore_and_leaves_a_save_file_card(env, proxy, feeds, tm
     assert card["kind"] == "save_file" and card["status"] == "pending" and card["title"] == "Save a file"
     assert card["thing"] == "feed-digest-2026-11-16.md" and card["where"].endswith("/out")
     assert card["under"]["text"] == "Feed digest chore" and card["cost"] == {"nothing": True}
-    assert card["extra"]["size_bytes"] == len((Path(env["MUSE_HOME"]) / "chores-pending" / f"{run.id}.md").read_bytes())
+    assert card["extra"]["size_bytes"] == len((Path(envget(env, "MUSE_HOME")) / "chores-pending" / f"{run.id}.md").read_bytes())
     assert card["job_ref"] == f"chore:{chore.id}:{run.id}"
     after = store.get(chore.id)
     assert after.runs == 1 and after.last_status == "waiting_card" and local(after.next_run, TPE) == "2026-11-17 08:00"
@@ -1024,7 +1025,7 @@ def test_tick_runs_a_due_chore_and_leaves_a_save_file_card(env, proxy, feeds, tm
     assert written.read_text().startswith("# Feed digest · 2026-11-16") and stat.S_IMODE(written.stat().st_mode) == 0o600
     done = store.get_run(run.id)
     assert done.status == "done" and done.out_path == str(written) and done.summary.endswith("saved")
-    assert not (Path(env["MUSE_HOME"]) / "chores-pending" / f"{run.id}.md").exists()
+    assert not (Path(envget(env, "MUSE_HOME")) / "chores-pending" / f"{run.id}.md").exists()
     assert store.get(chore.id).last_status == "done" and store.get(chore.id).runs == 1
     assert store.last_ok_run(chore.id) == run.id
 
@@ -1036,7 +1037,7 @@ def test_a_declined_or_expired_card_writes_nothing_and_drops_the_pending_result(
     store, chore = chore_due(env, feeds, tmp_path, clock)
     chores.tick(env, clock=clock.now)
     run = store.runs(chore.id)[0]
-    pending = Path(env["MUSE_HOME"]) / "chores-pending" / f"{run.id}.md"
+    pending = Path(envget(env, "MUSE_HOME")) / "chores-pending" / f"{run.id}.md"
     assert pending.exists()
     if how == "decline":
         CardStore(env, clock=clock.now).answer(run.card_id, "decline", "phone")
@@ -1100,7 +1101,7 @@ def test_a_chore_that_fails_its_check_twice_says_so_in_counts_and_keeps_a_draft(
     run = store.runs(chore.id)[0]
     assert run.status == "needs_choice" and run.summary == "Couldn't finish: the digest missed 2 source(s)"
     assert run.card_id is None and CardStore(env).list() == []
-    draft = Path(env["MUSE_HOME"]) / "chores-pending" / f"{run.id}.draft.md"
+    draft = Path(envget(env, "MUSE_HOME")) / "chores-pending" / f"{run.id}.draft.md"
     assert draft.read_text().startswith("# Feed digest") and stat.S_IMODE(draft.stat().st_mode) == 0o600
     assert store.get(chore.id).last_status == "needs_choice" and store.last_ok_run(chore.id) == ""
 
@@ -1133,13 +1134,13 @@ def test_a_spare_allowance_chore_goes_out_as_the_background_app(env, proxy, feed
     chores.tick(env, clock=clock.now)
     registry = apps.load_apps(env)
     assert registry["skills-background"].priority == "background" and registry["skills-background"].allow_paid is False
-    token = env["MUSE_SKILLS_BACKGROUND_APP_TOKEN"]
+    token = envget(env, "MUSE_SKILLS_BACKGROUND_APP_TOKEN")
     assert {r["auth"] for r in proxy.requests} == {f"Bearer {token}"}  # every call as the background app
     assert "x-muse-allow-paid" not in proxy.requests[0]["headers"]
     assert store.runs(chore.id)[0].status == "waiting_card"
 
     ordinary = run_chore(env, "summarise-feeds", [feeds])
-    assert ordinary.status == "done" and proxy.requests[-1]["auth"] == f"Bearer {env['MUSE_SKILLS_APP_TOKEN']}"
+    assert ordinary.status == "done" and proxy.requests[-1]["auth"] == f"Bearer {envget(env, 'MUSE_SKILLS_APP_TOKEN')}"
     assert apps.load_apps(env)["skills"].priority == "normal"
 
 

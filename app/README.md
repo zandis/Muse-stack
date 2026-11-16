@@ -1,4 +1,4 @@
-# Muse app
+# Wardmuse app
 
 The real app's front end, and the desktop shell around it. This build is work packages **B1** (app shell), **B3** (Today and the tray panel) and **B7** (Records and Permissions) from `docs/spec/04-execution-plan.md`, with the navigation skeleton for the rest. The specification is `docs/spec/02-ux.md`; the look is the approved mock-up, `docs/mockups/index.html`.
 
@@ -13,7 +13,7 @@ MUSE_PYTHON=/path/to/venv/bin/python pnpm dev      # fake home + Vite on http://
 MUSE_FAKE_STATE=cards pnpm dev                     # normal | used | paused | cards | empty | error | mismatch
 ```
 
-`pnpm dev` starts `python -m muse.home --fake` on a free port and the Vite dev server with its proxy pointed at it. `MUSE_PYTHON` defaults to `python3`.
+`pnpm dev` starts `python -m wardmuse.home --fake` on a free port and the Vite dev server with its proxy pointed at it. `MUSE_PYTHON` defaults to `python3`. `WARDMUSE_FAKE_STATE` overrides `MUSE_FAKE_STATE`.
 
 Against a real home started with `muse home serve --tcp 4181`:
 
@@ -51,7 +51,7 @@ MUSE_HOME_PORT=4181 MUSE_HOME_TOKEN="$(cat ~/.muse/app.token)" pnpm exec vite
 
 The home sends no CORS headers, so a browser page cannot call it directly; that is why the proxy exists. It is a development tool, not a way to ship the app on the web.
 
-Errors become the UX §8 pattern (what happened, what Muse will do, one button): the home cannot be reached (network failure, `503 unavailable`, or a gateway error), this device is refused (`401`/`403`), or anything else. The server's own message text is never shown; the app uses its translated sentences.
+Errors become the UX §8 pattern (what happened, what Wardmuse will do, one button): the home cannot be reached (network failure, `503 unavailable`, or a gateway error), this device is refused (`401`/`403`), or anything else. The server's own message text is never shown; the app uses its translated sentences.
 
 ### Today
 
@@ -86,7 +86,7 @@ Errors become the UX §8 pattern (what happened, what Muse will do, one button):
 - **Data.** `GET /v1/mandates?lang=` (each permission with its facts: actions, resources, limits, privacy, and the compiler's per-place state), `GET /v1/mandates/declined?lang=`, the waiting `grant_permission` cards from the store, and `GET /v1/receipts?limit=200` for "Used N times" and when it was stopped.
 - **The sentence** is written by the app ("Your helper may spend up to NT$30 a day on 3 services, until 30 Nov."); when a permission allows something the app has no words for, the home's own sentence is shown. The home's lines are behind "In the home's own words".
 - **Marks.** One per place the compiler made something (helper tasks, using your allowances, records; spending limit, mail and calendar, health are grey "not built yet", never green). A mark that is not green says why.
-- **Stop.** Stop → "Stop this permission?" → Stop (two taps). The dialog then shows "Permission withdrawn" and each place turning off one at a time (450 ms apart; at once with reduced motion) from the home's answer to `POST /v1/mandates/{name}/stop`. A place that could not be turned off is shown as failed, with what Muse does by itself and Try again. A place that was never built is never called "turned off". Focus returns to Stop on Cancel, and to the stopped permission (now under "Stopped or ended") after a stop.
+- **Stop.** Stop → "Stop this permission?" → Stop (two taps). The dialog then shows "Permission withdrawn" and each place turning off one at a time (450 ms apart; at once with reduced motion) from the home's answer to `POST /v1/mandates/{name}/stop`. A place that could not be turned off is shown as failed, with what Wardmuse does by itself and Try again. A place that was never built is never called "turned off". Focus returns to Stop on Cancel, and to the stopped permission (now under "Stopped or ended") after a stop.
 - **Adding a permission.** Not in this build. UX 4.6 describes "Add" (type what to allow, approve with a passkey), but the home has no call that turns a sentence into a draft and no passkey check yet (`person_confirmed` is the owner role). Permissions arise from cards (section 5) and from For apps; the screen says so.
 - **Layout.** Phone: cards in one column. Desktop: cards on the left, the selected permission's history on the right.
 
@@ -103,7 +103,7 @@ src-tauri/
 
 - `home_request` → `muse-home-link`: a small hand-written HTTP/1.1 client over `UnixStream` (`MUSE_HOME/home.sock`; `127.0.0.1:4181` on Windows). Its only dependencies are `serde` and `serde_json`. It refuses any method or path the API does not define, so nothing can be smuggled into the request.
 - **The token** is read from `MUSE_HOME/app.token`, which must be a plain file with mode 0600 (not a link, not readable by others). To create it: `muse home token add desktop-app --show-token > ~/.muse/app.token && chmod 600 ~/.muse/app.token`. Pairing from inside the app, and the OS keystore, come with later packages (B2, B10, C2).
-- **Tray:** an icon with a menu (Open Muse, Small panel, Quit). A left click opens the panel beside the icon; on Linux, where tray icons send no click events, the menu opens instead. The panel hides when it loses focus.
+- **Tray:** an icon with a menu (Open Wardmuse, Small panel, Quit). A left click opens the panel beside the icon; on Linux, where tray icons send no click events, the menu opens instead. The panel hides when it loses focus.
 - For development against the fake home: `MUSE_HOME_TCP=<port>` and `MUSE_HOME_TOKEN_FILE=<file>`.
 
 System libraries on Ubuntu 24.04: `libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev build-essential`.

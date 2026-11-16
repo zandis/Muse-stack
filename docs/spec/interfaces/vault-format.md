@@ -361,7 +361,7 @@ key as the half-width one.
   bits, each an index into a 2048-word list.
 - Only the *encoding* of BIP-39 is used. There is no PBKDF2 "seed" step and
   no passphrase ("25th word"). The entropy is the slot secret directly; with
-  256 bits there is nothing to stretch. **A Muse recovery key is not a wallet
+  256 bits there is nothing to stretch. **A Wardmuse recovery key is not a wallet
   seed** and must never be typed into a wallet (UX section 4.8 keeps wallets
   on passkeys anyway).
 - **Languages.** English, Traditional Chinese, Japanese and Korean. The same

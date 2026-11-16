@@ -14,7 +14,7 @@ import re
 from dataclasses import replace
 from typing import Any, Callable
 
-from muse.trust.contracts import (
+from wardmuse.trust.contracts import (
     Action,
     Decision,
     Item,

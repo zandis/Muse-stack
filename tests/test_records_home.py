@@ -15,12 +15,12 @@ import pytest
 
 pytest.importorskip("cryptography")
 
-import muse.records as records  # noqa: E402
-from muse import cli, queue  # noqa: E402
-from muse.records import commands, home, vectors  # noqa: E402
-from muse.records.errors import RecordError  # noqa: E402
-from muse.records.home import DeviceKeyFile, HomeRecords  # noqa: E402
-from muse.records.store import SqliteRecordStore  # noqa: E402
+import wardmuse.records as records  # noqa: E402
+from wardmuse import cli, queue  # noqa: E402
+from wardmuse.records import commands, home, vectors  # noqa: E402
+from wardmuse.records.errors import RecordError  # noqa: E402
+from wardmuse.records.home import DeviceKeyFile, HomeRecords  # noqa: E402
+from wardmuse.records.store import SqliteRecordStore  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -112,7 +112,7 @@ def test_append_with_signs_under_the_write_lock(tmp_path):
 
 _WORKER = """
 import sys
-from muse.records.home import HomeRecords
+from wardmuse.records.home import HomeRecords
 home = HomeRecords()
 for i in range(int(sys.argv[2])):
     home.write("files.write", f"worker {sys.argv[1]} wrote item {i}", actor="helper", resource=f"file:/w{sys.argv[1]}/{i}")

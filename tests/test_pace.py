@@ -8,8 +8,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from muse import quota, ration
-from muse.ration import (
+from wardmuse import quota, ration
+from wardmuse.ration import (
     DEFER, HANDOFF_FIRST, ONEOFF_HELD, PACE, PAID_NOT_ALLOWED, REFUSE, RESERVE, YIELD, AppPolicy, Decision, Limit,
     Removed, Settings, State,
 )

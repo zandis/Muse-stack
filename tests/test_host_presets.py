@@ -6,6 +6,7 @@ installed: nothing here shows that a host works with Muse end to end.
 """
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import io
 import json
@@ -18,9 +19,9 @@ from pathlib import Path
 
 import pytest
 
-from muse import apps, cli, keys, presets
-from muse.home import auth
-from muse.mcp import hosts, server
+from wardmuse import apps, cli, keys, presets
+from wardmuse.home import auth
+from wardmuse.mcp import hosts, server
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "http://127.0.0.1:4000/v1"
@@ -85,7 +86,7 @@ def test_host_presets_are_well_formed_and_dated():
         if host.verified is not None:
             assert date.fromisoformat(host.verified) == checked and host.sources
             assert all(url.startswith("https://") for url in host.sources)
-        assert any("muse.mcp" in line and "--token-file" in line for line in host.tools)
+        assert any("wardmuse.mcp" in line and "--token-file" in line for line in host.tools)
         assert not any("pip install" in line for line in (*host.engine, *host.tools, *host.after))
 
 
@@ -115,12 +116,12 @@ def test_host_presets_do_not_change_the_app_presets():
 
 @pytest.mark.parametrize("kind", list(presets.HOSTS))
 def test_the_printed_snippet_holds_no_secret(kind):
-    from muse.catalog import find_secretlike
+    from wardmuse.catalog import find_secretlike
 
     host = presets.HOSTS[kind]
     text = hosts.snippet(host, BASE, "/home/me/.muse/host-x.token", python="/usr/bin/python3")
     assert find_secretlike(text.split()) == [] and apps.TOKEN_PREFIX not in text and auth.TOKEN_PREFIX not in text
-    assert "/usr/bin/python3" in text and "-m" in text and "muse.mcp" in text and "--token-file" in text
+    assert "/usr/bin/python3" in text and "-m" in text and "wardmuse.mcp" in text and "--token-file" in text
     assert "/home/me/.muse/host-x.token" in text
     assert ("Field names checked against the host's own pages" in text) == bool(host.verified)
     assert ("UNVERIFIED" in text) == (not host.verified)
@@ -143,7 +144,7 @@ def test_the_openmausbot_snippet_is_json_the_checker_itself_accepts(tmp_path):
     merged = {**blocks[0], **blocks[1]}
     assert merged["instances"]["muse"]["config"] == {"url": BASE, "apiKeyEnv": "MUSE_APP_KEY", "model": "auto"}
     assert merged["mcpServers"]["muse-tools"] == {"command": r"C:\Python\python.exe",
-                                                  "args": ["-m", "muse.mcp", "--token-file", r"C:\Users\me\.muse\host.token"]}
+                                                  "args": ["-m", "wardmuse.mcp", "--token-file", r"C:\Users\me\.muse\host.token"]}
     merged["instances"]["muse"]["environment"]["MUSE_APP_KEY"] = MUSE_KEY  # the one thing the person pastes in
     report = hosts.check_config(host, write(tmp_path, merged), BASE)
     assert report.exit_code == 0 and report.muse_engine is True and report.tools_server is True
@@ -161,7 +162,7 @@ def test_setup_creates_the_app_and_the_tools_token_and_prints_what_to_paste(monk
     assert out.count(token) == 1 and apps.find_by_token(token).name == "openmausbot" and "COPY THE KEY NOW" in out
     # The tools device exists; its token is in a private file and was never printed.
     assert [d.name for d in auth.list_devices()] == ["openmausbot-tools"]
-    token_file = Path(os.environ["MUSE_HOME"]) / "host-openmausbot.token"
+    token_file = Path(envget(os.environ, "MUSE_HOME")) / "host-openmausbot.token"
     assert stat.S_IMODE(token_file.stat().st_mode) == 0o600
     device_token = token_file.read_text(encoding="utf-8").strip()
     assert device_token.startswith(auth.TOKEN_PREFIX) and device_token not in out + err and auth.TOKEN_PREFIX not in out + err
@@ -171,7 +172,7 @@ def test_setup_creates_the_app_and_the_tools_token_and_prints_what_to_paste(monk
     settings = out.split("Settings for OpenMausBot")[1]
     assert token not in settings and presets.KEY_PLACEHOLDER in settings
     for want in (BASE, '"apiKeyEnv": "MUSE_APP_KEY"', '"model": "auto"', "fast, cheap, smart, long-context", sys.executable,
-                 '"-m", "muse.mcp", "--token-file"', str(token_file), "~/.openmausbot/config.json"):
+                 '"-m", "wardmuse.mcp", "--token-file"', str(token_file), "~/.openmausbot/config.json"):
         assert want in settings, want
     assert "Muse did not touch the host's files" in out and "docs/hosts/README.md" in out and "muse hosts check openmausbot" in out
     assert not (tmp_path / ".openmausbot").exists() and not (Path.home() / ".openmausbot" / "config.json.muse").exists()
@@ -181,14 +182,14 @@ def test_setup_refuses_to_print_a_key_into_a_pipe_and_creates_nothing(monkeypatc
     code, out, err = run(["hosts", "setup", "openmausbot"], monkeypatch)
     assert code == 2 and "Nothing was created" in err and apps.TOKEN_PREFIX not in out + err
     assert "openmausbot" not in apps.load_apps() and auth.list_devices() == []
-    assert not (Path(os.environ["MUSE_HOME"]) / "host-openmausbot.token").exists()
+    assert not (Path(envget(os.environ, "MUSE_HOME")) / "host-openmausbot.token").exists()
     code, out, err = run(["hosts", "setup", "openmausbot", "--show-token"], monkeypatch)
     assert code == 0 and "openmausbot" in apps.load_apps()
 
 
 def test_setup_twice_changes_nothing_the_second_time(monkeypatch):
     assert run(["hosts", "setup", "openmausbot"], monkeypatch, tty=True)[0] == 0
-    token_file = Path(os.environ["MUSE_HOME"]) / "host-openmausbot.token"
+    token_file = Path(envget(os.environ, "MUSE_HOME")) / "host-openmausbot.token"
     before = (token_file.read_bytes(), apps.load_apps()["openmausbot"].token_sha256)
     code, out, err = run(["hosts", "setup", "openmausbot"], monkeypatch, tty=True)
     assert code == 1 and "already exists" in err and "Nothing was created or changed" in err and apps.TOKEN_PREFIX not in out
@@ -202,7 +203,7 @@ def test_setup_twice_changes_nothing_the_second_time(monkeypatch):
 
 
 def test_setup_leaves_no_working_token_behind_when_the_file_cannot_be_written(monkeypatch):
-    blocker = Path(os.environ["MUSE_HOME"])
+    blocker = Path(envget(os.environ, "MUSE_HOME"))
     blocker.mkdir(parents=True, exist_ok=True)
     (blocker / "host-openmausbot.token").symlink_to(blocker / "elsewhere")  # a dangling link: never written through
     code, out, err = run(["hosts", "setup", "openmausbot"], monkeypatch, tty=True)
@@ -222,7 +223,7 @@ def test_show_prints_the_settings_again_and_creates_nothing(monkeypatch):
     code, out, err = run(["hosts", "show", "openmausbot"], monkeypatch)
     assert code == 0 and BASE in out and presets.KEY_PLACEHOLDER in out and "host-openmausbot.token" in out
     assert apps.load_apps() == {} or "openmausbot" not in apps.load_apps()
-    assert auth.list_devices() == [] and not Path(os.environ["MUSE_HOME"], "host-openmausbot.token").exists()
+    assert auth.list_devices() == [] and not Path(envget(os.environ, "MUSE_HOME"), "host-openmausbot.token").exists()
 
 
 def test_list_and_usage(monkeypatch):
@@ -412,7 +413,7 @@ def guide(name: str) -> str:
 
 def test_the_guides_say_what_is_and_is_not_protected():
     readme = guide("README.md")
-    from muse.mcp import SCOPE_NOTE
+    from wardmuse.mcp import SCOPE_NOTE
 
     assert SCOPE_NOTE in readme
     for want in ("never through a vendor", "Not** what the host does with its own shell and file tools", "`pay`", "planned",
@@ -421,7 +422,7 @@ def test_the_guides_say_what_is_and_is_not_protected():
     for tool in ("allowance_status", "suggest_service", "ask_approval", "check_approval", "check_permission", "record_action",
                  "queue_job", "job_status", "list_skills", "run_skill", "pause_status"):
         assert f"`{tool}`" in readme, tool
-    from muse.mcp import tools
+    from wardmuse.mcp import tools
 
     for tool in tools.TOOLS:  # every tool the server has is in the guide's table
         assert f"`{tool.name}`" in readme, tool.name
@@ -429,7 +430,7 @@ def test_the_guides_say_what_is_and_is_not_protected():
 
 
 def test_the_guides_say_what_a_host_token_can_and_cannot_do_and_it_is_what_the_home_enforces():
-    from muse.home import api, auth
+    from wardmuse.home import api, auth
 
     readme, mausbot = guide("README.md"), guide("openmausbot.md")
     for text in (readme, mausbot):
@@ -464,6 +465,6 @@ def test_the_openmausbot_guide_marks_every_step_it_could_not_run():
 
 
 def test_no_guide_or_preset_tells_anyone_to_install_unpinned_packages():
-    for path in [*(ROOT / "docs" / "hosts").glob("*.md"), ROOT / "muse" / "presets.py"]:
+    for path in [*(ROOT / "docs" / "hosts").glob("*.md"), ROOT / "wardmuse" / "presets.py"]:
         text = path.read_text(encoding="utf-8")
         assert not re.search(r"pip install (?!-e|'muse-stack\[mcp\]')", text), path.name

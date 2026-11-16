@@ -6,6 +6,7 @@ production. tests/test_mcp_stdio.py drives the same tools over real stdio.
 """
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import json
 import os
@@ -17,10 +18,10 @@ from pathlib import Path
 import pytest
 
 from home_fakes import client_for, running
-from muse.home import fake
-from muse.home.auth import StaticVerifier
-from muse.home.client import HomeClient
-from muse.mcp import SCOPE_NOTE, permission, server, skills, tools
+from wardmuse.home import fake
+from wardmuse.home.auth import StaticVerifier
+from wardmuse.home.client import HomeClient
+from wardmuse.mcp import SCOPE_NOTE, permission, server, skills, tools
 
 HOST, HOST_TOKEN = "host-tools", "sk-muse-dev-CANARYhostTOKEN0123456789abcdefXYZ"
 PHONE, PHONE_TOKEN = "my-phone", "phone-device-token-for-tests"
@@ -342,7 +343,7 @@ def test_check_approval_failures(rig):
 
 
 def test_too_many_waiting_questions_is_said_plainly(rig):
-    from muse.home import api
+    from wardmuse.home import api
 
     for _ in range(api.MAX_PENDING_PER_DEVICE):
         rig.call("ask_approval", {**ASK, "timeout_s": 0})
@@ -402,8 +403,8 @@ def test_check_permission_bad_input(rig):
 
 def test_record_action_writes_a_signed_record_on_the_home_and_returns_its_number_and_hash(rig):
     pytest.importorskip("cryptography")
-    from muse.records import format as fmt
-    from muse.records.home import HomeRecords
+    from wardmuse.records import format as fmt
+    from wardmuse.records.home import HomeRecords
 
     before = len(HomeRecords(rig.home.environ).records())
     got = rig.call("record_action", {"action": "saved a file", "summary": "Wrote the weekly digest.", "outcome": "done",
@@ -414,7 +415,7 @@ def test_record_action_writes_a_signed_record_on_the_home_and_returns_its_number
     assert (record["action"], record["actor"], record["mandate"], record["outcome"]) == ("host.saved_a_file", "helper", f"device:{HOST}", "ok")
     assert record["summary"] == "Wrote the weekly digest." and record["cost"] == {"currency": "TWD", "minor": 3000} and record["egress"] == "none"
     assert fmt.verify_chain(HomeRecords(rig.home.environ).records()) == before + 1
-    assert not list(Path(os.environ["MUSE_HOME"]).iterdir())  # written by the home, in the home's folder: no copy here
+    assert not list(Path(envget(os.environ, "MUSE_HOME")).iterdir())  # written by the home, in the home's folder: no copy here
     sent = rig.call("record_action", {"action": "message.send", "summary": "Sent a message", "outcome": "skipped", "sent_to": "service:gmail"})
     last = HomeRecords(rig.home.environ).records()[-1]
     assert sent["seq"] == before + 1 and (last["action"], last["outcome"], last["egress"]) == ("host.message.send", "declined", "service:gmail")
@@ -435,7 +436,7 @@ def test_record_action_writes_a_signed_record_on_the_home_and_returns_its_number
     ("a.b.c.d.e", "host.a_b_c_d_e"), ("host", "host.host"), ("host.", "host.x"),
 ])
 def test_a_hosts_action_name_is_always_filed_under_host(given, stored):
-    from muse.records import format as fmt
+    from wardmuse.records import format as fmt
 
     assert tools.record_action_name(given) == stored
     assert fmt._ACTION.match(stored) and stored.split(".")[0] == tools.HOST_FAMILY == "host"
@@ -643,7 +644,7 @@ def test_a_long_answer_is_cut_to_fit_and_says_so_and_proposed_files_are_listed_w
 
 def test_the_skills_bridge_imports_nothing_from_the_skills_package():
     source = Path(skills.__file__).read_text(encoding="utf-8")
-    assert "import muse.skills" not in source and "from muse.skills" not in source and "from muse import skills" not in source
+    assert "import wardmuse.skills" not in source and "from wardmuse.skills" not in source and "from wardmuse import skills" not in source
 
 
 # ---------------------------------------------------------------- input safety

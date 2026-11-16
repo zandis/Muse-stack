@@ -12,10 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from muse.trust import crypto
-from muse.trust.contracts import VaultError, VaultLocked
-from muse.trust.receipts import GENESIS, LocalReceiptLog, receipt_hash, verify_export
-from muse.trust.vault import LocalVault, iso_utc
+from wardmuse.trust import crypto
+from wardmuse.trust.contracts import VaultError, VaultLocked
+from wardmuse.trust.receipts import GENESIS, LocalReceiptLog, receipt_hash, verify_export
+from wardmuse.trust.vault import LocalVault, iso_utc
 
 PW = "correct horse battery staple"
 ROOT = Path(__file__).resolve().parents[1]
@@ -279,8 +279,8 @@ def test_concurrent_appends_two_processes(vault: LocalVault, tmp_path: Path) -> 
     script.write_text(
         "import sys\n"
         f"sys.path.insert(0, {str(ROOT)!r})\n"
-        "from muse.trust.vault import LocalVault\n"
-        "from muse.trust.receipts import LocalReceiptLog\n"
+        "from wardmuse.trust.vault import LocalVault\n"
+        "from wardmuse.trust.receipts import LocalReceiptLog\n"
         "v = LocalVault.open(sys.argv[1]); v.unlock(sys.stdin.readline().rstrip('\\n'))\n"
         "lg = LocalReceiptLog(v)\n"
         "for _ in range(40): lg.append('system', 'vault.read', detail='child')\n"

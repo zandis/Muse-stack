@@ -17,10 +17,10 @@ import pytest
 
 pytest.importorskip("cryptography")
 
-import muse.records as records  # noqa: E402
-from muse.records import format as fmt  # noqa: E402
-from muse.records import jcs, merkle, seal, vectors  # noqa: E402
-from muse.records.errors import KINDS, RecordError  # noqa: E402
+import wardmuse.records as records  # noqa: E402
+from wardmuse.records import format as fmt  # noqa: E402
+from wardmuse.records import jcs, merkle, seal, vectors  # noqa: E402
+from wardmuse.records.errors import KINDS, RecordError  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 SEED = bytes(range(32))

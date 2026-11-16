@@ -5,6 +5,7 @@ everywhere. The rest skips without the library.
 """
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import json
 import logging
@@ -14,9 +15,9 @@ from pathlib import Path
 import pytest
 
 from home_fakes import assert_error
-from muse import apps, keys
-from muse import permissions as P
-from muse.home import api, auth
+from wardmuse import apps, keys
+from wardmuse import permissions as P
+from wardmuse.home import api, auth
 
 needs_library = pytest.mark.skipif(not P.available(), reason="biscuit-python is not installed (pip install -e '.[permissions]')")
 
@@ -192,14 +193,14 @@ def test_an_expired_request_card_is_settled_as_expired(home):
     card = ok(home, HOST, "POST", "/v1/mandates", {"draft": draft["id"]}, status=202)["card"]
     home.clock.now += 2 * 86400
     assert ok(home, OWNER, "GET", "/v1/mandates")["mandates"] == []
-    from muse.compiler.table import Table
+    from wardmuse.compiler.table import Table
 
     assert Table(home.environ, home.clock).request(card["id"])["state"] == "expired"
 
 
 @needs_library
 def test_person_confirmed_is_the_one_place_the_owner_check_lives(home, monkeypatch):
-    from muse.home import mandates_api
+    from wardmuse.home import mandates_api
 
     draft = ok(home, OWNER, "POST", "/v1/mandates/draft", HELPER_FIELDS, status=201)["draft"]
     monkeypatch.setattr(mandates_api, "person_confirmed", lambda home, req: False)
@@ -226,8 +227,8 @@ def test_no_token_key_or_root_key_in_any_reply_record_or_log(home, caplog, capfd
     card = keep(home, HOST, "POST", "/v1/mandates", {"draft": hdraft["id"]}, status=202)["card"]
     keep(home, OWNER, "POST", f"/v1/cards/{card['id']}/answer", {"decision": "approve"})
     keep(home, HOST, "POST", "/v1/mandates/check", {"action": "read", "resource": "/x"})
-    from muse.compiler.core import Compiler
-    from muse.permissions.store import FileKeySource
+    from wardmuse.compiler.core import Compiler
+    from wardmuse.permissions.store import FileKeySource
 
     c = Compiler(home.environ)
     root_private = FileKeySource(environ=home.environ).path.read_text().strip()
@@ -242,7 +243,7 @@ def test_no_token_key_or_root_key_in_any_reply_record_or_log(home, caplog, capfd
     out, err = capfd.readouterr()
     logs = caplog.text + out + err
     record_text = json.dumps(home.records().records())
-    table_bytes = (Path(os.environ["MUSE_HOME"]) / "compiler.sqlite").read_bytes()
+    table_bytes = (Path(envget(os.environ, "MUSE_HOME")) / "compiler.sqlite").read_bytes()
     everything = "".join(replies)
     for s in secrets:
         assert s not in everything and s not in logs and s not in record_text and s.encode() not in table_bytes

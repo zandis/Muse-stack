@@ -9,7 +9,7 @@ Your keys never leave your machine. The script talks only to your local proxy, a
 
 ## Prerequisites
 
-- Muse installed: `pip install -e .` (add `".[keyring]"` to keep keys in the OS keychain).
+- Wardmuse installed: `pip install -e .` (add `".[keyring]"` to keep keys in the OS keychain).
 - At least one provider key set with `muse keys set NAME`. Free-tier keys are enough and are the point of the exercise.
 - The proxy running: `muse up` (or `muse up --native`). Check with `muse status`.
 - A terminal. The script asks you to confirm before it sends anything.
@@ -72,7 +72,7 @@ This is how the unconfirmed 429 parsers get confirmed. It deliberately triggers 
 python scripts/real_key_check.py --probe-limits --provider gemini --burst 25
 ```
 
-Pick the provider with `--provider` (a provider id from `muse status`; Gemini, OpenRouter and Cohere are the ones that matter). The script sends up to `--burst` requests (default 25, at most 60) until the provider answers 429, then stops. It records the status, the header names and numeric values, the shape of the error body with all text replaced by its length, which parser keywords the text contains (for example `per day`, `quota`), the "try again in" duration, and what Muse decided to do about it (blocked for how long). It never records the message text.
+Pick the provider with `--provider` (a provider id from `muse status`; Gemini, OpenRouter and Cohere are the ones that matter). The script sends up to `--burst` requests (default 25, at most 60) until the provider answers 429, then stops. It records the status, the header names and numeric values, the shape of the error body with all text replaced by its length, which parser keywords the text contains (for example `per day`, `quota`), the "try again in" duration, and what Wardmuse decided to do about it (blocked for how long). It never records the message text.
 
 ## What each result means
 

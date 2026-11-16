@@ -12,9 +12,9 @@ pytest.importorskip("litellm")
 
 from fastapi import HTTPException  # noqa: E402
 
-from muse import apps, quota, ration  # noqa: E402
-from muse.hook import MuseBlockedError, MuseDirectRationError, MuseHook, MuseRationError, apply_ceiling  # noqa: E402
-from muse.ledger import Ledger  # noqa: E402
+from wardmuse import apps, quota, ration  # noqa: E402
+from wardmuse.hook import MuseBlockedError, MuseDirectRationError, MuseHook, MuseRationError, apply_ceiling  # noqa: E402
+from wardmuse.ledger import Ledger  # noqa: E402
 
 NOW = 1_794_466_800.0  # 2026-11-12T07:00:00Z
 ENV = {"MUSE_TZ": "UTC"}

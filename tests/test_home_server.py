@@ -1,6 +1,7 @@
 """muse.home.server: the transport. Socket modes, size limits, timeouts, Host checks, no CORS."""
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import json
 import logging
@@ -13,8 +14,8 @@ from pathlib import Path
 import pytest
 
 from home_fakes import TOKEN, assert_error, client_for, raw_exchange, running, short_dir, split_response, verifier
-from muse.home import api, server
-from muse.home.client import HomeClient
+from wardmuse.home import api, server
+from wardmuse.home.client import HomeClient
 
 AUTH = f"Authorization: Bearer {TOKEN}\r\n".encode()
 
@@ -34,7 +35,7 @@ def get(srv, target: bytes, extra: bytes = b"", host: bytes = b"localhost") -> t
 def test_the_default_socket_is_private_inside_a_private_folder(home):
     srv = server.make_server(home, verifier())
     try:
-        path = Path(os.environ["MUSE_HOME"]) / "home.sock"
+        path = Path(envget(os.environ, "MUSE_HOME")) / "home.sock"
         assert srv.socket_path == path and srv.where == f"unix:{path}" and not srv.is_tcp
         assert stat.S_ISSOCK(path.stat().st_mode)
         assert stat.S_IMODE(path.stat().st_mode) == 0o600

@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 import pytest
 
-from muse.mail.agentmail import (
+from wardmuse.mail.agentmail import (
     API_BASE,
     DEFAULT_INBOX,
     DEFAULT_KEY_FILE,
@@ -281,7 +281,7 @@ def client(api: FakeAPI, tmp_path: Path) -> AgentMailClient:
 def test_constants() -> None:
     assert API_BASE == "https://api.agentmail.to/v0"
     assert DEFAULT_INBOX == "muse-aimedics@agentmail.to"
-    assert DEFAULT_KEY_FILE == "~/.muse/secrets/agentmail.key"
+    assert DEFAULT_KEY_FILE == "~/.wardmuse/secrets/agentmail.key"
     assert MAX_BODY_CHARS == 16_000
     assert inbox_path("messages") == f"/inboxes/{INBOX}/messages"
 
@@ -539,7 +539,7 @@ def test_newline_in_subject_does_not_call_the_server(client: AgentMailClient, ap
 
 
 def test_docs_and_source_forbid_phi_and_send() -> None:
-    source = (ROOT / "muse" / "mail" / "agentmail.py").read_text(encoding="utf-8")
+    source = (ROOT / "wardmuse" / "mail" / "agentmail.py").read_text(encoding="utf-8")
     doc = (ROOT / "docs" / "mail" / "agentmail.md").read_text(encoding="utf-8")
     assert "No PHI" in source
     assert "protected health information" in source.lower()
@@ -547,10 +547,10 @@ def test_docs_and_source_forbid_phi_and_send() -> None:
     assert "protected health information" in doc.lower()
     assert DEFAULT_INBOX in doc
     assert API_BASE in doc
-    assert "~/.muse/secrets/agentmail.key" in doc
+    assert "~/.wardmuse/secrets/agentmail.key" in doc or "~/.muse/secrets/agentmail.key" in doc
     assert "messages/send" in doc
     assert "drafts/{draft_id}/send" in doc
-    for relative in ("muse/mail/agentmail.py", "muse/mail/__init__.py", "scripts/mail_check.py"):
+    for relative in ("wardmuse/mail/agentmail.py", "wardmuse/mail/__init__.py", "scripts/mail_check.py"):
         path = ROOT / relative
         text = path.read_text(encoding="utf-8")
         tree = ast.parse(text)

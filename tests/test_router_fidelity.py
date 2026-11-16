@@ -14,9 +14,9 @@ import urllib.request
 
 import pytest
 
-from muse.fakeprov import FakeProvider
-from muse.ledger import Ledger
-from muse.quota import classify_failure
+from wardmuse.fakeprov import FakeProvider
+from wardmuse.ledger import Ledger
+from wardmuse.quota import classify_failure
 
 NOW = 1_794_466_800.0  # 2026-11-12T07:00:00Z, the quota tests' clock
 

@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from muse import catalog as catalog_mod
+from wardmuse import catalog as catalog_mod
 
 litellm = pytest.importorskip("litellm")
 ROOT = Path(__file__).resolve().parents[2]

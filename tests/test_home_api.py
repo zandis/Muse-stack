@@ -6,6 +6,7 @@ is the dotenv file in tmp.
 """
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import json
 import logging
@@ -16,8 +17,8 @@ from pathlib import Path
 import pytest
 
 from home_fakes import DEVICE, TOKEN, assert_error, card_schema, client_for, running, schema_errors
-from muse import apps, keys, queue
-from muse.home import api
+from wardmuse import apps, keys, queue
+from wardmuse.home import api
 
 # Canaries: each must never appear in a reply or a log line (the app tokens only in the one reply that issues them).
 KEY_CANARY = "gsk_CANARYkey0123456789abcdefABCDEF"
@@ -77,7 +78,7 @@ def rig(tmp_path, monkeypatch):
 
 
 def test_status_is_the_snapshot_plus_api_version(rig):
-    from muse.status import build_snapshot
+    from wardmuse.status import build_snapshot
 
     snap = rig.ok("GET", "/v1/status")
     direct = build_snapshot()
@@ -90,7 +91,7 @@ def test_status_is_the_snapshot_plus_api_version(rig):
 
 
 def test_status_uses_the_settings_in_the_env_file_as_muse_status_does_and_never_holds_the_keys(rig, monkeypatch):
-    from muse.status import build_snapshot
+    from wardmuse.status import build_snapshot
 
     monkeypatch.delenv("MUSE_DAILY_PAID_CAP_USD", raising=False)
     rig.env_file.write_text(
@@ -133,7 +134,7 @@ def test_status_failure_is_a_plain_503_without_the_exception(rig, caplog):
 
 def test_pause_and_resume_are_the_same_switch_as_the_cli(rig):
     assert rig.ok("POST", "/v1/pause") == {"paused": True, "recorded": True}
-    assert queue.is_paused() and (Path(os.environ["MUSE_HOME"]) / "paused").exists()
+    assert queue.is_paused() and (Path(envget(os.environ, "MUSE_HOME")) / "paused").exists()
     assert rig.ok("GET", "/v1/status")["paused"] is True
     assert rig.ok("POST", "/v1/pause") == {"paused": True, "recorded": True}  # idempotent
     assert rig.ok("POST", "/v1/resume") == {"paused": False, "was_paused": True, "recorded": True}
@@ -149,7 +150,7 @@ def test_pause_and_resume_are_the_same_switch_as_the_cli(rig):
 
 
 def test_catalogue_lists_every_service_with_connection_state(rig):
-    from muse import catalog
+    from wardmuse import catalog
 
     cat = rig.ok("GET", "/v1/catalogue")
     real = catalog.load_catalog()
@@ -169,7 +170,7 @@ def test_connect_returns_the_catalogues_steps_and_opens_nothing(rig, monkeypatch
     import webbrowser
 
     monkeypatch.setattr(webbrowser, "open", lambda *a, **k: pytest.fail("the server must not open a browser"))
-    from muse import catalog
+    from wardmuse import catalog
 
     real = next(p for p in catalog.load_catalog().providers if p.id == "gemini")
     got = rig.ok("POST", "/v1/connect/gemini")
@@ -224,7 +225,7 @@ def test_a_key_of_an_unexpected_shape_is_stored_with_a_warning_that_does_not_quo
 
 
 def test_extra_settings_travel_in_also(rig):
-    from muse import catalog
+    from wardmuse import catalog
 
     cf = next(p for p in catalog.load_catalog().providers if p.id == "cloudflare")
     extra = cf.also_env[0]
@@ -281,7 +282,7 @@ def test_a_job_is_queued_listed_shown_and_cancelled_without_its_prompt(rig):
     assert (job.task, job.alias) == ("light", "auto")  # the routing rules' default for the queue app
     assert job.allow_paid is False and job.privacy is None
     assert made == job.public() and "payload" not in made and "prompt" not in made
-    assert made["out_path"].startswith(os.environ["MUSE_HOME"])  # results stay in the home's own folder
+    assert made["out_path"].startswith(envget(os.environ, "MUSE_HOME"))  # results stay in the home's own folder
     assert rig.ok("GET", "/v1/jobs") == {"jobs": [made]}
     assert rig.ok("GET", f"/v1/jobs/{made['id']}") == {"job": made}
     assert rig.ok("GET", "/v1/jobs?status=running,done") == {"jobs": []}
@@ -475,7 +476,7 @@ def test_a_malformed_registry_is_reported_and_never_overwritten(rig):
 
 
 def test_the_permissions_list_answers_or_says_the_library_is_missing(rig):
-    from muse import permissions as P
+    from wardmuse import permissions as P
 
     if P.available():
         assert rig.ok("GET", "/v1/mandates/artifacts")["mandates"] == []
@@ -572,7 +573,7 @@ def test_key_shaped_input_is_refused_everywhere_but_the_keys_call(rig, key, capl
     assert rig.ok("GET", f"/v1/cards/{card}")["card"]["status"] == "pending"
     assert not rig.home.is_paused() and not rig.env_file.exists()
     for name in ("queue.sqlite", "cards.sqlite", "apps.yaml"):
-        path = Path(os.environ["MUSE_HOME"]) / name
+        path = Path(envget(os.environ, "MUSE_HOME")) / name
         assert not path.exists() or key.encode() not in path.read_bytes()
 
 
@@ -625,7 +626,7 @@ def test_no_secret_or_prompt_in_any_reply_or_log_line(rig, caplog, capfd):
         rig.ok("POST", "/v1/receipts", {"action": "files.write", "summary": "Wrote a file"}, status=201)
         rig.fails("POST", "/v1/receipts", {"action": "files.write", "summary": PROMPT_CANARY + "\nsecond line"}, 400, "invalid_request")
         rig.ok("GET", "/v1/receipts")
-        from muse import permissions as P
+        from wardmuse import permissions as P
 
         if P.available():
             rig.ok("GET", "/v1/mandates")
@@ -647,6 +648,6 @@ def test_no_secret_or_prompt_in_any_reply_or_log_line(rig, caplog, capfd):
     assert "POST /v1/keys/{provider} -> 200 test-phone" in caplog.text  # the log does say what happened
     # The secrets are where they belong and nowhere else under MUSE_HOME.
     assert KEY_CANARY in rig.env_file.read_text()
-    for path in Path(os.environ["MUSE_HOME"]).rglob("*"):
+    for path in Path(envget(os.environ, "MUSE_HOME")).rglob("*"):
         if path.is_file():
             assert KEY_CANARY.encode() not in path.read_bytes(), path

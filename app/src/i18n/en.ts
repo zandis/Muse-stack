@@ -4,8 +4,8 @@
 // "Refills at", Permission, Record, Always-on helper. Strings marked (mock-up)
 // are taken from docs/mockups/index.html unchanged.
 export const en = {
-  brand: 'Muse',
-  doc_title: '{0} · Muse',
+  brand: 'Wardmuse',
+  doc_title: '{0} · Wardmuse',
   skip: 'Skip to the content',
   menu_main: 'Main menu',
 
@@ -95,24 +95,24 @@ export const en = {
   ch_r_open_fail: 'Could not open {0}. Nothing spent.',
   ch_r_spend: 'Paying for a single job comes in a later build. Nothing spent.',
 
-  // Home unreachable and errors (section 8): what happened, what Muse will do, one button
+  // Home unreachable and errors (section 8): what happened, what Wardmuse will do, one button
   un_t: 'Can’t reach your always-on helper. Last seen {0}.',
   un_t_never: 'Can’t reach your always-on helper.',
-  un_will: 'Muse tries again by itself.',
+  un_will: 'Wardmuse tries again by itself.',
   un_use: 'Use this device for now',
   un_using: 'Using this device for now.',
   un_using_b: 'Ask works while the app is open. Chores wait until your always-on helper is back.',
   er_generic_t: 'Something went wrong while talking to your helper.',
-  er_generic_w: 'Muse tries again by itself.',
+  er_generic_w: 'Wardmuse tries again by itself.',
   er_auth_t: 'This device is not allowed to talk to your helper.',
-  er_auth_w: 'Nothing was changed. Muse keeps trying.',
+  er_auth_w: 'Nothing was changed. Wardmuse keeps trying.',
   er_card_answered_t: 'That was already answered on another device.',
   er_card_expired_t: 'That card ran out of time, so nothing was done.',
-  er_card_gone_w: 'Muse has updated the list.',
+  er_card_gone_w: 'Wardmuse has updated the list.',
   er_card_t: 'That did not go through. Nothing was changed.',
   er_card_w: 'The card is back, so you can try again.',
   er_pause_t: 'The pause switch did not go through.',
-  er_pause_w: 'Muse put it back the way it was.',
+  er_pause_w: 'Wardmuse put it back the way it was.',
   dismiss: 'Dismiss',
 
   // Cards (section 5)
@@ -158,7 +158,7 @@ export const en = {
   mo_services: '{0} connected',
   mo_services0: 'Nothing connected yet',
   mo_permissions: 'What your helper is allowed to do',
-  mo_devices: 'Where Muse runs',
+  mo_devices: 'Where Wardmuse runs',
   mo_settings: 'Spending limit, privacy, language, recovery key',
   mo_nowallet: 'Wallet appears here the first time you use a paid feature.',
   ask_empty_t: 'What do you want done now?',
@@ -375,7 +375,7 @@ export const en = {
   sv_removed: '{0} disconnected.',
   sv_add_h: 'Add a service',
   sv_add_b: 'The ones that add the most allowance for the least time come first.',
-  sv_add_none: 'Every service Muse knows is connected.',
+  sv_add_none: 'Every service Wardmuse knows is connected.',
   sv_min: '{0} min',
   sv_card: 'needs a card',
   sv_no_card: 'no card',
@@ -385,7 +385,7 @@ export const en = {
   sv_other_h: 'Other allowances',
   sv_other_b: 'Storage and computing you can use for free. Shown here; your helper does not manage them yet.',
   sv_subs_h: 'Your subscriptions',
-  sv_subs_b: 'Muse never signs in to these. It only opens them with your question.',
+  sv_subs_b: 'Wardmuse never signs in to these. It only opens them with your question.',
   gf_everyday: 'everyday questions',
   gf_quick: 'fast answers',
   gf_long: 'long documents',
@@ -464,7 +464,7 @@ export const en = {
 
   // First run (section 3)
   fr_welcome: 'Welcome',
-  fr_about: 'Muse is a helper that does small jobs using the free allowances of services you sign up for. It spends nothing unless you say so.',
+  fr_about: 'Wardmuse is a helper that does small jobs using the free allowances of services you sign up for. It spends nothing unless you say so.',
   fr_continue: 'Continue',
   fr_service: 'Your first service',
   fr_local: 'Use the AI on this computer instead',
@@ -520,7 +520,7 @@ export const en = {
   rc_checked_bad_any: 'Checked just now: your records do not check out.',
   rc_bad: 'Record {0} does not match the ones around it.',
   rc_bad_any: 'Your records do not check out.',
-  rc_bad_w: 'Muse has marked it and keeps protecting the rest.',
+  rc_bad_w: 'Wardmuse has marked it and keeps protecting the rest.',
   rc_bad_btn: 'What this means',
   rc_bad_x: 'Each record is linked to the one before it. A mismatch means this one may have been changed after it was written, or the file is damaged. Keep the records as they are, and export them for someone you trust to check once they check out again.',
   rc_kind_summary_mismatch: 'What it says was changed after it was written.',
@@ -567,7 +567,7 @@ export const en = {
   rc_s_you: 'You',
   rc_s_helper: 'Your helper',
   rc_s_program: 'The program “{0}”',
-  rc_s_muse: 'Muse',
+  rc_s_muse: 'Wardmuse',
   // what was done ({0} is who)
   rc_a_pause: '{0} paused everything.',
   rc_a_resume: '{0} resumed everything.',
@@ -596,7 +596,7 @@ export const en = {
   rc_a_host_save: '{0} says it saved a file.',
   rc_a_host_send: '{0} says it sent a message.',
   rc_a_host_other: '{0} reported something it did.',
-  rc_a_other: '{0} did something Muse has no words for yet.',
+  rc_a_other: '{0} did something Wardmuse has no words for yet.',
   rc_o_failed: 'It did not work.',
   rc_o_declined: 'It was declined.',
   rc_o_undone: 'It undid an earlier action.',
@@ -657,10 +657,10 @@ export const en = {
   rc_export_none: 'There are no records to export yet.',
   rc_export_failed: 'The file could not be made. Nothing was changed.',
   rc_export_how: 'How someone checks it',
-  rc_export_how_v: 'On a computer with Muse: muse records check-file {0}. Give them this home’s signature another way (read it out), so they know the file is yours.',
+  rc_export_how_v: 'On a computer with Wardmuse: wardmuse records check-file {0}. Give them this home’s signature another way (read it out), so they know the file is yours.',
   // problems
   rc_problem: 'Can’t reach your home, so your records can’t be shown.',
-  rc_problem_kept: 'Showing what was known before. Muse tries again by itself.',
+  rc_problem_kept: 'Showing what was known before. Wardmuse tries again by itself.',
 
   // Permissions (section 4.6)
   pm2_waiting: 'Waiting for your decision',
@@ -748,7 +748,7 @@ export const en = {
   pm2_done: 'Stopped. A new line is in Records.',
   pm2_done_unrecorded: 'Stopped. The record of stopping could not be written.',
   pm2_partial: 'Stopped, but one part could not be turned off yet.',
-  pm2_partial_will: 'The permission itself is withdrawn, so every check already refuses it. Muse keeps trying to remove what is left, by itself.',
+  pm2_partial_will: 'The permission itself is withdrawn, so every check already refuses it. Wardmuse keeps trying to remove what is left, by itself.',
   pm2_retry: 'Try again',
   pm2_stop_failed: 'It could not be stopped. Nothing was changed.',
   pm2_stop_failed_will: 'Check that your home is on, then try again.',
@@ -763,8 +763,8 @@ export const en = {
   pm2_problem: 'Can’t reach your home, so your permissions can’t be shown.',
 
   // Tray panel (section 2.2)
-  tray_aria: 'Muse menu-bar panel',
-  tray_open: 'Open Muse',
+  tray_aria: 'Wardmuse menu-bar panel',
+  tray_open: 'Open Wardmuse',
 } as const;
 
 export type Key = keyof typeof en;

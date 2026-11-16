@@ -33,7 +33,7 @@ python3 scripts/chores_check.py --yes --sample 5 --seed 0 --record tests/cassett
 Then:
 
 1. Read the diff. A cassette holds response text. It must not hold a prompt, a key, or an auth header.
-2. `python3 -c "from pathlib import Path; from muse.cassette import secret_problems; print(secret_problems(Path('tests/cassettes')))"` prints nothing when the directory is clean. `tests/test_cassette.py` runs the same check.
+2. `python3 -c "from pathlib import Path; from wardmuse.cassette import secret_problems; print(secret_problems(Path('tests/cassettes')))"` prints nothing when the directory is clean. `tests/test_cassette.py` runs the same check.
 3. Commit the directory. CI stays on `replay` and on `muse/fakeprov`. It does not call Groq, Gemini, or OpenRouter.
 
 Replay matches on the hash of the raw request body. A change to a prompt, a skill, or `max_tokens` is a new request and a miss (HTTP 404) until that call is recorded again. Record the new shape, review it, and replace the old file.

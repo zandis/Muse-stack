@@ -1,5 +1,5 @@
-"""`python -m muse` is the same as the `muse` console script."""
+"""Deprecated. Prefer ``python -m wardmuse``."""
 
-from muse.cli import main
+from wardmuse.cli import main
 
 raise SystemExit(main())

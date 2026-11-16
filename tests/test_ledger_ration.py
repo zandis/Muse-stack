@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from muse.ledger import HOLD_SECONDS, SCHEMA_VERSION, Ledger
+from wardmuse.ledger import HOLD_SECONDS, SCHEMA_VERSION, Ledger
 
 TPE = ZoneInfo("Asia/Taipei")
 NY = ZoneInfo("America/New_York")
@@ -69,7 +69,7 @@ def test_migrates_a_schema_1_file(tmp_path):
 def test_migration_is_idempotent_and_a_newer_schema_is_still_refused(tmp_path):
     path = old_db(tmp_path / "old.sqlite")
     Ledger(path).recent()
-    from muse import ledger as ledger_mod
+    from wardmuse import ledger as ledger_mod
 
     ledger_mod._initialised.clear()
     Ledger(path).recent()  # second init: columns exist, nothing re-added
@@ -216,7 +216,7 @@ def test_rations_and_limits_many(db):
     db.record_ration(app="batch", priority="background", alias="fast", kind="defer", code="yield", now=NOW)
     db.record_ration(app="bot", priority="interactive", alias="fast", kind="refuse", code="paid-cap", now=NOW - 86400)
     assert db.ration_counts(now=NOW, tz=TPE) == {("batch", "defer", "yield"): 2}
-    from muse.quota import ObservedLimit
+    from wardmuse.quota import ObservedLimit
 
     db.record_limits("a", [ObservedLimit("day", "requests", 100, 20, NOW + 60)], now=NOW)
     db.record_limits("provider:x", [ObservedLimit("minute", "tokens", 10, 1, None)], now=NOW)

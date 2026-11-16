@@ -10,7 +10,108 @@
 
 # shellcheck shell=bash
 
-MUSE_VM_CONF="${MUSE_VM_CONF:-/etc/muse/vm.conf}"
+# WARDMUSE_* wins when it is set and non-blank. Otherwise MUSE_* is used.
+wm_env() {
+  local suffix="$1" new="WARDMUSE_$1" old="MUSE_$1"
+  if [ -n "${!new:-}" ]; then printf '%s' "${!new}"; return 0; fi
+  if [ -n "${!old:-}" ]; then printf '%s' "${!old}"; return 0; fi
+  return 1
+}
+
+# Copy WARDMUSE_* onto MUSE_* when the old name is unset, so the rest of these
+# scripts can keep reading MUSE_*. A blank new value does not count.
+promote_env() {
+  local name suffix old names
+  names="$(compgen -e || true)"
+  while IFS= read -r name; do
+    case "$name" in
+      WARDMUSE_*)
+        suffix="${name#WARDMUSE_}"
+        old="MUSE_${suffix}"
+        if [ -z "${!old:-}" ] && [ -n "${!name:-}" ]; then
+          printf -v "$old" '%s' "${!name}"
+          # shellcheck disable=SC2163
+          export "$old"
+        fi
+        ;;
+    esac
+  done <<< "$names"
+}
+
+# Directory: explicit env, else the new path when it exists or the old ones do
+# not, else the first old path that exists.
+wm_dir() {
+  local suffix="$1" new="$2" val old
+  shift 2
+  if val="$(wm_env "$suffix")"; then printf '%s' "$val"; return; fi
+  if [ -e "$new" ]; then printf '%s' "$new"; return; fi
+  for old in "$@"; do
+    if [ -e "$old" ]; then printf '%s' "$old"; return; fi
+  done
+  printf '%s' "$new"
+}
+
+wm_file() {
+  local suffix="$1" new="$2" val old
+  shift 2
+  if val="$(wm_env "$suffix")"; then printf '%s' "$val"; return; fi
+  if [ -f "$new" ]; then printf '%s' "$new"; return; fi
+  for old in "$@"; do
+    if [ -f "$old" ]; then printf '%s' "$old"; return; fi
+  done
+  printf '%s' "$new"
+}
+
+resolve_vm_conf() {
+  if [ -n "${WARDMUSE_VM_CONF:-}" ]; then printf '%s' "$WARDMUSE_VM_CONF"; return; fi
+  if [ -n "${MUSE_VM_CONF:-}" ]; then printf '%s' "$MUSE_VM_CONF"; return; fi
+  if [ -f /etc/wardmuse/vm.conf ]; then printf '%s' /etc/wardmuse/vm.conf; return; fi
+  if [ -f /etc/muse/vm.conf ]; then printf '%s' /etc/muse/vm.conf; return; fi
+  printf '%s' /etc/wardmuse/vm.conf
+}
+
+# Keep the old compose project while its container is still the one that exists.
+wm_compose_project() {
+  local val
+  if val="$(wm_env COMPOSE_PROJECT)"; then printf '%s' "$val"; return; fi
+  if command -v docker >/dev/null 2>&1; then
+    if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx 'muse-stack-litellm-1'; then
+      if ! docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx 'wardmuse-litellm-1'; then
+        printf '%s' muse-stack
+        return
+      fi
+    fi
+  fi
+  printf '%s' wardmuse
+}
+
+# wardmuse-* on a new machine. muse-* when that is what systemd already runs,
+# so an update does not start a second copy of the proxy.
+unit_prefix() {
+  if [ -n "${WARDMUSE_UNIT_PREFIX:-}" ]; then printf '%s' "$WARDMUSE_UNIT_PREFIX"; return; fi
+  if [ -n "${MUSE_UNIT_PREFIX:-}" ]; then printf '%s' "$MUSE_UNIT_PREFIX"; return; fi
+  if command -v systemctl >/dev/null 2>&1; then
+    if systemctl is-enabled wardmuse-proxy.service >/dev/null 2>&1; then printf '%s' wardmuse; return; fi
+    if systemctl cat muse-proxy.service >/dev/null 2>&1; then printf '%s' muse; return; fi
+  fi
+  printf '%s' wardmuse
+}
+
+long_running_units() {
+  local p
+  p="$(unit_prefix)"
+  printf '%s' "$p-proxy.service $p-home.service $p-queue.service $p-vm-monitor.service"
+}
+
+timer_units() {
+  local p
+  p="$(unit_prefix)"
+  printf '%s' "$p-chores.timer $p-catalog-check.timer $p-backup.timer $p-update.timer"
+}
+
+MUSE_VM_CONF="$(resolve_vm_conf)"
+export MUSE_VM_CONF
+promote_env
 
 say()  { printf '==> %s\n' "$*"; }
 warn() { printf 'warning: %s\n' "$*" >&2; }
@@ -31,6 +132,7 @@ load_conf() {
       export "$name"
     fi
   done < "$file"
+  promote_env
 }
 
 # A release name must be a fixed version, never a branch or a moving tag.
@@ -96,8 +198,10 @@ build_release_env() {
   "$dir/venv/bin/python" "$dir/scripts/verify_litellm.py" \
       || die "the installed LiteLLM did not pass scripts/verify_litellm.py"
   # The CLI must start from this tree with this environment.
-  PYTHONPATH="$dir" "$dir/venv/bin/python" -m muse version >/dev/null \
-      || die "the muse CLI in $dir does not start"
+  if ! PYTHONPATH="$dir" "$dir/venv/bin/python" -m wardmuse version >/dev/null 2>&1 \
+     && ! PYTHONPATH="$dir" "$dir/venv/bin/python" -m muse version >/dev/null 2>&1; then
+    die "the wardmuse CLI in $dir does not start"
+  fi
 }
 
 # Every TCP listener must be on loopback. Arguments: extra allowed "addr:port" patterns.
@@ -193,7 +297,8 @@ compose_release() {
   local dir="$1"
   shift
   local bin="${MUSE_DOCKER:-docker}"
-  local project="${MUSE_COMPOSE_PROJECT:-muse-stack}"
+  local project
+  project="$(wm_compose_project)"
   local env_file="${MUSE_ENV_FILE:-}"
   local -a cmd
   cmd=("$bin" compose -p "$project" --project-directory "$dir" -f "$dir/docker-compose.yml")
@@ -229,7 +334,8 @@ ping_healthchecks() {
 }
 
 # Used by the scripts that source this file (bootstrap.sh, muse-update.sh).
+# Computed when the script runs, after systemd units may already be installed.
 # shellcheck disable=SC2034
-MUSE_LONG_RUNNING="muse-proxy.service muse-home.service muse-queue.service muse-vm-monitor.service"
+MUSE_LONG_RUNNING="$(long_running_units)"
 # shellcheck disable=SC2034
-MUSE_TIMERS="muse-chores.timer muse-catalog-check.timer muse-backup.timer muse-update.timer"
+MUSE_TIMERS="$(timer_units)"

@@ -143,7 +143,7 @@ test.describe('Today, more states', () => {
     await page.getByTestId('pause').click();
     const box = page.getByTestId('unreachable');
     await expect(box).toContainText(/Can’t reach your always-on helper\. Last seen \d\d:\d\d\./, { timeout: 15_000 });
-    await expect(box).toContainText('Muse tries again by itself.');
+    await expect(box).toContainText('Wardmuse tries again by itself.');
     await expect(page.getByTestId('gauge-percent')).toHaveText(percent ?? '');
     await expect(page.getByTestId('paused-bar')).toHaveCount(0); // the pause did not happen, so it is not shown
     await expect(page.getByTestId('notice')).toHaveAttribute('data-notice', 'pause_failed');
@@ -409,7 +409,7 @@ test.describe('navigation', () => {
       const h1 = page.getByRole('heading', { level: 1 });
       await expect(h1).toContainText(name);
       await expect(h1).toBeFocused();
-      await expect(page).toHaveTitle(`${name} · Muse`);
+      await expect(page).toHaveTitle(`${name} · Wardmuse`);
       await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
       await noSidewaysScroll(page);
       await axeClean(page);
@@ -526,7 +526,7 @@ test.describe('tray panel', () => {
     await page.getByTestId('tray-pause').click();
     await expect.poll(async () => (await stack.home('GET', '/v1/status')).body.paused).toBe(true);
     await expect(page.getByTestId('paused-bar')).toBeVisible();
-    await page.getByRole('link', { name: 'Open Muse' }).click();
+    await page.getByRole('link', { name: 'Open Wardmuse' }).click();
     await expect(page).toHaveURL(/\/today$/);
     expect(w.problems).toEqual([]);
   });

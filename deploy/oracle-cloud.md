@@ -4,7 +4,7 @@ The first host can be any small Linux box with Docker. This note is the later mo
 
 Two ways to set the VM up:
 
-- **One button, no terminal:** [deploy/oracle-stack/README.md](oracle-stack/README.md). A Resource Manager stack creates the VM (2 OCPU and 12 GB), a network with no inbound rule, and a private bucket for encrypted backups; first boot installs a pinned, checksum-verified Muse release. Not yet tried on a real account.
+- **One button, no terminal:** [deploy/oracle-stack/README.md](oracle-stack/README.md). A Resource Manager stack creates the VM (2 OCPU and 12 GB), a network with no inbound rule, and a private bucket for encrypted backups; first boot installs a pinned, checksum-verified Wardmuse release. Not yet tried on a real account.
 - **By hand, over SSH:** the rest of this page and `deploy/oracle-a1-setup.sh`.
 
 ## Shape

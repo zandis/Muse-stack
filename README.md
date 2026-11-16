@@ -1,12 +1,15 @@
-# muse-stack
+# Wardmuse
 
-Self-hosted OpenAI-compatible gateway for [Muse AIMedics](https://github.com/zandis/muse-stack). One LiteLLM proxy load-balances and falls back across free and cheap LLM, embedding, and rerank APIs. Clients call aliases (`fast`, `smart`, `cheap`, `long-context`, `vision`, `embed`, `rerank`). The router picks a deployment that has a key, and on a rate limit or error it tries the next one.
+> **Wardmuse** (守繆思) is the new name of this project. It was called Muse, and this repository was called Muse stack. The `wardmuse` command is the one to use. `muse` still runs and prints a deprecation warning. New installs use `~/.wardmuse`, `/etc/wardmuse`, `/opt/wardmuse` and `WARDMUSE_*`. An existing `~/.muse`, `/etc/muse`, `/opt/muse`, `/opt/muse-stack` or `MUSE_*` variable is still read when the new one is not there. The GitHub repository stays [zandis/Muse-stack](https://github.com/zandis/Muse-stack) until it is renamed; GitHub will redirect. How a VM moves is in [docs/deploy/update.md](docs/deploy/update.md#moving-a-vm-from-muse-paths-to-wardmuse).
+
+
+Self-hosted OpenAI-compatible gateway for [Wardmuse AIMedics](https://github.com/zandis/muse-stack). One LiteLLM proxy load-balances and falls back across free and cheap LLM, embedding, and rerank APIs. Clients call aliases (`fast`, `smart`, `cheap`, `long-context`, `vision`, `embed`, `rerank`). The router picks a deployment that has a key, and on a rate limit or error it tries the next one.
 
 The first host is a small Linux box with Docker. The later host is an Oracle Cloud Always Free ARM VM in US West (San Jose). See [deploy/oracle-cloud.md](deploy/oracle-cloud.md).
 
 ## Resource manager
 
-`muse` is a command-line tool and a local dashboard for one person's own AI
+`wardmuse` is a command-line tool and a local dashboard for one person's own AI
 resources: your API keys, your free-tier quotas, and models running on your
 machine. It sits on top of the proxy and adds what the proxy lacks.
 
@@ -17,14 +20,14 @@ stops calling a provider that says stop.
 ```bash
 pip install -e .            # add ".[keyring]" to store keys in the OS keychain
 pip install --require-hashes -r requirements/pdf.lock   # optional: lets the files skills read PDFs (pypdf, pure Python)
-muse keys set GEMINI_API_KEY   # prompts; a key is never taken from the command line
-muse local discover --write    # find Ollama / LM Studio / llama.cpp models, if any
-muse up                        # start the proxy (Docker). `muse up --native` if litellm is installed
+wardmuse keys set GEMINI_API_KEY   # prompts; a key is never taken from the command line
+wardmuse local discover --write    # find Ollama / LM Studio / llama.cpp models, if any
+wardmuse up                        # start the proxy (Docker). `wardmuse up --native` if litellm is installed
                                # (install it with: pip install --require-hashes -r requirements/proxy.lock)
-muse status                    # providers, quotas, reset countdowns, recent calls
-muse dash                      # the same as a page on http://127.0.0.1:4180
-muse ask "hello" --alias fast --privacy local --show-route
-muse doctor                    # what is misconfigured and how to fix it
+wardmuse status                    # providers, quotas, reset countdowns, recent calls
+wardmuse dash                      # the same as a page on http://127.0.0.1:4180
+wardmuse ask "hello" --alias fast --privacy local --show-route
+wardmuse doctor                    # what is misconfigured and how to fix it
 ```
 
 What it adds:
@@ -43,11 +46,11 @@ What it adds:
   `MUSE_AUTO_PRIVACY=on`, a prompt that contains an API key, a national ID
   number or clinical-document markers is raised to `private`; this detector is
   a safety net with real gaps, not a guarantee.
-- **A usage ledger** in `~/.muse/ledger.sqlite`: which deployment answered,
+- **A usage ledger** in `~/.wardmuse/ledger.sqlite`: which deployment answered,
   status, tokens, latency and privacy class. No prompt or response text and no
   key is ever stored.
 - **Quota and reset tracking** from provider rate-limit headers and 429
-  responses. `muse status --probe` also asks OpenRouter, the one provider with
+  responses. `wardmuse status --probe` also asks OpenRouter, the one provider with
   a quota endpoint. Where a provider reports nothing (Gemini), limits show as
   unknown until a 429 says otherwise.
 - **Local models as first-class deployments.** Set `OLLAMA_API_BASE`,
@@ -68,7 +71,7 @@ response headers go with it:
 
 - `x-muse-min-output: raised:<from>-><to>`, for example `raised:16->256`. The
   request set `max_tokens`, `max_completion_tokens` or `max_output_tokens`
-  below the floor of the deployment that answered, and Muse sent `<to>` to that
+  below the floor of the deployment that answered, and Wardmuse sent `<to>` to that
   provider instead. `<from>` is the smallest cap the request carried. When a
   task's ceiling (`x-muse-task`) is itself below the floor, the floor wins for
   that deployment, because an empty answer is worse than a slightly longer one,
@@ -82,21 +85,21 @@ response headers go with it:
 - `x-muse-answer: empty-reasoning`. A 200 whose answer has no visible text
   and no tool call, and which either stopped at the length limit or reports
   reasoning tokens: the model used its whole allowance thinking. Ask again
-  with a longer reply allowed (`muse ask` prints this hint). The body is passed
+  with a longer reply allowed (`wardmuse ask` prints this hint). The body is passed
   on unchanged and nothing from it is logged or stored. Streamed responses do
   not carry this header, because headers are sent before the answer is known.
 
 - `x-muse-reasoning: <value>`, for example `low`. The deployment that answered
   carries a `reasoning` setting in `config/providers.yaml` (for example
   `reasoning: {param: reasoning_effort, light: low, everyday: low}`, rendered
-  as `model_info.muse_reasoning`) and Muse sent that parameter with that value
+  as `model_info.muse_reasoning`) and Wardmuse sent that parameter with that value
   for the request's task, because the client had not set it. Shipped on the
   Groq gpt-oss deployments and Cerebras gpt-oss-120b: `reasoning_effort`
   (low/medium/high) is documented for those models on
   https://console.groq.com/docs/reasoning and
   https://inference-docs.cerebras.ai/capabilities/reasoning (both read
   2026-11-13), and LiteLLM 1.108.5 passes it through for `groq/` and
-  `cerebras/`. It drops it for `nvidia_nim/` and `novita/` (Muse renders
+  `cerebras/`. It drops it for `nvidia_nim/` and `novita/` (Wardmuse renders
   `drop_params: true`, so it would silently do nothing), so those have no
   setting. Lower effort is a request to think less, not a limit: Cerebras
   says the levels do not reserve an exact token budget. `low` is the lowest
@@ -134,31 +137,31 @@ reports, not official documentation, and are marked `unconfirmed` in
 
 ### Keeping the catalogue honest
 
-Every fact in `config/providers.yaml` and `config/resources/*.yaml` is dated (`checked_on`) and cites the provider's own page (`source_urls`). `muse catalog check` only reads:
+Every fact in `config/providers.yaml` and `config/resources/*.yaml` is dated (`checked_on`) and cites the provider's own page (`source_urls`). `wardmuse catalog check` only reads:
 
 ```bash
-muse catalog check            # which entries were checked more than 30 days ago (no network)
-muse catalog check --pages    # fetch each source page once; say which ones changed since the last check
-muse catalog check --leads    # names on a public lead list that the catalogue lacks (names to look up, not facts)
+wardmuse catalog check            # which entries were checked more than 30 days ago (no network)
+wardmuse catalog check --pages    # fetch each source page once; say which ones changed since the last check
+wardmuse catalog check --leads    # names on a public lead list that the catalogue lacks (names to look up, not facts)
 ```
 
-It never edits the catalogue, never adds a provider, never signs up for anything and never sends a key. A "changed" page means a person should re-read it and edit the entry by hand. Page fingerprints are kept in `~/.muse/catalog-pages.json`. The rules the catalogue check enforces: official API hosts only, one entry and one key per provider, and consumer subscriptions (ChatGPT, Claude, Gemini apps) are hand-off only and can never be an API route.
+It never edits the catalogue, never adds a provider, never signs up for anything and never sends a key. A "changed" page means a person should re-read it and edit the entry by hand. Page fingerprints are kept in `~/.wardmuse/catalog-pages.json`. The rules the catalogue check enforces: official API hosts only, one entry and one key per provider, and consumer subscriptions (ChatGPT, Claude, Gemini apps) are hand-off only and can never be an API route.
 
 ### Connecting helpers
 
-`muse connect` adds one helper at a time. Muse only guides you: it never fills in, clicks or signs in on a provider's website, and it never takes a key on the command line.
+`wardmuse connect` adds one helper at a time. Wardmuse only guides you: it never fills in, clicks or signs in on a provider's website, and it never takes a key on the command line.
 
 ```bash
-muse connect                 # what is connected, then the next helpers ranked by allowance gained per minute
-muse connect openrouter      # one tap: approve on OpenRouter's page and the key comes straight back, nothing to paste
-muse connect gemini          # steps from the catalogue, then a hidden prompt for the key; add --test for ONE key-check request
-muse connect local           # find Ollama / LM Studio models (same discovery as `muse local discover --write`)
-muse resources               # storage, compute and chain allowances, and your subscriptions: shown, not managed
+wardmuse connect                 # what is connected, then the next helpers ranked by allowance gained per minute
+wardmuse connect openrouter      # one tap: approve on OpenRouter's page and the key comes straight back, nothing to paste
+wardmuse connect gemini          # steps from the catalogue, then a hidden prompt for the key; add --test for ONE key-check request
+wardmuse connect local           # find Ollama / LM Studio models (same discovery as `wardmuse local discover --write`)
+wardmuse resources               # storage, compute and chain allowances, and your subscriptions: shown, not managed
 ```
 
-- The one-tap flow is OAuth with PKCE (S256). Muse listens on `127.0.0.1` for one redirect on a random port and a random secret path, checks the `state` and `Host`, and shuts the listener down at once. `--no-browser` prints the link; `--paste-code` skips the listener (approve anywhere, paste the code OpenRouter shows). OpenRouter's documentation allows `http://localhost:<any port>` callbacks, so that form is used; `127.0.0.1` is not mentioned there, so it is not sent.
+- The one-tap flow is OAuth with PKCE (S256). Wardmuse listens on `127.0.0.1` for one redirect on a random port and a random secret path, checks the `state` and `Host`, and shuts the listener down at once. `--no-browser` prints the link; `--paste-code` skips the listener (approve anywhere, paste the code OpenRouter shows). OpenRouter's documentation allows `http://localhost:<any port>` callbacks, so that form is used; `127.0.0.1` is not mentioned there, so it is not sent.
 - `--test` sends one `GET` that checks the key (a model list or a similar endpoint) with no prompt text. Without `--test` nothing is sent. A helper with no confirmed check endpoint says so and sends nothing.
-- After a key is saved, restart the proxy so it reads it: `muse restart` (Docker), or `muse restart --native --detach` when you started it with `muse up --native --detach`. Start it with `muse up` if it is not running.
+- After a key is saved, restart the proxy so it reads it: `wardmuse restart` (Docker), or `wardmuse restart --native --detach` when you started it with `wardmuse up --native --detach`. Start it with `wardmuse up` if it is not running.
 - Language: `--lang en|zh-TW`, else `MUSE_LANG`, else Traditional Chinese when the system locale is Chinese.
 - A suggestion quotes a gain ("adds roughly 50 requests a day") only where `config/providers.yaml` holds a number read on the provider's own page; otherwise it says "allowance not confirmed". Every catalogue fact has a `checked_on` date, a `confidence` and `source_urls`; `scripts/validate_config.py` checks the schema, including `config/resources/*.yaml` (non-AI allowances, `managed: false`) and the hand-off-only subscriptions.
 
@@ -167,15 +170,15 @@ muse resources               # storage, compute and chain allowances, and your s
 Each program that uses the proxy can have its own key, so you can see what each one uses and ration free quota between them.
 
 ```bash
-muse apps preset cline --for cline        # or open-webui, librechat, continue, aider, n8n, script
-muse apps add notes --priority background --daily-requests 300
-muse apps list                            # today's use, caps and what was turned away
-muse apps set notes --daily-tokens 500000 # also: --priority, --allow-paid / --no-paid, --privacy, --note
-muse apps rotate notes                    # new key, the old one stops working
-muse apps rm notes
+wardmuse apps preset cline --for cline        # or open-webui, librechat, continue, aider, n8n, script
+wardmuse apps add notes --priority background --daily-requests 300
+wardmuse apps list                            # today's use, caps and what was turned away
+wardmuse apps set notes --daily-tokens 500000 # also: --priority, --allow-paid / --no-paid, --privacy, --note
+wardmuse apps rotate notes                    # new key, the old one stops working
+wardmuse apps rm notes
 ```
 
-A key (`sk-muse-app-...`) is shown once, with the base URL and key to paste into the tool. Muse keeps only a hash. To keep keys out of logs, `muse apps add|preset|rotate` print one only when stdout is a terminal, or when you pass `--show-token`; otherwise they refuse before changing anything. `preset` prints each tool's own setup steps and marks any it could not confirm in the tool's documentation as UNVERIFIED.
+A key (`sk-muse-app-...`) is shown once, with the base URL and key to paste into the tool. Wardmuse keeps only a hash. To keep keys out of logs, `wardmuse apps add|preset|rotate` print one only when stdout is a terminal, or when you pass `--show-token`; otherwise they refuse before changing anything. `preset` prints each tool's own setup steps and marks any it could not confirm in the tool's documentation as UNVERIFIED.
 
 The rules, in plain words:
 
@@ -183,20 +186,20 @@ The rules, in plain words:
 - A per-app daily cap (requests or tokens) ends that app's day at the cap until local midnight.
 - Paid providers are used only by apps allowed to, only while today's paid spend is under `MUSE_DAILY_PAID_CAP_USD` (default 0.9375, i.e. NT$30 at the fixed rate of 32, the same limit the app shows; 0 turns paid use off), and only when the price is known.
 - A request that is turned away gets HTTP 429 with `x-muse-ration: defer:<reason>` (try again later; nothing was sent upstream) or `refuse:<reason>` (not today), plus `Retry-After`. A 429 without that header comes from a provider.
-- A provider's 429 is passed on at once, with the same status, and says when to come back: `x-muse-wait: provider-limit` plus `Retry-After`, the seconds (at least 1) until the quota block that 429 set, or met, ends. The same pair is sent when every allowed deployment was already blocked by a provider quota, with the soonest reset. It is a separate header on purpose: `x-muse-ration` keeps meaning "Muse turned this away". The pair is never sent with a privacy refusal, never when the request ended in some other error, and never on a 200 that a fallback produced. On the plain proxy (`MUSE_DISABLE_HOOK=true`) there is no such header.
+- A provider's 429 is passed on at once, with the same status, and says when to come back: `x-muse-wait: provider-limit` plus `Retry-After`, the seconds (at least 1) until the quota block that 429 set, or met, ends. The same pair is sent when every allowed deployment was already blocked by a provider quota, with the soonest reset. It is a separate header on purpose: `x-muse-ration` keeps meaning "Wardmuse turned this away". The pair is never sent with a privacy refusal, never when the request ended in some other error, and never on a 200 that a fallback produced. On the plain proxy (`MUSE_DISABLE_HOOK=true`) there is no such header.
 
 The background queue runs non-urgent jobs on allowance that would otherwise be wasted, without getting in the way of what you are doing:
 
 ```bash
-muse queue add "Summarise the attached notes" --alias cheap --by 08:00   # "-" reads the prompt from stdin
-muse queue add-file notes.txt --do "summarise"      # a folder queues one job per file (at most 50)
-muse queue add-batch prompts.txt                    # several prompts, separated by a line of ---, one job
-muse queue run                                      # Ctrl-C to stop; --once, --until-idle, --max-jobs N
-muse queue list ; muse queue show ID --output ; muse queue cancel ID ; muse queue clear --done
-muse pause ; muse resume                            # stops and restarts the queue; the proxy keeps working
+wardmuse queue add "Summarise the attached notes" --alias cheap --by 08:00   # "-" reads the prompt from stdin
+wardmuse queue add-file notes.txt --do "summarise"      # a folder queues one job per file (at most 50)
+wardmuse queue add-batch prompts.txt                    # several prompts, separated by a line of ---, one job
+wardmuse queue run                                      # Ctrl-C to stop; --once, --until-idle, --max-jobs N
+wardmuse queue list ; wardmuse queue show ID --output ; wardmuse queue cancel ID ; wardmuse queue clear --done
+wardmuse pause ; wardmuse resume                            # stops and restarts the queue; the proxy keeps working
 ```
 
-Jobs live in `~/.muse/queue.sqlite` (separate from the usage ledger because they hold your prompts; a finished job's prompt is erased). Results are written to `~/.muse/queue-out/` or the path you give, never to the ledger or a log. The runner is a background app named `queue` that Muse creates and keeps (its key is stored in the key store and never printed). It does what the proxy says: a deferral is retried after `Retry-After` plus a little random delay, an app cap holds all queue jobs until midnight, a provider 429 is retried at its `Retry-After` when the proxy marks it `x-muse-wait: provider-limit` and otherwise backs off exponentially like a server error, a privacy refusal is final, and a job past its `--by` deadline fails instead of paying. The queue is free-only unless a job is added with `--allow-paid`, which uses a second managed app (`queue-paid`) that is still bound by the daily paid cap. `muse status` and the dashboard show the apps, the paid total and the queue.
+Jobs live in `~/.wardmuse/queue.sqlite` (separate from the usage ledger because they hold your prompts; a finished job's prompt is erased). Results are written to `~/.wardmuse/queue-out/` or the path you give, never to the ledger or a log. The runner is a background app named `queue` that Wardmuse creates and keeps (its key is stored in the key store and never printed). It does what the proxy says: a deferral is retried after `Retry-After` plus a little random delay, an app cap holds all queue jobs until midnight, a provider 429 is retried at its `Retry-After` when the proxy marks it `x-muse-wait: provider-limit` and otherwise backs off exponentially like a server error, a privacy refusal is final, and a job past its `--by` deadline fails instead of paying. The queue is free-only unless a job is added with `--allow-paid`, which uses a second managed app (`queue-paid`) that is still bound by the daily paid cap. `wardmuse status` and the dashboard show the apps, the paid total and the queue.
 
 To check the real providers with your own keys, see [docs/real-key-checklist.md](docs/real-key-checklist.md).
 
@@ -205,10 +208,10 @@ To check the real providers with your own keys, see [docs/real-key-checklist.md]
 **Fit the task.** `config/routing.yaml` says how strong a model each kind of task gets: `light` (classify, extract, tag) uses `fast` and at most 300 output tokens, `everyday` uses `cheap`, `heavy` uses `smart` (and `long-context` for inputs over about 60,000 tokens), `frontier` uses `smart` and suggests a hand-off, plus `embed` and `rerank`. Edit the file and the next request uses it, no restart; a broken file never stops the proxy (the built-in rules, identical to the shipped file, are used and the problem is logged once).
 
 ```bash
-muse rules                     # the rules as sentences (--lang zh for Traditional Chinese, --json)
-muse rules check               # validate the file; warns about aliases missing from the catalogue
-muse ask --task light "Tag this: invoice from ACME"
-muse queue add --task heavy "Write the weekly report"   # without --task or --alias: the queue's default task (light)
+wardmuse rules                     # the rules as sentences (--lang zh for Traditional Chinese, --json)
+wardmuse rules check               # validate the file; warns about aliases missing from the catalogue
+wardmuse ask --task light "Tag this: invoice from ACME"
+wardmuse queue add --task heavy "Write the weekly report"   # without --task or --alias: the queue's default task (light)
 ```
 
 An app asks for a task with the header `x-muse-task: <task>` and any model name, or with the model `auto` (no header: the app's default task from the file, else `everyday`). The proxy replaces the model with the task's alias and lowers `max_tokens` to the task's ceiling (a lower one is kept). The one exception is a deployment whose output floor is above the ceiling: see `x-muse-min-output` above. An unknown task is HTTP 400 listing the valid ones; the response says `x-muse-task: <task>`. A word in a task *name* can pick the task (`classify-emails` is `light`); prompt text is never read for this.
@@ -222,59 +225,59 @@ An app asks for a task with the header `x-muse-task: <task>` and any model name,
 
 **Hold one-offs.** Trial credits that never renew (marked one-off in the catalogue, rendered as `model_info.muse_oneoff`) are used only when the request says `x-muse-allow-oneoff: true`; otherwise `refuse:oneoff-held`, even when nothing else is left.
 
-**Exact repeats** (off unless `MUSE_CACHE=exact`): an identical request (same alias, messages and output settings, temperature 0 or a task marked `deterministic`) is answered from a cache without contacting anyone (`x-muse-cache: hit`, `x-muse-provider: cache`), recorded in the ledger as `cached` at zero cost, and not counted against quotas or app caps. The privacy class and the app's default class are part of the key. Public and standard answers are kept in `~/.muse/cache.sqlite` (0600) so every worker shares them; private and local answers are kept in memory only and never written to disk. `MUSE_CACHE_TTL_S` (default 3600) and `MUSE_CACHE_MAX_ENTRIES` (default 1000) bound it.
+**Exact repeats** (off unless `MUSE_CACHE=exact`): an identical request (same alias, messages and output settings, temperature 0 or a task marked `deterministic`) is answered from a cache without contacting anyone (`x-muse-cache: hit`, `x-muse-provider: cache`), recorded in the ledger as `cached` at zero cost, and not counted against quotas or app caps. The privacy class and the app's default class are part of the key. Public and standard answers are kept in `~/.wardmuse/cache.sqlite` (0600) so every worker shares them; private and local answers are kept in memory only and never written to disk. `MUSE_CACHE_TTL_S` (default 3600) and `MUSE_CACHE_MAX_ENTRIES` (default 1000) bound it.
 
 ### Home control API
 
-The one way an app talks to the home: a small local JSON service over a private Unix socket (`~/.muse/home.sock`, mode 0600; `127.0.0.1` on Windows or with `--tcp PORT`). The contract is [docs/spec/interfaces/home-api.v1.yaml](docs/spec/interfaces/home-api.v1.yaml); a card's shape is [docs/spec/interfaces/card.schema.json](docs/spec/interfaces/card.schema.json).
+The one way an app talks to the home: a small local JSON service over a private Unix socket (`~/.wardmuse/home.sock`, mode 0600; `127.0.0.1` on Windows or with `--tcp PORT`). The contract is [docs/spec/interfaces/home-api.v1.yaml](docs/spec/interfaces/home-api.v1.yaml); a card's shape is [docs/spec/interfaces/card.schema.json](docs/spec/interfaces/card.schema.json).
 
 ```bash
-muse home token add my-phone     # a device token, shown once; only its hash is kept (list, rotate, rm)
-muse home token add wall --role viewer   # what it may do: owner (default: everything), host, viewer (read-only)
-muse home serve                  # run it (Ctrl-C to stop); --tcp 4181 for 127.0.0.1
-MUSE_HOME_TOKEN=... muse home call GET /v1/status          # a tiny client for debugging
+wardmuse home token add my-phone     # a device token, shown once; only its hash is kept (list, rotate, rm)
+wardmuse home token add wall --role viewer   # what it may do: owner (default: everything), host, viewer (read-only)
+wardmuse home serve                  # run it (Ctrl-C to stop); --tcp 4181 for 127.0.0.1
+MUSE_HOME_TOKEN=... wardmuse home call GET /v1/status          # a tiny client for debugging
 python -m muse.home --fake --tcp 4181 --state cards        # canned data for building an app: no proxy, ledger or keys
 ```
 
 - Every request carries `Authorization: Bearer <device token>`; on the socket the caller must also be the same user. No CORS headers are sent, bodies are bounded, and nothing from a request is logged.
-- **A device has a role, and a role is a fixed set of scopes.** Every call needs one scope, checked in one place before anything else; a call nobody gave a scope to is refused for everyone. `owner` (your own app or command line) may do everything. `host` (the tools server a host bot runs; `muse hosts setup` makes these) may read status and the catalogue, ask you a question and read its own cards, queue, read and cancel its own jobs, add records, and list and run skills. It may **not** pause or resume, connect a service, store a key, see or manage apps, answer a card, or read your records, and it sees only the jobs, cards and skill runs it made itself (anyone else's answer 404). `viewer` may only read status, the catalogue, cards, jobs and records. Tokens made before roles existed have no role written down and are treated as `owner`, which is what every token was; `muse home token list` shows each device's role, and a token's role is fixed when it is made (remove it and add a new one to change it).
+- **A device has a role, and a role is a fixed set of scopes.** Every call needs one scope, checked in one place before anything else; a call nobody gave a scope to is refused for everyone. `owner` (your own app or command line) may do everything. `host` (the tools server a host bot runs; `wardmuse hosts setup` makes these) may read status and the catalogue, ask you a question and read its own cards, queue, read and cancel its own jobs, add records, and list and run skills. It may **not** pause or resume, connect a service, store a key, see or manage apps, answer a card, or read your records, and it sees only the jobs, cards and skill runs it made itself (anyone else's answer 404). `viewer` may only read status, the catalogue, cards, jobs and records. Tokens made before roles existed have no role written down and are treated as `owner`, which is what every token was; `wardmuse home token list` shows each device's role, and a token's role is fixed when it is made (remove it and add a new one to change it).
 - Abuse limits, in memory: a peer that sends a wrong token more than 10 times in 60 seconds gets 429 with `Retry-After` for its further wrong tokens (a correct token is always served, so nobody can lock your own app out by sending rubbish), and at most 64 connections are served at once (one more gets 503 at once).
-- Calls, all under `/v1`: `status` (the same snapshot as `muse status --json`), `catalogue`, `connect/{provider}` (returns the steps; the client opens the pages), `keys/{provider}` (the only call that accepts a key; never echoed), `jobs` (the queue; a prompt is accepted and never returned), `cards` (a device may ask with `POST`, at most 20 waiting each, and cannot answer its own) and `cards/{id}/answer`, `pause` and `resume`, `apps` (a new app token is returned once), `receipts` (`GET`: your records, newest first, with whether they check out and the last seal; `POST`: a device reports something it did), `skills`, `skills/{name}/run` and `skills/runs/{id}` (below). `mandates/artifacts` answers 501 until that part exists.
+- Calls, all under `/v1`: `status` (the same snapshot as `wardmuse status --json`), `catalogue`, `connect/{provider}` (returns the steps; the client opens the pages), `keys/{provider}` (the only call that accepts a key; never echoed), `jobs` (the queue; a prompt is accepted and never returned), `cards` (a device may ask with `POST`, at most 20 waiting each, and cannot answer its own) and `cards/{id}/answer`, `pause` and `resume`, `apps` (a new app token is returned once), `receipts` (`GET`: your records, newest first, with whether they check out and the last seal; `POST`: a device reports something it did), `skills`, `skills/{name}/run` and `skills/runs/{id}` (below). `mandates/artifacts` answers 501 until that part exists.
 - **The home writes down what it does through the API** in your records: a card asked and answered (who, and what was decided), pause and resume, an app added, changed, removed or given a new token, a key stored (the service's id only), a job queued or cancelled, a skill run, a file written. Those replies carry `recorded: true`; if the record could not be written (no `cryptography` package, a full disk) the action still happens and the reply says `recorded: false`.
-- **Skills.** `GET /v1/skills` lists them with what each asks for in plain words. `POST /v1/skills/{name}/run` starts one through the ordinary runner and answers at once with a run id; `GET /v1/skills/runs/{id}` says how it went. A caller gives folders by **name**, from a list only you keep (`muse skills folders add notes ~/Notes`, `add reports ~/Reports --output`, `list`, `rm`; stored in `~/.muse/skill-folders.json`), never by path, and may give a budget, privacy class or task only within the skill's own. A run writes nothing: each file a skill proposes becomes a `save_file` card, and the home writes the file only when you approve that card (a new file only, inside the output folder, checked again at that moment); declining it, or letting it expire, throws the file away.
+- **Skills.** `GET /v1/skills` lists them with what each asks for in plain words. `POST /v1/skills/{name}/run` starts one through the ordinary runner and answers at once with a run id; `GET /v1/skills/runs/{id}` says how it went. A caller gives folders by **name**, from a list only you keep (`wardmuse skills folders add notes ~/Notes`, `add reports ~/Reports --output`, `list`, `rm`; stored in `~/.wardmuse/skill-folders.json`), never by path, and may give a budget, privacy class or task only within the skill's own. A run writes nothing: each file a skill proposes becomes a `save_file` card, and the home writes the file only when you approve that card (a new file only, inside the output folder, checked again at that moment); declining it, or letting it expire, throws the file away.
 - Anything key-shaped in a request to any other call is refused. Errors have one shape: `{"error": {"code", "message", "retry_after"?}}`.
-- **Cards** are the questions the home asks before it acts (save a file, send a message, spend, grant a permission, use a one-off credit, send something private, install a skill). They wait in `~/.muse/cards.sqlite`, expire after 24 hours (5 minutes for a payment), and can be answered once. `muse.home.cards.CardStore` is what other code on the home uses to ask and wait.
-- The fake home has six states (`normal`, `used`, `paused`, `cards`, `empty`, `error`) and signs in with the fixed token it prints. `muse dash` is unchanged and still serves its own read-only page.
+- **Cards** are the questions the home asks before it acts (save a file, send a message, spend, grant a permission, use a one-off credit, send something private, install a skill). They wait in `~/.wardmuse/cards.sqlite`, expire after 24 hours (5 minutes for a payment), and can be answered once. `muse.home.cards.CardStore` is what other code on the home uses to ask and wait.
+- The fake home has six states (`normal`, `used`, `paused`, `cards`, `empty`, `error`) and signs in with the fixed token it prints. `wardmuse dash` is unchanged and still serves its own read-only page.
 ### Records
 
-Muse keeps a signed record of what is done in your name on this computer: one append-only chain per device, each entry signed with the device's key and linked to the one before it, so a changed, removed or reordered entry is detected. Today the chain holds what you do to the home yourself (`muse pause` and `muse resume` each leave a record), what the home does through its control API (cards asked and answered, apps, keys by service id, jobs, skill runs, files written after your approval), and what a host bot reports about itself (`record_action`: always filed under `host.`, marked as done by a helper under that host's device, never as done by you or by the home); permissions and payments will write to the same chain as those parts are built.
+Wardmuse keeps a signed record of what is done in your name on this computer: one append-only chain per device, each entry signed with the device's key and linked to the one before it, so a changed, removed or reordered entry is detected. Today the chain holds what you do to the home yourself (`wardmuse pause` and `wardmuse resume` each leave a record), what the home does through its control API (cards asked and answered, apps, keys by service id, jobs, skill runs, files written after your approval), and what a host bot reports about itself (`record_action`: always filed under `host.`, marked as done by a helper under that host's device, never as done by you or by the home); permissions and payments will write to the same chain as those parts are built.
 
 ```bash
-muse records list                         # newest first; --since 7d, --action files, --cost-only, --left-device, --json
-muse records verify                       # "All records check out (N records)", the last seal, and this device's key
-muse records seal                         # sign a checkpoint over every record so far
-muse records export FILE                  # a file someone else can check; same filters; --redact-summaries leaves the text out
-muse records check-file FILE              # check an export, yours or anyone's; --device KEY to require a particular signer
+wardmuse records list                         # newest first; --since 7d, --action files, --cost-only, --left-device, --json
+wardmuse records verify                       # "All records check out (N records)", the last seal, and this device's key
+wardmuse records seal                         # sign a checkpoint over every record so far
+wardmuse records export FILE                  # a file someone else can check; same filters; --redact-summaries leaves the text out
+wardmuse records check-file FILE              # check an export, yours or anyone's; --device KEY to require a particular signer
 ```
 
-A record holds the time, who acted, the action's name, the permission it ran under, the outcome, the cost, and a short summary. It never holds content: what was acted on is stored as a keyed reference that means nothing without a key that stays on your devices, and a summary that looks like it contains a key or token is refused. A record can also say where the content of the action went (`egress`: nowhere, your home, a named outside service, or a named host bot); `--left-device` lists the records that say it went to a service or a host bot. That is the writer's signed statement, not a proof, and records that do not say are not counted either way. An export checks out with nothing but the file, and a filtered export proves each of its records belongs to the sealed set. What a check cannot tell the reader is whose key signed it (show them the key from `muse records verify`) or whether newer records exist.
+A record holds the time, who acted, the action's name, the permission it ran under, the outcome, the cost, and a short summary. It never holds content: what was acted on is stored as a keyed reference that means nothing without a key that stays on your devices, and a summary that looks like it contains a key or token is refused. A record can also say where the content of the action went (`egress`: nowhere, your home, a named outside service, or a named host bot); `--left-device` lists the records that say it went to a service or a host bot. That is the writer's signed statement, not a proof, and records that do not say are not counted either way. An export checks out with nothing but the file, and a filtered export proves each of its records belongs to the sealed set. What a check cannot tell the reader is whose key signed it (show them the key from `wardmuse records verify`) or whether newer records exist.
 
-Files: `~/.muse/records.sqlite` and `~/.muse/device.key` (the signing key; both 0600). Deleting `device.key` starts a new chain under a new key. A seal is kept only on this computer for now, so records removed from the end before any seal, or a whole file replaced by an older copy, cannot be noticed yet; keeping seals somewhere else is planned. A problem writing a record never stops `pause` or `resume`. The format, with a worked example and what an export reveals, is in [docs/spec/interfaces/record-format.md](docs/spec/interfaces/record-format.md); the same rules are in the Rust core (`core/src/records.rs`), and `core/conformance/records.json` holds the cases both must answer alike. No outside security review has been done. Needs the `cryptography` package: `pip install -e '.[records]'` (it is also in the `dev` and `trust` extras). Without it Muse works as before and writes no records.
+Files: `~/.wardmuse/records.sqlite` and `~/.wardmuse/device.key` (the signing key; both 0600). Deleting `device.key` starts a new chain under a new key. A seal is kept only on this computer for now, so records removed from the end before any seal, or a whole file replaced by an older copy, cannot be noticed yet; keeping seals somewhere else is planned. A problem writing a record never stops `pause` or `resume`. The format, with a worked example and what an export reveals, is in [docs/spec/interfaces/record-format.md](docs/spec/interfaces/record-format.md); the same rules are in the Rust core (`core/src/records.rs`), and `core/conformance/records.json` holds the cases both must answer alike. No outside security review has been done. Needs the `cryptography` package: `pip install -e '.[records]'` (it is also in the `dev` and `trust` extras). Without it Wardmuse works as before and writes no records.
 
 ### Host bots
 
-Muse can sit underneath a bot you already run, through two doors: the bot's OpenAI-compatible engine setting (with an app key of its own) and the Muse tools server, a Model Context Protocol server the bot starts as `python -m muse.mcp`. See [docs/hosts/README.md](docs/hosts/README.md) for what Muse does and does not control there, and [docs/hosts/openmausbot.md](docs/hosts/openmausbot.md) for the first host.
+Wardmuse can sit underneath a bot you already run, through two doors: the bot's OpenAI-compatible engine setting (with an app key of its own) and the Wardmuse tools server, a Model Context Protocol server the bot starts as `python -m muse.mcp`. See [docs/hosts/README.md](docs/hosts/README.md) for what Wardmuse does and does not control there, and [docs/hosts/openmausbot.md](docs/hosts/openmausbot.md) for the first host.
 
 ```bash
-muse hosts setup openmausbot       # the host's own app key (shown once), a tools token in a 0600 file, and what to paste
-muse hosts show openmausbot        # print what to paste again; no secret in it
-muse hosts check openmausbot ~/.openmausbot/config.json   # read-only: which engines go through Muse and which do not
-muse mcp serve --token-file PATH   # the tools server on stdin/stdout (a host starts this; needs `pip install -e '.[mcp]'`)
+wardmuse hosts setup openmausbot       # the host's own app key (shown once), a tools token in a 0600 file, and what to paste
+wardmuse hosts show openmausbot        # print what to paste again; no secret in it
+wardmuse hosts check openmausbot ~/.openmausbot/config.json   # read-only: which engines go through Wardmuse and which do not
+wardmuse mcp serve --token-file PATH   # the tools server on stdin/stdout (a host starts this; needs `pip install -e '.[mcp]'`)
 ```
 
 - Tools: `allowance_status`, `pause_status`, `suggest_service`, `ask_approval`, `check_approval`, `check_permission` (from the host's own permission when it has one, else a labelled interim rule; advice for the host's own tools), `record_action` (a signed entry in your records; returns its number and hash), `list_skills`, `run_skill` and `skill_status`, `queue_job`, `job_status`. No `pay`, `pause` or `resume`.
-- The tools server talks only to the home control API with a device token; it holds no provider key. That token has the `host` role: the home refuses it pause and resume, keys, connecting services, apps, answering any card and reading your records, and shows it only its own jobs, cards and skill runs. This is enforced by the home, not left to the bot. Muse controls model use, spending and its own tools; it cannot stop a host's own shell or file tools.
-- No host has been installed or run with Muse yet. Host settings are dated and say where they were read.
+- The tools server talks only to the home control API with a device token; it holds no provider key. That token has the `host` role: the home refuses it pause and resume, keys, connecting services, apps, answering any card and reading your records, and shows it only its own jobs, cards and skill runs. This is enforced by the home, not left to the bot. Wardmuse controls model use, spending and its own tools; it cannot stop a host's own shell or file tools.
+- No host has been installed or run with Wardmuse yet. Host settings are dated and say where they were read.
 
 ## Trust layer
 
@@ -297,16 +300,16 @@ five minutes); a copy can never do more than its parent. The format is
 
 ```sh
 pip install -e ".[permissions]"        # biscuit-python==0.4.0, pinned
-muse permissions issue --holder helper:vm --action files.read --action files.write \
+wardmuse permissions issue --holder helper:vm --action files.read --action files.write \
   --resource folder:/Documents/Work --purpose "Weekly digest" --new-key
-muse permissions list                   # each permission as a sentence (--lang zh-TW)
-muse permissions check <name> --action files.write --resource folder:/Documents/Work/a.md
-muse permissions narrow <name> --action files.write --minutes 5 --card card-1
-muse permissions revoke <name>          # stops it and every copy narrowed from it
+wardmuse permissions list                   # each permission as a sentence (--lang zh-TW)
+wardmuse permissions check <name> --action files.write --resource folder:/Documents/Work/a.md
+wardmuse permissions narrow <name> --action files.write --minutes 5 --card card-1
+wardmuse permissions revoke <name>          # stops it and every copy narrowed from it
 ```
 
 `issue` prints the permission as a sentence with its limits and signs it only after a
-yes. The root key is `~/.muse/root.key` and tokens are under `~/.muse/permissions/`
+yes. The root key is `~/.wardmuse/root.key` and tokens are under `~/.wardmuse/permissions/`
 (both 0600) until the vault takes them over.
 
 What is true today, and what is not:
@@ -316,11 +319,11 @@ What is true today, and what is not:
   token never allows what its parent refuses; a block that tries to widen is refused;
   revoking the root stops the family and revoking a block stops that copy and those below
   it; a single-use approval works once.
-- **Enforced now** (work package C7, `muse/compiler/`). `muse permissions grant` shows the
+- **Enforced now** (work package C7, `muse/compiler/`). `wardmuse permissions grant` shows the
   permission as a sentence, signs it after a yes, and makes what enforces it;
-  `muse permissions stop <id>` writes the signed revocation first and then removes each
-  of those things; `muse permissions status [<id>]` shows a mark per target and anything
-  that breaks the rule "no artifact without a permission"; `muse permissions sweep`
+  `wardmuse permissions stop <id>` writes the signed revocation first and then removes each
+  of those things; `wardmuse permissions status [<id>]` shows a mark per target and anything
+  that breaks the rule "no artifact without a permission"; `wardmuse permissions sweep`
   (safe every minute) cleans up after stopped or ended permissions and remakes what a
   live one is missing. The home's API has the same (`/v1/mandates`), where a host bot
   can only *ask* (a card the person approves) and only the person's own device issues
@@ -337,18 +340,18 @@ What is true today, and what is not:
     (holder `helper:home`, or `helper:$MUSE_HELPER_ID`). `advise` computes, records and
     shows every decision and blocks nothing, so nothing that worked before breaks.
     `enforce` stops the run with a plain reason and a record. **A skill that does not
-    ship with Muse (from `~/.muse/skills/`) is always `enforce`**: it runs only under a
+    ship with Wardmuse (from `~/.wardmuse/skills/`) is always `enforce`**: it runs only under a
     permission that covers it, e.g.
-    `muse permissions grant --holder helper:home --action llm.call --resource provider:router --resource home:skill/<name> --privacy standard`.
+    `wardmuse permissions grant --holder helper:home --action llm.call --resource provider:router --resource home:skill/<name> --privacy standard`.
     A file a skill proposes becomes a card; approving it mints a single-use token for
     exactly that write (five minutes), which a replay or a stopped permission cannot use.
-  - **Host bots:** `muse hosts setup <host> --permission` gives the host's device a
-    permission (models through Muse up to its app's caps, no paid services, skills asked
+  - **Host bots:** `wardmuse hosts setup <host> --permission` gives the host's device a
+    permission (models through Wardmuse up to its app's caps, no paid services, skills asked
     about each time, files only through folders on the skill list) and ties its app key
     to it. `check_permission` then answers from it (`basis: "permission"`); a host with
     none gets the clearly labelled interim rule. A host's own shell and file tools are
-    outside Muse either way: for those the answer is advice.
-- **Not built:** payments (no spending limit on chain; Muse pays nothing under a
+    outside Wardmuse either way: for those the answer is advice.
+- **Not built:** payments (no spending limit on chain; Wardmuse pays nothing under a
   permission), connectors, the health add-on, approval with a passkey (in this version
   "the person" is a device with the `owner` role), and syncing the revocation list to
   other devices. These show as grey `not_built` marks, never green ones. Without
@@ -471,7 +474,7 @@ Upgrading LiteLLM is a deliberate change, in this order:
 4. Change the version where prose still names it (this README, `deploy/oracle-cloud.md`, comments in `muse/`). CI and the setup script install from the lock file and need no edit.
 5. Run `python scripts/validate_config.py`, `python scripts/verify_litellm.py --image` and the whole suite (`python -m pytest tests -q -n auto --dist worksteal`) in an environment installed from the new lock. The hook relies on LiteLLM internals that are noted with the version they were read in.
 
-One rule goes with this: **provider keys live only in the proxy's environment** (`.env` with mode 600, or the OS keychain handed over by `muse up`). Applications get their own `sk-muse-app-…` key and never a provider key; CI, the lock files, the rendered config and the image hold none. If LiteLLM is ever compromised again, the keys to rotate are the ones in that one place.
+One rule goes with this: **provider keys live only in the proxy's environment** (`.env` with mode 600, or the OS keychain handed over by `wardmuse up`). Applications get their own `sk-muse-app-…` key and never a provider key; CI, the lock files, the rendered config and the image hold none. If LiteLLM is ever compromised again, the keys to rotate are the ones in that one place.
 
 Not covered: `pip` itself and the `pip install -e .` of the plain CLI (PyYAML, and the optional extras) are not hash-locked outside the native proxy install, and `postgres:16-alpine` in `docker-compose.spend.yml` is pinned by tag only.
 
@@ -610,7 +613,7 @@ Every test gets its own `MUSE_HOME` and temporary folders and binds port 0, and 
 | `scripts/smoke_test.py` | Health check plus one call per configured alias |
 | `scripts/validate_config.py` | The CI checks |
 | `muse/home/` | The home control API: server, device tokens with roles, cards, records and skills through the API, the fake home |
-| `muse/mcp/` | The Muse tools server for host bots (MCP over stdio), host settings and the read-only host check |
+| `muse/mcp/` | The Wardmuse tools server for host bots (MCP over stdio), host settings and the read-only host check |
 | `docs/spec/interfaces/` | `home-api.v1.yaml` (OpenAPI) and `card.schema.json` |
 | `muse/permissions/`, `core/src/permissions.rs` | Signed permission tokens (Python and Rust twins) |
 | `muse/compiler/` | The permission compiler: router app entries, skill tokens and folders, records; the skill guard (`MUSE_PERMISSIONS`); the sweep |
@@ -625,6 +628,6 @@ Every test gets its own `MUSE_HOME` and temporary folders and binds port 0, and 
 ## Licence
 
 - **Code and documentation:** Apache License 2.0. See `LICENSE`.
-- **The published service catalogue** (the files under `catalogue/`): Creative Commons Attribution 4.0 International. See `catalogue/LICENSE` and `docs/catalogue.md`. Credit it as "Muse Stack service catalogue" with a link to this repository, and say what you changed.
+- **The published service catalogue** (the files under `catalogue/`): Creative Commons Attribution 4.0 International. See `catalogue/LICENSE` and `docs/catalogue.md`. Credit it as "Wardmuse Stack service catalogue" with a link to this repository, and say what you changed.
 
 Third-party software keeps its own licence; the pinned versions are listed in `requirements/`, `core/Cargo.lock`, `core/link/Cargo.lock` and `app/pnpm-lock.yaml`. Names of AI services belong to their owners and are used only to describe them.

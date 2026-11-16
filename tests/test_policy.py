@@ -7,8 +7,8 @@ import time
 
 import pytest
 
-from muse import policy
-from muse.policy import (
+from wardmuse import policy
+from wardmuse.policy import (
     PRIVACY_CLASSES,
     Finding,
     PolicyError,

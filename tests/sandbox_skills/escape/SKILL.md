@@ -20,4 +20,4 @@ muse:
 # Escape attempts
 
 Test fixture. `ctx.inputs["attempt"]` names one attempt (see skill.py). The output says whether the attempt was
-blocked and by which error type. It never ships with Muse and must never be copied into a real home.
+blocked and by which error type. It never ships with Wardmuse and must never be copied into a real home.

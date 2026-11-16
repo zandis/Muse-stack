@@ -1,6 +1,7 @@
 """muse.rules: the routing rules file (rule 2): loading, validation, resolution, explanation."""
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import os
 from pathlib import Path
@@ -8,8 +9,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from muse import rules
-from muse.rules import DEFAULT_RULES, RulesError, UnknownTask, parse_rules
+from wardmuse import rules
+from wardmuse.rules import DEFAULT_RULES, RulesError, UnknownTask, parse_rules
 
 SHIPPED = Path(__file__).resolve().parents[1] / "config" / "routing.yaml"
 
@@ -151,7 +152,7 @@ def test_a_broken_file_falls_back_to_the_built_in_rules(tmp_path, text, words):
     current = rules.load_rules(env)
     assert current.source == "built-in" and any(words in p for p in current.problems)
     assert current.resolve("light").alias == "fast"  # still serving
-    assert rules.check(Path(env["MUSE_ROUTING"]))
+    assert rules.check(Path(envget(env, "MUSE_ROUTING")))
     lines = rules.explain(current)
     assert any("could not be used" in line for line in lines)
 
@@ -166,7 +167,7 @@ def test_reload_on_change_without_restart(tmp_path):
     env = write(tmp_path, "tasks: {light: {alias: fast}}\n")
     assert rules.load_rules(env).resolve("light").alias == "fast"
     assert rules.load_rules(env) is rules.load_rules(env)  # cached while unchanged
-    path = Path(env["MUSE_ROUTING"])
+    path = Path(envget(env, "MUSE_ROUTING"))
     path.write_text("tasks: {light: {alias: smart}}\n")
     st = path.stat()
     os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))

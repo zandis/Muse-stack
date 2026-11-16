@@ -8,8 +8,8 @@ import time
 import uuid
 from pathlib import Path
 
-from muse.ledger import Ledger
-from muse.status import build_snapshot
+from wardmuse.ledger import Ledger
+from wardmuse.status import build_snapshot
 
 CLOUD = {"g-flash", "q-small", "p-model"}
 

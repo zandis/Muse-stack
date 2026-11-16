@@ -13,9 +13,9 @@ import urllib.request
 
 import pytest
 
-from muse.fakeprov import FakeProvider
-from muse.ledger import Ledger
-from muse.quota import next_midnight_pacific
+from wardmuse.fakeprov import FakeProvider
+from wardmuse.ledger import Ledger
+from wardmuse.quota import next_midnight_pacific
 
 CLOUD = {"trains_on_inputs": True, "human_review": True, "region": "us", "commercial_use": "allowed"}
 GROQ_POLICY = {"trains_on_inputs": "unknown", "human_review": "unknown", "region": "us", "commercial_use": "allowed"}

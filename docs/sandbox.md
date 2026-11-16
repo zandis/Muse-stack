@@ -15,7 +15,7 @@ python -m pytest tests/test_sandbox_escape.py -q -rs           # the escape atte
 
 The code being contained is a skill: Python that the person installed, or (later) an MCP tool. Assume it is hostile, or that text in a file it read talked a model into misusing it. It wants to:
 
-1. read secrets: provider keys, Muse's app tokens, the vault, the ledger, the approval list, anything in `MUSE_HOME`, the environment of Muse's own process;
+1. read secrets: provider keys, Wardmuse's app tokens, the vault, the ledger, the approval list, anything in `MUSE_HOME`, the environment of Wardmuse's own process;
 2. read or change files the person did not name for this run;
 3. send what it read somewhere (any network path), or fetch instructions;
 4. spend the person's allowance or money beyond the job's budget, or send under a looser privacy class;
@@ -44,7 +44,7 @@ Out of scope: a kernel bug; an attacker who already runs as the person outside t
 - no open descriptors except stdio (all `/dev/null`) and the two ends of the control pipe. The child closes everything else again itself;
 - its own session and process group, and `PR_SET_PDEATHSIG` so it dies with the parent.
 
-**Order in the child** (`muse/sandbox/child.py`): close descriptors, import Muse's own modules, lock down, report what was applied, and only then receive and import the skill. No skill code, not even a module's top level, runs before the lock-down. The skill is imported from the bytes the parent hashed, sent over the pipe; its folder is never read in the child.
+**Order in the child** (`muse/sandbox/child.py`): close descriptors, import Wardmuse's own modules, lock down, report what was applied, and only then receive and import the skill. No skill code, not even a module's top level, runs before the lock-down. The skill is imported from the bytes the parent hashed, sent over the pipe; its folder is never read in the child.
 
 **The lock-down** (`muse/sandbox/lockdown.py`, standard library and `ctypes` only):
 
@@ -52,7 +52,7 @@ Out of scope: a kernel bug; an attacker who already runs as the person outside t
 |---|---|
 | `setrlimit` | address space, processor time, open files, processes, largest file, no core dumps |
 | `PR_SET_NO_NEW_PRIVS` | no `exec` can gain privileges (setuid, file capabilities). Needed by the next two |
-| drop capabilities | empties every capability set. Matters only if Muse runs as root |
+| drop capabilities | empties every capability set. Matters only if Wardmuse runs as root |
 | Landlock | deny by default; read the runtime and the named folders; read and write `data` and temp; no execute right anywhere |
 | seccomp | a small filter: no new sockets, no `io_uring`, no ptrace, no namespaces or mounts, signals only to itself |
 
@@ -69,7 +69,7 @@ Out of scope: a kernel bug; an attacker who already runs as the person outside t
 
 **Reads: bound folders, not mediated.** The named folders are shared read-only (bubblewrap) and allowed read-only (Landlock); the skill reads them directly through the same `Workspace` as before. The alternative, every read as a request to the parent, gives per-file control and a receipt per file, but the shipped skills index up to 2,000 files and keep a SQLite database, and would pay a round trip per read. Bound folders keep `Workspace` semantics identical and the speed; the permission boundary is the folder, which is also what the person approved ("this folder"). Per-file receipts can be added later by having the child report what it opened; that report would be a claim by untrusted code, so a mediated mode remains the answer where proof is needed.
 
-**PDF parsing happens in the child.** A PDF from the person's folders is hostile input. The files skills parse it where they read it, in the skill (`skills/*/pdf.py`, with the optional pypdf), so under the sandbox the parser runs after the lock-down, with no network, no keys and the child's limits, and a parser bug reaches only what the child can already read. The parent never parses a PDF; the extracted text reaches it only inside the skill's output, like any other passage. The alternative, parsing in the parent and handing text to the child, would put a parser of untrusted files next to the router client and its token. pypdf is pure Python and needs no thread, process or network; the skill tightens its decoding limits. A test (`tests/test_sandbox.py::test_pdfs_are_read_the_same_way_sandboxed_and_hostile_ones_end_no_run`) runs the same PDFs, including a truncated file and a stream that inflates past the limit, in process and sandboxed, and requires identical results. With the sandbox off, the parser runs in Muse's own process like the rest of the skill.
+**PDF parsing happens in the child.** A PDF from the person's folders is hostile input. The files skills parse it where they read it, in the skill (`skills/*/pdf.py`, with the optional pypdf), so under the sandbox the parser runs after the lock-down, with no network, no keys and the child's limits, and a parser bug reaches only what the child can already read. The parent never parses a PDF; the extracted text reaches it only inside the skill's output, like any other passage. The alternative, parsing in the parent and handing text to the child, would put a parser of untrusted files next to the router client and its token. pypdf is pure Python and needs no thread, process or network; the skill tightens its decoding limits. A test (`tests/test_sandbox.py::test_pdfs_are_read_the_same_way_sandboxed_and_hostile_ones_end_no_run`) runs the same PDFs, including a truncated file and a stream that inflates past the limit, in process and sandboxed, and requires identical results. With the sandbox off, the parser runs in Wardmuse's own process like the rest of the skill.
 
 **Writes are still proposals.** The output folder is not shared with the child at all. `ctx.workspace.propose_write` records the file in the child; the proposals travel back as data with the result; the parent's own `Workspace` checks every path again and applies nothing without consent. A child that reports a path outside the output folder fails the run.
 
@@ -92,14 +92,14 @@ The parent treats every byte as hostile: a frame longer than the cap is refused 
 
 | Mode | Meaning |
 |---|---|
-| `off` (default, for now) | Shipped skills run in Muse's own process, as before |
+| `off` (default, for now) | Shipped skills run in Wardmuse's own process, as before |
 | `auto` | Use every layer this computer has; run even if some are missing; say exactly which were active |
 | `require` | Refuse to run unless files **and** network are both isolated |
 
-- **A skill that does not ship with Muse always runs with `require`**, whatever the setting or the flag says. Where the sandbox is incomplete, it is refused with the reason. This is the rule of the ecosystem review: third-party code is untrusted code. There is one way around it, for Muse's own test suite only: the process environment variable `MUSE_SANDBOX_UNSAFE_HOME_SKILLS=in-process-for-tests`, set by `tests/conftest.py` because older tests exercise the runner with throw-away skills. Never set it on a real home.
+- **A skill that does not ship with Wardmuse always runs with `require`**, whatever the setting or the flag says. Where the sandbox is incomplete, it is refused with the reason. This is the rule of the ecosystem review: third-party code is untrusted code. There is one way around it, for Wardmuse's own test suite only: the process environment variable `MUSE_SANDBOX_UNSAFE_HOME_SKILLS=in-process-for-tests`, set by `tests/conftest.py` because older tests exercise the runner with throw-away skills. Never set it on a real home.
 - Shipped skills follow the setting. The default stays `off` until the escape suite has passed on the owner's machines; then it should become `auto`.
 - "Files isolated" means bubblewrap, or Landlock at ABI 3 or later (before ABI 3 a readable file can still be emptied). "Network blocked" means a network namespace, or the seccomp filter. Landlock's TCP rules alone are reported as `net: tcp blocked` and do **not** satisfy `require`.
-- Two shipped skills, `setup-services` and `recurring-chore`, read Muse's own state (the catalogue, which services have a key, the chore list) through Muse's modules. The sandbox hides that state, so under `auto` they run in-process and the report says so; under `require` they are refused. They need a mediated way to ask for those facts before they can be contained.
+- Two shipped skills, `setup-services` and `recurring-chore`, read Wardmuse's own state (the catalogue, which services have a key, the chore list) through Wardmuse's modules. The sandbox hides that state, so under `auto` they run in-process and the report says so; under `require` they are refused. They need a mediated way to ask for those facts before they can be contained.
 - A run is refused when a named folder is `/` or contains `MUSE_HOME`, or when the Python runtime lives somewhere that cannot be shared safely.
 
 ## 4. The report
@@ -116,7 +116,7 @@ The report is filled from what the child said it applied, in a frame sent after 
 
 `muse.sandbox.probe()` returns `Capabilities`; `muse doctor` prints it. Nothing is inferred from version numbers: bubblewrap counts only if a Python child really came up inside it with the options a run uses, Landlock only if a read was really denied, seccomp only if a socket was really refused.
 
-For debugging only: `MUSE_SANDBOX_DEBUG=1` in Muse's own environment lets the child's standard error through to the terminal (normally it goes nowhere). A skill can then print whatever it read, so do not leave it set.
+For debugging only: `MUSE_SANDBOX_DEBUG=1` in Wardmuse's own environment lets the child's standard error through to the terminal (normally it goes nowhere). A skill can then print whatever it read, so do not leave it set.
 
 `run_skill(..., token=..., policy=Policy(authorize=fn))`: an optional permission token is accepted and handed, with the action (`llm.ask`, `llm.embed`, `files.propose`) and a few facts, to `authorize` in the parent before each thing done on the skill's behalf. Nothing checks tokens here; the permission compiler plugs in at that point.
 
@@ -135,13 +135,13 @@ On the owner's VM (Ubuntu 24.04, aarch64):
 
 ```bash
 sudo apt-get install -y bubblewrap
-cd Muse-stack && python -m pip install -e . && python -m pip install --require-hashes -r requirements/dev.lock
+cd Wardmuse-stack && python -m pip install -e . && python -m pip install --require-hashes -r requirements/dev.lock
 python -m muse doctor                                              # look for the "Skill sandbox" line
 python -m pytest tests/test_sandbox_escape.py -q -rs               # the escape attempts; -rs prints every skip and its reason
 python -m pytest tests/test_sandbox.py -q -rs                      # the rest: pipe, limits, parity, modes
 ```
 
-Run it as an ordinary user, not root: the process-count limit is only testable that way, and it is how Muse should run.
+Run it as an ordinary user, not root: the process-count limit is only testable that way, and it is how Wardmuse should run.
 
 Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor. If `muse doctor` says bubblewrap is not usable with a message such as `setting up uid map: Permission denied`, bubblewrap needs an AppArmor profile that allows `userns` (Ubuntu ships one as `/usr/share/apparmor/extra-profiles/bwrap-userns-restrict`; copy it to `/etc/apparmor.d/` and reload AppArmor), or the restriction must be lifted with `sysctl kernel.apparmor_restrict_unprivileged_userns=0`, which weakens the system for every program. Without bubblewrap the sandbox still reaches `require` with Landlock plus seccomp on that kernel, and the suite runs those layers.
 
@@ -183,16 +183,16 @@ Be specific, so nobody assumes more than there is.
 - **bubblewrap alone reaches a unix socket that lies inside a named folder** (the socket is shared with the folder). seccomp closes this. On a machine with bubblewrap and no seccomp, do not name a folder that holds a service socket; the report carries a line about it.
 - **Disk.** The total size of `data` is enforced by a watch in the parent, about once a second, so a fast writer overshoots before it is stopped (by up to roughly a second of writing). A filesystem quota or a size-limited mount for `data` would be exact; neither is used. `RLIMIT_FSIZE` is exact per file.
 - **Memory and processor.** `RLIMIT_AS` and `RLIMIT_CPU` are per process, not per job: a skill that forks multiplies them by up to the process limit. cgroup limits would be exact; cgroup v2 delegation is not used (it was not available where this was built).
-- **The process limit is not enforced when Muse runs as root** (the kernel exempts root), and outside a user namespace it counts all of the person's processes, so a skill may find it cannot start any thread. Skills must not rely on threads or subprocesses. Do not run Muse as root.
+- **The process limit is not enforced when Wardmuse runs as root** (the kernel exempts root), and outside a user namespace it counts all of the person's processes, so a skill may find it cannot start any thread. Skills must not rely on threads or subprocesses. Do not run Wardmuse as root.
 - **Without bubblewrap and without seccomp**, a process the skill starts in a new session survives the job. Reported per run.
 - **seccomp is a deny-list**, not an allow-list: it closes the calls listed in `muse/sandbox/lockdown.py` and leaves the rest of the kernel's surface open. It does not inspect `clone` flags; creating a user namespace that way is not blocked (Landlock and the missing capabilities still apply inside it). The aarch64 numbers were not run by the author.
 - **`stat` and similar metadata calls are not restricted by Landlock**: under Landlock alone a skill can learn that a path exists, its size and times, though not its content or a folder's listing. bubblewrap hides the paths entirely.
-- **The system folders are readable**: `/usr`, `/lib*`, `/bin`, the Python runtime and Muse's own program files. They hold programs, not the person's data; anything private kept under `/usr` would be visible.
-- **PDF parsing is only contained when the sandbox is on.** With `off` (the default for shipped skills for now) pypdf runs in Muse's process; it is pure Python, so a hostile PDF can raise, loop or allocate within the skill's limits but not corrupt memory. The time limit per PDF is checked between pages, so one pathological page is bounded only by the job's time (and, sandboxed, by `RLIMIT_CPU` and the wall-clock kill).
+- **The system folders are readable**: `/usr`, `/lib*`, `/bin`, the Python runtime and Wardmuse's own program files. They hold programs, not the person's data; anything private kept under `/usr` would be visible.
+- **PDF parsing is only contained when the sandbox is on.** With `off` (the default for shipped skills for now) pypdf runs in Wardmuse's process; it is pure Python, so a hostile PDF can raise, loop or allocate within the skill's limits but not corrupt memory. The time limit per PDF is checked between pages, so one pathological page is bounded only by the job's time (and, sandboxed, by `RLIMIT_CPU` and the wall-clock kill).
 - **What the skill may read, it may copy** into its `data` folder or return in its answer. The sandbox does not judge content. `data` persists between runs of the same skill.
 - **The control pipe is an attack surface.** JSON parsing of hostile input happens in the parent. Frames are size-capped and shape-checked, and fuzzed by the tests, but the parser is the standard library's.
 - **Timing**: the wall-clock check does not interrupt the parent while it waits on the router for the skill (that wait is bounded by the budget's seconds).
-- **Shipped skills that use Muse's modules are not contained** (section 3). Skills with `net` hosts cannot run.
+- **Shipped skills that use Wardmuse's modules are not contained** (section 3). Skills with `net` hosts cannot run.
 - **macOS and Windows**: no tested isolation.
 - **Tokens are not verified by the sandbox yet.** The architecture says the sandbox verifies the permission token itself; today it only passes the token to a hook. The compiler package wires that.
 

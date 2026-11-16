@@ -11,9 +11,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-from muse.home import api, server
-from muse.home.auth import StaticVerifier
-from muse.home.client import HomeClient
+from wardmuse.home import api, server
+from wardmuse.home.auth import StaticVerifier
+from wardmuse.home.client import HomeClient
 
 ROOT = Path(__file__).resolve().parents[1]
 CARD_SCHEMA_PATH = ROOT / "docs" / "spec" / "interfaces" / "card.schema.json"

@@ -1,6 +1,7 @@
 """muse.local: probes against fake runtimes, mapping heuristics, catalogue merge."""
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import json
 import socket
@@ -11,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 import yaml
 
-from muse import local
+from wardmuse import local
 
 
 class FakeRuntime:
@@ -268,7 +269,7 @@ def test_write_catalog_format_perms_and_renderer_compat(tmp_path, monkeypatch):
     # the renderer's own loader accepts it
     import importlib.util
 
-    from muse import paths
+    from wardmuse import paths
 
     spec = importlib.util.spec_from_file_location("rc", paths.REPO_ROOT / "scripts" / "render_config.py")
     rc = importlib.util.module_from_spec(spec)

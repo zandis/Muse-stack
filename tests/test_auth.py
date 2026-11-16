@@ -1,6 +1,7 @@
 """muse.auth: who a request is. The pure rules run without LiteLLM; the glue needs it."""
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import asyncio
 from pathlib import Path
@@ -8,8 +9,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from muse import apps
-from muse.auth import AuthError, authenticate
+from wardmuse import apps
+from wardmuse.auth import AuthError, authenticate
 
 MASTER = "sk-master-for-tests-0123456789"
 
@@ -103,9 +104,9 @@ def request(path="/v1/chat/completions", headers=None):
 @pytest.fixture()
 def glue(env, monkeypatch):
     pytest.importorskip("litellm")
-    from muse import auth
+    from wardmuse import auth
 
-    monkeypatch.setenv("MUSE_HOME", env["MUSE_HOME"])
+    monkeypatch.setenv("MUSE_HOME", envget(env, "MUSE_HOME"))
     monkeypatch.setattr(auth, "_master_key", lambda: MASTER)
     return auth
 

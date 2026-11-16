@@ -7,7 +7,7 @@ import time
 import urllib.error
 import urllib.request
 
-from muse.fakeprov import FakeProvider, script_for
+from wardmuse.fakeprov import FakeProvider, script_for
 
 
 def post(base: str, payload: dict) -> tuple[int, dict[str, str], bytes]:
