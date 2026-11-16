@@ -255,3 +255,30 @@ Caddy, if you use it, keeps proxying to `127.0.0.1:4000`. This layout does not o
 - Do not commit `.env`, `release.key`, or a healthchecks URL.
 - Do not point a self-hosted runner at this VM. The runner's account can read the env file.
 - Do not `git pull` inside `/opt/muse/current`. The next update replaces that directory from the signed tarball.
+
+
+## Moving a VM from Muse paths to Wardmuse
+
+The signed updater keeps working on the layout this document already describes (`/opt/muse`, `/etc/muse`, `/var/lib/muse`, `MUSE_*` in `vm.conf` and in the env file, systemd units named `muse-*`, compose project `muse-stack`). Do not edit `/etc/muse/muse.env` or any `.env`. The program reads `WARDMUSE_*` when it is set and otherwise reads `MUSE_*`. It uses `/etc/wardmuse` when that directory exists and otherwise `/etc/muse`. The same rule covers `/opt/wardmuse` (then `/opt/muse`, then `/opt/muse-stack`) and `/var/lib/wardmuse` (then `/var/lib/muse`).
+
+A new install uses the Wardmuse paths and unit names. An existing VM moves only when you run:
+
+```bash
+sudo bash /opt/muse/current/deploy/vm/migrate-to-wardmuse.sh --dry-run
+sudo bash /opt/muse/current/deploy/vm/migrate-to-wardmuse.sh --yes
+```
+
+`--dry-run` prints the plan and writes nothing. `--yes` does not delete the old paths and does not change the bytes of any env file or secret. It points the new paths at the old ones:
+
+| New path | What `--yes` does when the new path is absent |
+| --- | --- |
+| `/opt/wardmuse` | Symlink to `/opt/muse` if that directory exists, otherwise to `/opt/muse-stack`. |
+| `/etc/wardmuse` | Symlink to `/etc/muse`. `vm.conf` and `muse.env` are not rewritten. |
+| `/var/lib/wardmuse` | Symlink to `/var/lib/muse`. |
+| `~/.wardmuse` | Not created. The CLI already uses `~/.muse` while `~/.wardmuse` is absent. Pass `--home ~/.muse` to symlink `~/.wardmuse` to it. |
+
+`--units` (with `--yes`) installs the `wardmuse-*` systemd units from the release, disables the matching `muse-*` units, and does not leave both proxies enabled. Until you pass `--units`, the nightly job keeps refreshing the `muse-*` units that are already enabled, so an update does not start a second router.
+
+`--containers` (with `--yes`) stops the compose project `muse-stack` and starts project `wardmuse` from the same release. The container name changes from `muse-stack-litellm-1` to `wardmuse-litellm-1`. Do this in a window when you can watch port 4000. Without `--containers` the updater keeps `-p muse-stack` while `muse-stack-litellm-1` is the container that exists.
+
+After the symlinks exist, new code prefers the Wardmuse paths and still sees the same files. Roll back by removing the symlinks (`rm /opt/wardmuse /etc/wardmuse /var/lib/wardmuse`) and, if you switched units or containers, enabling `muse-*` again and starting `-p muse-stack`. The old directories are still the real ones.

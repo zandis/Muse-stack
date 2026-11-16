@@ -1,12 +1,12 @@
-# Muse mock-up
+# Wardmuse mock-up
 
-A clickable mock-up of the Muse app on phone and desktop, in Traditional Chinese and English, built from `docs/spec/02-ux.md`. It is one self-contained file (`index.html`, about 220 KB): inline CSS and JavaScript, system fonts, inline SVG, no network requests, no storage, no clipboard access. Nothing is behind it.
+A clickable mock-up of the Wardmuse app on phone and desktop, in Traditional Chinese and English, built from `docs/spec/02-ux.md`. It is one self-contained file (`index.html`, about 220 KB): inline CSS and JavaScript, system fonts, inline SVG, no network requests, no storage, no clipboard access. Nothing is behind it.
 
 ## Open it
 
 Double-click `docs/mockups/index.html`. It works offline in any current browser, including a phone browser (up to 520 px wide the phone frame fills the screen).
 
-The strip above the app is not part of Muse. It holds:
+The strip above the app is not part of Wardmuse. It holds:
 
 - **Phone / Desktop** (shown on windows 800 px or wider) and **繁體中文 / English**.
 - **Demo state** (see below).

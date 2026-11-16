@@ -1,8 +1,8 @@
-# Muse: infra-first plan
+# Wardmuse: infra-first plan
 
 2026-11-12. Written from the product owner's answers to the clarification questionnaire. It replaces the medical-first framing of the earlier design plans; those remain as reference for step 4's medical add-on only.
 
-## 1. What Muse is
+## 1. What Wardmuse is
 
 **One rationed endpoint for all of a person's AI apps, built from the free and low-cost services they already qualify for, with a bot on top.**
 
@@ -134,7 +134,7 @@ Every action runs under a mandate and leaves a receipt. A mandate, a consent to 
 
 ## 7. Credits and chain
 
-The design follows from what Muse trades: capacity that expires.
+The design follows from what Wardmuse trades: capacity that expires.
 
 - **Credits decay.** An unused credit shrinks over time. It circulates or disappears; it cannot be held as an investment. Users are told plainly that credits are not savings.
 - **Credits come only from service.** A credit is created when one user's resource serves another and both sign the receipt. Nobody can issue credits from nothing, the company included. A new user gets a small overdraft so a first exchange can happen.

@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "muse-stack"
+name = "wardmuse"
 version = "0.1.0"
-description = "One person's own AI keys and local models behind a local LiteLLM proxy."
+description = "Wardmuse (守繆思): one person's own AI keys and local models behind a local LiteLLM proxy."
 readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.11"
@@ -14,30 +14,32 @@ dependencies = ["pyyaml>=6"]
 [project.optional-dependencies]
 keyring = ["keyring>=24"]
 trust = ["cryptography>=42"]
-# Records (muse/records, `muse records`, the home's own record of what it did): Ed25519 signatures.
-# The same package and floor as `trust` and `dev`; without it Muse still works and writes no records.
+# Records (wardmuse/records, `wardmuse records`, the home's own record of what it did): Ed25519 signatures.
+# The same package and floor as `trust` and `dev`; without it Wardmuse still works and writes no records.
 records = ["cryptography>=42"]
 # PDF reading in the files skills (skills/*/pdf.py). Pinned exactly and hash-locked in requirements/pdf.lock;
 # pure Python, BSD-3-Clause. Without it the skills say how many PDFs were skipped.
 pdf = ["pypdf==7.0.1"]
-# Signed permission tokens (muse/permissions). Pinned exactly: 0.4.0 wraps biscuit-auth 6.0.0,
+# Signed permission tokens (wardmuse/permissions). Pinned exactly: 0.4.0 wraps biscuit-auth 6.0.0,
 # the release core/Cargo.toml pins, so both sides run the same engine against the same vectors.
 permissions = ["biscuit-python==0.4.0"]
-# The Muse tools server for host bots (python -m muse.mcp). The proxy lock already pins this same version.
+# The Wardmuse tools server for host bots (python -m wardmuse.mcp). The proxy lock already pins this same version.
 mcp = ["mcp==2.3.0"]
 dev = ["pytest>=8", "pytest-xdist>=3.6", "cryptography>=42"]
 
 [project.scripts]
+wardmuse = "wardmuse.cli:main"
 muse = "muse.cli:main"
 
 # The catalogue and compose file live in the repo, so use an editable install
-# (pip install -e .); muse.paths locates them relative to the package.
+# (pip install -e .); wardmuse.paths locates them relative to the package.
+# `muse` is the compatibility shim (DeprecationWarning, re-exports wardmuse).
 [tool.setuptools.packages.find]
-include = ["muse*"]
+include = ["wardmuse*", "muse*"]
 
 [tool.setuptools.package-data]
-"muse.dashboard" = ["*.html", "*.css", "*.js", "static/*"]
-"muse.home" = ["*.json"]
+"wardmuse.dashboard" = ["*.html", "*.css", "*.js", "static/*"]
+"wardmuse.home" = ["*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

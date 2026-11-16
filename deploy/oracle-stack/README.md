@@ -4,9 +4,9 @@
 
 ## What you get
 
-A small computer in your own Oracle Cloud account that stays on. It runs the parts of Muse that should keep going when your laptop and phone are off: the router that shares your AI allowances, the queue of background jobs, and your scheduled chores.
+A small computer in your own Oracle Cloud account that stays on. It runs the parts of Wardmuse that should keep going when your laptop and phone are off: the router that shares your AI allowances, the queue of background jobs, and your scheduled chores.
 
-- It is yours. It lives in your Oracle account, and Muse runs no server that sees your data.
+- It is yours. It lives in your Oracle account, and Wardmuse runs no server that sees your data.
 - Nothing on it can be reached from the internet. It only makes outgoing connections.
 - It keeps itself up to date and makes an encrypted backup every night.
 
@@ -33,7 +33,7 @@ Three things to know:
 
 1. **Create it.** Press the button. Oracle's page opens with everything filled in.
 2. **Approve it there.** Choose where it goes (three lists, any choice works), tick "Run apply", press Create. Wait about ten minutes.
-3. **Pair it.** In the Muse app: Devices, "Add an always-on helper", step 3. *This step is not built yet* (it arrives with the device link, work packages D1 to D3). Until then the helper runs but only an early tester with the SSH option can give it keys and chores; see [Reaching the helper](#reaching-the-helper).
+3. **Pair it.** In the Wardmuse app: Devices, "Add an always-on helper", step 3. *This step is not built yet* (it arrives with the device link, work packages D1 to D3). Until then the helper runs but only an early tester with the SSH option can give it keys and chores; see [Reaching the helper](#reaching-the-helper).
 
 The button, for the page or app that offers it:
 
@@ -96,7 +96,7 @@ Three layers keep the helper unreachable:
 2. The services: the router binds `127.0.0.1:4000` (pinned in its unit, whatever a settings file says), the home control API is a Unix socket, nothing else listens. First boot fails and stops everything if any TCP socket listens beyond loopback.
 3. With no tester key, `sshd` is stopped, disabled and masked.
 
-Outbound is TCP 443 (AI providers, the Muse release, Oracle's own services) and TCP 80 (Ubuntu's package mirrors; apt checks signatures). The metadata service, DNS and time are on `169.254.0.0/16`, where Oracle does not enforce security rules. UDP is closed; the device link (D1) will need it and must add its own rule then.
+Outbound is TCP 443 (AI providers, the Wardmuse release, Oracle's own services) and TCP 80 (Ubuntu's package mirrors; apt checks signatures). The metadata service, DNS and time are on `169.254.0.0/16`, where Oracle does not enforce security rules. UDP is closed; the device link (D1) will need it and must add its own rule then.
 
 Because no ICMP can come in, the helper sets `net.ipv4.tcp_mtu_probing=1` so TCP finds the path MTU by itself.
 
@@ -114,7 +114,7 @@ Native Python, no Docker. On 2 OCPU and 12 GB a container runtime would cost a r
 | `muse-chores.timer` | `muse chores tick`, every minute | `muse` | loopback only |
 | `muse-catalog-check.timer` | `muse catalog check --pages --json`, Sundays 04:20; result in `/var/lib/muse/vm/catalog-check.json` | `muse` | internet |
 | `muse-backup.timer` | Backup, daily 02:10 | `muse` | internet |
-| `muse-update.timer` | Muse update check, nightly 03:00 (off until configured) | root | internet |
+| `muse-update.timer` | Wardmuse update check, nightly 03:00 (off until configured) | root | internet |
 | `muse-vm-monitor.service` | Samples for the status card; the idle guard | `muse` | none |
 
 Every service unit has `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, `PrivateDevices`, kernel and control-group protection, `RestrictAddressFamilies`, a memory ceiling and a CPU quota. Units that need no internet have `IPAddressDeny=any` with `IPAddressAllow=localhost`. The services can write to `/var/lib/muse` and nowhere else; the code in `/opt/muse` is owned by root and read-only to them. The `muse` account has no password, no login shell and no sudo.
@@ -126,10 +126,10 @@ Layout on the VM: code in `/opt/muse/releases/<version>` with `/opt/muse/current
 The instance's user data (cloud-init) is small on purpose: 3.9 KB rendered, 2.4 KB after gzip and base64 as sent, against the commonly quoted cloud-init limit of 16 KB and Oracle's 32,000 bytes for all instance metadata. It holds no secret (user data is readable by every process on the VM and stored in the stack's state). It does three things:
 
 1. Writes `/etc/muse/vm.conf`.
-2. Downloads one fixed Muse release over https and compares its SHA-256 with the one baked into the stack. A mismatch, a missing checksum, a plain-http address, or a version that is a branch or a moving name (`main`, `latest`, ...) stops it there. It never clones a branch.
+2. Downloads one fixed Wardmuse release over https and compares its SHA-256 with the one baked into the stack. A mismatch, a missing checksum, a plain-http address, or a version that is a branch or a moving name (`main`, `latest`, ...) stops it there. It never clones a branch.
 3. Runs `deploy/vm/bootstrap.sh` from that verified release: packages from Ubuntu's archive (`python3-venv`, `age`, `curl`), the `muse` account, automatic security updates with a reboot window at 03:30, the hash-locked install and its check, the master key, the backup key, the units, and a health check.
 
-The proxy master key is generated on the VM, written straight into `/var/lib/muse/muse.env` (0600) and never printed: no script uses `set -x`, and the tests search every script for a secret reaching `echo`, a log or a command line. Each step runs once and is skipped on a second run. If a step fails, `/var/lib/muse-setup/FAILED` names it, every Muse unit is stopped and disabled, and nothing is left half-configured and listening.
+The proxy master key is generated on the VM, written straight into `/var/lib/muse/muse.env` (0600) and never printed: no script uses `set -x`, and the tests search every script for a secret reaching `echo`, a log or a command line. Each step runs once and is skipped on a second run. If a step fails, `/var/lib/muse-setup/FAILED` names it, every Wardmuse unit is stopped and disabled, and nothing is left half-configured and listening.
 
 ### Sizing on 2 OCPU and 12 GB
 
@@ -152,7 +152,7 @@ Deliberately **not** run: local chat models (at 2 OCPU they manage a few tokens 
 ## Updates
 
 - **Operating system.** `unattended-upgrades` installs Ubuntu security updates daily and reboots at 03:30 when one requires it.
-- **Muse.** `muse-update.sh`, nightly at 03:00, **off by default**. It needs two settings that only the owner can provide: `MUSE_UPDATE_MANIFEST_URL` (https address of a release manifest) and `MUSE_UPDATE_PUBKEY` (the Ed25519 public key the manifest is signed with). No address or key is invented here. With both set it: fetches the manifest and its `.sig`; checks the signature; refuses a moving version, a non-https address, a malformed checksum or a downgrade; downloads the release and checks its SHA-256; unpacks it next to the running one; builds a new environment there from the lock file with `--require-hashes`; runs `verify_litellm.py`, starts the CLI and runs `scripts/validate_config.py`; switches the `current` link; restarts; waits for the router. If the router does not come up it switches back, restarts the previous release and records the failure. The running release and the one before are kept.
+- **Wardmuse.** `muse-update.sh`, nightly at 03:00, **off by default**. It needs two settings that only the owner can provide: `MUSE_UPDATE_MANIFEST_URL` (https address of a release manifest) and `MUSE_UPDATE_PUBKEY` (the Ed25519 public key the manifest is signed with). No address or key is invented here. With both set it: fetches the manifest and its `.sig`; checks the signature; refuses a moving version, a non-https address, a malformed checksum or a downgrade; downloads the release and checks its SHA-256; unpacks it next to the running one; builds a new environment there from the lock file with `--require-hashes`; runs `verify_litellm.py`, starts the CLI and runs `scripts/validate_config.py`; switches the `current` link; restarts; waits for the router. If the router does not come up it switches back, restarts the previous release and records the failure. The running release and the one before are kept.
 
   Manifest: `{"channel": "stable", "version": "0.3.0", "url": "https://.../muse-0.3.0.tar.gz", "sha256": "<64 hex>"}`; the signature file is the base64 of an Ed25519 signature over the manifest's exact bytes. The private key and where it is kept are the owner's decisions.
 
@@ -323,5 +323,5 @@ Nothing was deployed. `terraform` was not available where this was written, so t
 6. Do the dynamic group, the policy and the lifecycle rule get created by a free account's administrator, in order, and does the first upload from `oci_object.py` succeed? Then a restore on a second VM.
 7. Do the hardened units start under systemd (LiteLLM under `ProtectSystem=strict`, the `IPAddressDeny` units reaching `127.0.0.1:4000`)? Does anything else on Oracle's image listen on TCP and trip the health check?
 8. Real memory and CPU of each service, to replace the estimates above; the idle guard's effect on the Console's CPU Utilization graph over 7 days (a step to about 25% every ten minutes on a quiet helper).
-9. An unattended-upgrades reboot; a Muse update and a forced rollback, once a manifest and key exist.
+9. An unattended-upgrades reboot; a Wardmuse update and a forced rollback, once a manifest and key exist.
 10. Destroy: does it remove everything once the bucket is empty?

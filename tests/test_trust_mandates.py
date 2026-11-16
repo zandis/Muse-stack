@@ -9,14 +9,14 @@ from pathlib import Path
 
 import pytest
 
-from muse.trust import crypto
-from muse.trust.contracts import Action, VaultError, VaultLocked
-from muse.trust.mandates import (
+from wardmuse.trust import crypto
+from wardmuse.trust.contracts import Action, VaultError, VaultLocked
+from wardmuse.trust.mandates import (
     LocalMandateBook,
     canonical_mandate,
     verify,
 )
-from muse.trust.vault import LocalVault, iso_utc
+from wardmuse.trust.vault import LocalVault, iso_utc
 
 PW = "correct horse battery staple"
 T0 = 1_750_000_000.0

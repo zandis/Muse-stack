@@ -20,6 +20,12 @@ Exit code: 0 when no check failed, 1 when one did, 2 on a usage problem.
 """
 
 from __future__ import annotations
+import sys as _sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parents[1]
+if str(_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_ROOT))
+from wardmuse.envutil import envget, envhas
 
 import argparse
 import json
@@ -40,7 +46,7 @@ for extra in (ROOT, ROOT / "scripts"):
 
 import render_config  # noqa: E402
 
-from muse import __version__, apps, keys, paths, quota  # noqa: E402
+from wardmuse import __version__, apps, keys, paths, quota  # noqa: E402
 
 PROMPT = "Reply with the single word: ok"  # fixed, so the report can be proven free of it
 MAX_OUT_TOKENS = 16
@@ -245,7 +251,7 @@ def rate_limited_now(env: Mapping[str, str], provider: Mapping[str, Any], status
 
 def build_plan(env: Mapping[str, str]) -> dict[str, Any]:
     """Which providers and aliases will be called, and the worst case for each."""
-    catalog = render_config.load_catalog(Path(env.get("MUSE_CATALOG", "") or paths.CATALOG_PATH))
+    catalog = render_config.load_catalog(Path(envget(env, "MUSE_CATALOG", "") or paths.CATALOG_PATH))
     local_deps = render_config.load_local_deployments(env)
     providers: list[dict[str, Any]] = []
     for provider in catalog["providers"]:
@@ -310,7 +316,7 @@ class Report:
 
 def observed_limits(env: Mapping[str, str], upstream: str, provider: str, now: float) -> list[dict[str, Any]]:
     try:
-        from muse.ledger import Ledger
+        from wardmuse.ledger import Ledger
 
         ledger = Ledger(environ=env)
         rows = [*ledger.limits(upstream), *ledger.limits(f"provider:{provider}")]
@@ -326,7 +332,7 @@ def observed_limits(env: Mapping[str, str], upstream: str, provider: str, now: f
 def block_decision(env: Mapping[str, str], upstream: str, provider: str, now: float) -> dict[str, Any] | None:
     """What Muse decided after a 429, from its own ledger: kind and how long, never provider text."""
     try:
-        from muse.ledger import Ledger
+        from wardmuse.ledger import Ledger
 
         blocks = Ledger(environ=env).active_blocks(now)
     except Exception:
@@ -590,7 +596,7 @@ def main(argv: list[str] | None = None, environ: Mapping[str, str] | None = None
                         help="you restarted the proxy with MUSE_DAILY_PAID_CAP_USD=0: check no paid provider answers")
     args = parser.parse_args(argv)
     env = dict(keys.export_env(environ))
-    args.proxy_url = args.proxy_url or env.get("MUSE_PROXY_URL", "").strip() or f"http://127.0.0.1:{env.get('MUSE_PORT', '').strip() or '4000'}"
+    args.proxy_url = args.proxy_url or envget(env, "MUSE_PROXY_URL", "").strip() or f"http://127.0.0.1:{envget(env, 'MUSE_PORT', '').strip() or '4000'}"
     return run(args, env)
 
 

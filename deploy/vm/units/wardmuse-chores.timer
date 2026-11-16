@@ -1,0 +1,10 @@
+[Unit]
+Description=Wardmuse chores: every minute
+
+[Timer]
+OnCalendar=minutely
+AccuracySec=5s
+Unit=wardmuse-chores.service
+
+[Install]
+WantedBy=timers.target

@@ -1,6 +1,7 @@
 """The queue runner against the REAL proxy: it takes free allowance, steps aside, stops at caps, never pays."""
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import sys
 import time
@@ -8,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from muse import apps, keys, queue
+from wardmuse import apps, keys, queue
 from ration_catalog import MASTER_KEY
 from test_ration_e2e import add as add_app, ledger, models, ok_rows, start, wait_for
 
@@ -49,7 +50,7 @@ def test_queue_drains_on_a_free_upstream_as_a_background_app(qenv, upstream):
         if path.is_file() and path.name not in ("q.env", "apps.yaml"):
             data = path.read_bytes()
             assert b"job 1" not in data or path.parent.name == "queue-out" or path.suffix == ".txt"
-            assert env["MUSE_QUEUE_APP_TOKEN"].encode() not in data
+            assert envget(env, "MUSE_QUEUE_APP_TOKEN").encode() not in data
     assert b"job 1" not in (Path(proxy.home) / "ledger.sqlite").read_bytes()
 
 

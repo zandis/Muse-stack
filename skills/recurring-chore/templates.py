@@ -11,6 +11,7 @@ reach the output, which is the person's own digest.
 """
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import json
 import os
@@ -18,7 +19,7 @@ import re
 import time
 from typing import Any
 
-from muse.skills import schedule
+from wardmuse.skills import schedule
 
 from . import fetch, sources
 
@@ -164,7 +165,7 @@ def _date(ctx: Any) -> str:
     raw = str(ctx.inputs.get("date") or "").strip()
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
         return raw
-    return schedule.local_date(time.time(), os.environ.get("MUSE_TZ", "").strip() or None)
+    return schedule.local_date(time.time(), envget(os.environ, "MUSE_TZ", "").strip() or None)
 
 
 def _can_ask(ctx: Any, tokens: int) -> bool:
@@ -396,7 +397,7 @@ def run_brief(ctx: Any, lang: str) -> dict[str, Any]:
     template = "daily-brief"
     out = _base(ctx, template, lang)
     try:
-        from muse.skills import chores
+        from wardmuse.skills import chores
 
         facts = chores.brief_facts(os.environ, out["date"], lang)
     except Exception as exc:  # the home's own records are unreadable: say so, do not guess

@@ -16,8 +16,8 @@ import time
 import pytest
 
 from home_fakes import assert_error, client_for, running, split_response
-from muse import keys
-from muse.home import api, auth, server
+from wardmuse import keys
+from wardmuse.home import api, auth, server
 
 O, H, V = auth.OWNER, auth.HOST, auth.VIEWER
 
@@ -174,7 +174,7 @@ def test_a_host_cannot_store_a_key_or_start_a_connection(home, tmp_path):
 
 
 def test_a_host_cannot_see_or_manage_apps(home):
-    from muse import apps
+    from wardmuse import apps
 
     owner, host = device(O), device(H, "bot-tools")
     assert call(home, owner, "POST", "/v1/apps", {"name": "editor", "priority": "interactive"})[0] == 201
@@ -308,8 +308,8 @@ def test_the_static_verifier_takes_roles():
 
 
 def test_a_host_token_made_by_hosts_setup_is_refused_over_the_wire(home, tmp_path, monkeypatch):
-    from muse import presets
-    from muse.mcp import hosts
+    from wardmuse import presets
+    from wardmuse.mcp import hosts
 
     done = hosts.setup(presets.get_host("openmausbot"))
     host_token = done.token_file.read_text().strip()

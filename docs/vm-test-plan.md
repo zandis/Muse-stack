@@ -1,3 +1,5 @@
+> The product is now Wardmuse (守繆思). This plan still describes the VM as it is today: `/opt/muse-stack`, `/etc/muse`, `~/.muse`, and `MUSE_*`. Those paths keep working. [Moving a VM](deploy/update.md#moving-a-vm-from-muse-paths-to-wardmuse) is separate.
+
 # VM test plan
 
 Written 2026-11-13. This is the list of things that can only be learned on a real machine with real keys, in the order worth doing them, with the exact commands. It is written for the owner's VM `muse-a1` (Ubuntu 24.04, ARM, Oracle Cloud), where the live router runs.

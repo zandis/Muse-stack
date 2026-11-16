@@ -1,7 +1,7 @@
 # Ranking models on Traditional Chinese (Taiwan)
 
 Work package A10. `scripts/eval_models.py` sends a small zh-TW test set through
-a running Muse proxy and reports, per routing alias or per model, how many items
+a running Wardmuse proxy and reports, per routing alias or per model, how many items
 each one gets right. The aim is to choose the `light` and `everyday` defaults in
 `config/routing.yaml` for Taiwan users from data.
 

@@ -890,7 +890,7 @@ def allowance(env: Mapping[str, str]) -> dict[str, Any] | None:
     to a provider. None when the status cannot be read here (no ledger, another machine).
     """
     try:
-        from muse import status
+        from wardmuse import status
 
         snap = status.build_snapshot(environ=dict(env))
     except Exception:
@@ -921,7 +921,7 @@ def allowance_line(snapshot: Mapping[str, Any] | None) -> str:
 def merged_env(environ: Mapping[str, str] | None) -> dict[str, str]:
     """Environment, .env and key store merged the way the other real-provider scripts do it."""
     try:
-        from muse import keys
+        from wardmuse import keys
 
         return dict(keys.export_env(environ))
     except Exception:
@@ -936,8 +936,8 @@ def key_of(task: Mapping[str, Any], repeat: int) -> str:
 
 
 def run(args: argparse.Namespace, env: dict[str, str]) -> int:
-    from muse import __version__, paths
-    from muse.skills import loader, runner
+    from wardmuse import __version__, paths
+    from wardmuse.skills import loader, runner
 
     tasks_dir = Path(args.tasks_dir) if args.tasks_dir else TASKS_DIR
     found, problems = load_tasks(tasks_dir)
@@ -1019,7 +1019,7 @@ def run(args: argparse.Namespace, env: dict[str, str]) -> int:
     replay_proxy = None
     record_post = None
     if args.replay:
-        from muse import cassette
+        from wardmuse import cassette
 
         replay_dir = Path(args.replay)
         if not replay_dir.is_dir():
@@ -1035,8 +1035,8 @@ def run(args: argparse.Namespace, env: dict[str, str]) -> int:
         env["MUSE_PROVIDER_MODE"] = "replay"
         env["MUSE_CASSETTE_DIR"] = str(replay_dir)
     if args.record:
-        from muse import cassette
-        from muse.skills.llm import http_post
+        from wardmuse import cassette
+        from wardmuse.skills.llm import http_post
 
         record_dir = Path(args.record)
         store = cassette.Store(record_dir)

@@ -14,4 +14,4 @@ case "${1:-}" in
   *) die "unknown option: $1" ;;
 esac
 
-ping_healthchecks success "${MUSE_HEARTBEAT_URL_FILE:-/etc/muse/heartbeat.url}"
+ping_healthchecks success "$(wm_file HEARTBEAT_URL_FILE /etc/wardmuse/heartbeat.url /etc/muse/heartbeat.url)"

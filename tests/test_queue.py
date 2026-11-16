@@ -1,6 +1,7 @@
 """muse.queue: the runner's state machine against a scripted stand-in for the proxy and a fake clock."""
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import json
 import os
@@ -13,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from muse import apps, keys, queue
-from muse.ration import local_day_bounds, resolve_tz
+from wardmuse import apps, keys, queue
+from wardmuse.ration import local_day_bounds, resolve_tz
 from queue_fakes import CANARY_PROMPT, CANARY_REPLY, Clock, FakeProxy, completion, error
 
 
@@ -69,7 +70,7 @@ def test_success_writes_atomically_and_erases_the_prompt(env, clock, proxy, tmp_
     assert stat.S_IMODE(out.stat().st_mode) == 0o600
     req = proxy.requests[0]
     assert req["model"] == "cheap" and req["privacy"] == "private" and req["max_tokens"] == 77 and req["prompt"] == CANARY_PROMPT
-    token = env["MUSE_QUEUE_APP_TOKEN"]
+    token = envget(env, "MUSE_QUEUE_APP_TOKEN")
     assert req["auth"] == f"Bearer {token}"
     done = job(env, clock, j.id)
     assert done.status == "done" and done.provider == "freea" and done.deployment == "a-model"
@@ -105,7 +106,7 @@ def test_runner_creates_a_background_non_paid_app_and_keeps_its_token_private(en
     make(env, clock).run(once=True)
     app = apps.load_apps(env)["queue"]
     assert app.priority == "background" and app.allow_paid is False
-    token = env["MUSE_QUEUE_APP_TOKEN"]
+    token = envget(env, "MUSE_QUEUE_APP_TOKEN")
     assert apps.hash_token(token) == app.token_sha256
     assert keys.source_of("MUSE_QUEUE_APP_TOKEN", env) in ("env", "dotenv")
 
@@ -316,7 +317,7 @@ def test_401_with_changed_registry_is_repaired_and_continues(env, clock, proxy):
     make(env, clock).run(once=True)  # creates the app
     j2 = add(env, clock, "second")
     runner = make(env, clock)
-    runner.tokens["queue"] = env["MUSE_QUEUE_APP_TOKEN"]
+    runner.tokens["queue"] = envget(env, "MUSE_QUEUE_APP_TOKEN")
     apps.rotate_token("queue", env)  # someone ran `muse apps rotate queue`
     proxy.push(401, {}, error("bad key", 401))
     assert runner.run(once=True).stopped in ("once", "idle")
@@ -645,7 +646,7 @@ def test_nothing_with_content_leaves_the_queue_files_and_logs(env, clock, proxy,
             data = path.read_bytes()
             assert CANARY_PROMPT.encode() not in data and CANARY_REPLY.encode() not in data, path
     assert not (home / "ledger.sqlite").exists()  # the queue never touches the usage ledger
-    assert env["MUSE_QUEUE_APP_TOKEN"].encode() not in b"".join(p.read_bytes() for p in home.rglob("*") if p.is_file() and p.name != ".env" and p.name != "apps.yaml.lock")
+    assert envget(env, "MUSE_QUEUE_APP_TOKEN").encode() not in b"".join(p.read_bytes() for p in home.rglob("*") if p.is_file() and p.name != ".env" and p.name != "apps.yaml.lock")
 
 
 def test_queue_db_is_rollback_journal_with_busy_timeout(env, clock):

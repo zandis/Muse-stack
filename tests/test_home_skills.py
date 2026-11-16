@@ -4,6 +4,7 @@ written only after its card is approved).
 No network and no real provider: the scripted router of the skills tests (queue_fakes.FakeProxy)."""
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import json
 import os
@@ -14,9 +15,9 @@ from pathlib import Path
 import pytest
 
 from home_fakes import assert_error
-from muse import cli
-from muse.home import api, auth, fake, folders, skills as home_skills, state
-from muse.skills import loader
+from wardmuse import cli
+from wardmuse.home import api, auth, fake, folders, skills as home_skills, state
+from wardmuse.skills import loader
 from test_skills_support import ECHO, chat, env, proxy, write_skill  # noqa: F401  (fixtures)
 
 OWNER = auth.Device("mei-phone", role="owner")
@@ -350,7 +351,7 @@ def test_muse_skills_folders_add_list_rm(capsys, tmp_path, env):  # noqa: F811
     assert [(e["name"], e["output"]) for e in json.loads(go("list", "--json")[1])] == [("docs", False), ("out", True)]
     code, _, err = go("add", "docs", str(out))
     assert code == 1 and "already on the list" in err
-    code, _, err = go("add", "home", os.environ["MUSE_HOME"])
+    code, _, err = go("add", "home", envget(os.environ, "MUSE_HOME"))
     assert code == 1 and "Muse's own folder" in err
     assert go("rm", "docs")[0] == 0 and go("rm", "docs")[0] == 1
     assert list(folders.load()) == ["out"]

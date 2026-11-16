@@ -1,6 +1,7 @@
 """The fake home: the same API from canned data, in every state the app must handle."""
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import json
 import os
@@ -14,9 +15,9 @@ from pathlib import Path
 import pytest
 
 from home_fakes import ROOT, assert_error, card_schema, running, schema_errors
-from muse import permissions as P
-from muse.home import api, cards, fake
-from muse.home.client import HomeClient
+from wardmuse import permissions as P
+from wardmuse.home import api, cards, fake
+from wardmuse.home.client import HomeClient
 
 # The demo cards hold one declined card; with biscuit-python the fake also has a permission request the person declined.
 DECLINED = 2 if P.available() else 1
@@ -64,7 +65,7 @@ def test_the_states_are_the_ones_the_app_must_handle():
 
 @pytest.mark.parametrize("state", ["normal", "used", "paused", "cards", "empty"])
 def test_every_get_answers_in_every_state_with_the_real_shapes(start, state):
-    from muse.types import Snapshot
+    from wardmuse.types import Snapshot
 
     f = start(state)
     snap = f.get("/v1/status")
@@ -180,7 +181,7 @@ def test_error_state_answers_unavailable_everywhere_but_still_checks_the_token(s
 
 
 def test_writes_work_and_are_forgotten(start, monkeypatch):
-    from muse import keys
+    from wardmuse import keys
 
     monkeypatch.setattr(keys, "set_key", lambda *a, **k: pytest.fail("a fake home must not touch the real key store"))
     f = start("normal")
@@ -207,7 +208,7 @@ def test_it_needs_no_proxy_ledger_or_keys_and_leaves_the_real_home_alone(start, 
     import urllib.request
 
     monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: pytest.fail("the fake home must not make a request"))
-    real_home = Path(os.environ["MUSE_HOME"])
+    real_home = Path(envget(os.environ, "MUSE_HOME"))
     before = sorted(p.name for p in real_home.iterdir())
     f = start("cards")
     f.get("/v1/status")
@@ -329,7 +330,7 @@ def test_python_m_muse_home_fake_runs_and_cleans_up(args, pattern):
         else:
             sock = Path(match.group(1))
             folder = sock.parent
-            assert folder != Path(os.environ["MUSE_HOME"]) and oct(sock.stat().st_mode & 0o777) == "0o600"
+            assert folder != Path(envget(os.environ, "MUSE_HOME")) and oct(sock.stat().st_mode & 0o777) == "0o600"
             client = HomeClient(fake.FAKE_TOKEN, socket_path=sock, timeout=10)
             assert client.call("GET", "/v1/cards")[1]["counts"]["pending"] == 1
         assert client.call("GET", "/v1/status")[1]["api_version"] == "1"

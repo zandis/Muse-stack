@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from muse import quota
-from muse.quota import (
+from wardmuse import quota
+from wardmuse.quota import (
     classify_failure,
     next_midnight_pacific,
     next_midnight_utc,

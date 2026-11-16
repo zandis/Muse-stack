@@ -6,6 +6,7 @@ per test and never written into the repository.
 """
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import base64
 import gzip

@@ -38,6 +38,12 @@ first run on a real VM as the test.
 """
 
 from __future__ import annotations
+import sys as _sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parents[2]
+if str(_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_ROOT))
+from wardmuse.envutil import envget, envhas
 
 import base64
 import email.utils
@@ -119,9 +125,9 @@ class InstancePrincipal:
 
     def __init__(self, environ: dict[str, str] | None = None) -> None:
         env = dict(os.environ if environ is None else environ)
-        self.imds = env.get("MUSE_OCI_IMDS", IMDS_DEFAULT).rstrip("/")
-        self._auth_override = env.get("MUSE_OCI_AUTH_ENDPOINT", "").rstrip("/")
-        self._os_override = env.get("MUSE_OCI_OS_ENDPOINT", "").rstrip("/")
+        self.imds = envget(env, "MUSE_OCI_IMDS", IMDS_DEFAULT).rstrip("/")
+        self._auth_override = envget(env, "MUSE_OCI_AUTH_ENDPOINT", "").rstrip("/")
+        self._os_override = envget(env, "MUSE_OCI_OS_ENDPOINT", "").rstrip("/")
         self.region = ""
         self.realm = ""
         self.token = ""
@@ -253,7 +259,7 @@ def main(argv: list[str]) -> int:
         print(__doc__.strip())
         return 0 if argv else 2
     try:
-        bucket = Bucket(os.environ.get("MUSE_BACKUP_NAMESPACE", ""), os.environ.get("MUSE_BACKUP_BUCKET", ""))
+        bucket = Bucket(envget(os.environ, "MUSE_BACKUP_NAMESPACE", ""), envget(os.environ, "MUSE_BACKUP_BUCKET", ""))
         command, args = argv[0], argv[1:]
         if command == "put" and len(args) == 2:
             bucket.put(args[0], args[1])

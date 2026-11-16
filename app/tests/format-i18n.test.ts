@@ -23,9 +23,13 @@ describe('dictionaries', () => {
   it('use the same placeholders in both languages', () => {
     for (const k of keys) expect(placeholders(zhTW[k]), k).toBe(placeholders(en[k]));
   });
-  it('really are translated (only names stay the same)', () => {
+  it('really are translated (language names stay the same)', () => {
     const same = keys.filter((k) => en[k] === zhTW[k]);
-    expect(same.sort()).toEqual(['brand', 'doc_title', 'rc_s_muse', 'st_lang_en', 'st_lang_zh']);
+    expect(same.sort()).toEqual(['st_lang_en', 'st_lang_zh']);
+    expect(en.brand).toBe('Wardmuse');
+    expect(zhTW.brand).toBe('守繆思');
+    expect(en.rc_s_muse).toBe('Wardmuse');
+    expect(zhTW.rc_s_muse).toBe('守繆思');
   });
   it('use the plain words of UX section 1, not the technical ones', () => {
     // Words the table rules out on main screens. ("Key" is allowed only for For apps.)

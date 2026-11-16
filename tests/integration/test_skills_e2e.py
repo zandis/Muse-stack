@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from muse import apps, cli
+from wardmuse import apps, cli
 from test_rules_pace_e2e import ledger, models, start, wait_for
 
 CANARY = "CANARY-E2E-FILE-3c9e77"

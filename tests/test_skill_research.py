@@ -4,6 +4,7 @@ No network and no real provider: the router is queue_fakes.FakeProxy answering b
 """
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import json
 import re
@@ -12,7 +13,7 @@ from typing import Any, Callable
 
 import pytest
 
-from muse.skills import loader, runner
+from wardmuse.skills import loader, runner
 from queue_fakes import ration_429
 from test_skills_support import chat, env, proxy  # noqa: F401  (fixtures)
 
@@ -600,7 +601,7 @@ def test_runner_returns_what_a_skill_kept_when_a_later_step_is_deferred(env, pro
     def check(output, ctx):
         return [] if "GOOD" in output["text"] else ["bad"]
     """
-    write_skill(Path(env["MUSE_HOME"]), "keeper", code)
+    write_skill(Path(envget(env, "MUSE_HOME")), "keeper", code)
     proxy.script.append(ration_429("defer:reserve", 600, "wait:2026-11-14T00:00:00Z,handoff"))
     result = runner.run("keeper", {}, environ=env)
     assert result.status == "needs_choice" and result.output == {"text": "GOOD so far"} and result.check["status"] == "passed"

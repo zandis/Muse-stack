@@ -10,10 +10,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from muse import status
-from muse.ledger import Ledger
-from muse.quota import ObservedLimit
-from muse.status import build_snapshot
+from wardmuse import status
+from wardmuse.ledger import Ledger
+from wardmuse.quota import ObservedLimit
+from wardmuse.status import build_snapshot
 
 
 def ts(text: str) -> float:
@@ -178,7 +178,7 @@ def test_core_modules_do_not_import_litellm(_isolated_muse_home: Path):
     import sys
 
     code = (
-        "import sys; import muse.status, muse.ledger, muse.quota; "
+        "import sys; import wardmuse.status, muse.ledger, muse.quota; "
         "muse.status.build_snapshot(); print(sorted(m for m in sys.modules if m.split('.')[0] == 'litellm'))"
     )
     root = Path(status.__file__).resolve().parents[1]

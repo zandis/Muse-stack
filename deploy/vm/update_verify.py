@@ -34,6 +34,12 @@ The window is 90 days, with 10 minutes of clock skew.
 """
 
 from __future__ import annotations
+import sys as _sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parents[2]
+if str(_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_ROOT))
+from wardmuse.envutil import envget, envhas
 
 import base64
 import binascii
@@ -159,7 +165,7 @@ def main(argv: list[str]) -> int:
             manifest = handle.read()
         with open(argv[1], "rb") as handle:
             signature = handle.read()
-        print(decide(manifest, signature, argv[2], argv[3], os.environ.get("MUSE_UPDATE_CHANNEL", "stable") or "stable"))
+        print(decide(manifest, signature, argv[2], argv[3], envget(os.environ, "MUSE_UPDATE_CHANNEL", "stable") or "stable"))
     except (Refused, OSError) as exc:
         print(f"update refused: {exc}", file=sys.stderr)
         return 1

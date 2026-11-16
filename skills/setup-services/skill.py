@@ -24,13 +24,14 @@ steps and the command to run.
 """
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import json
 import os
 import re
 from typing import Any, Mapping
 
-from muse import catalog, connect
+from wardmuse import catalog, connect
 
 MAX_ALTERNATIVES = 2
 MAX_GOAL_CHARS = 300
@@ -263,7 +264,7 @@ def _state(cat: Any, env: Mapping[str, str]) -> tuple[set[str], bool]:
 
 
 def _paid_suggestions(cat: Any, connected: set[str], env: Mapping[str, str]) -> list[Any]:
-    disabled = {p.strip().lower() for p in (env.get("MUSE_DISABLE_PROVIDERS") or "").split(",") if p.strip()}
+    disabled = {p.strip().lower() for p in (envget(env, "MUSE_DISABLE_PROVIDERS") or "").split(",") if p.strip()}
     out = []
     for p in cat.providers:
         if (p.local or p.id in connected or p.id.lower() in disabled or p.tier in catalog.SUGGESTIBLE_TIERS

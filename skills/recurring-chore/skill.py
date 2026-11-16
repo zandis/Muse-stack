@@ -18,13 +18,14 @@ stronger.
 """
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import json
 import os
 import re
 from typing import Any
 
-from muse.skills import schedule
+from wardmuse.skills import schedule
 
 from . import sources, templates
 
@@ -100,7 +101,7 @@ def run_understand(ctx: Any) -> dict[str, Any]:
             ctx.event("proposal_skipped", reason=type(exc).__name__)
     out_dir = str(ctx.inputs.get("out") or "").strip() or None
     understood = schedule.understand(sentence, folders=ctx.workspace.roots(), out=out_dir, proposal=proposal,
-                                     tz_name=os.environ.get("MUSE_TZ", "").strip())
+                                     tz_name=envget(os.environ, "MUSE_TZ", "").strip())
     ctx.event("understood", ok=understood["ok"], questions=len(understood["questions"]), by=understood["parsed_by"], asked=asked)
     return {"mode": "understand", "understood": understood, "asked_model": asked, "text": schedule.understood_text(understood)}
 

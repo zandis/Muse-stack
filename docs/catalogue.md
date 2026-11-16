@@ -1,12 +1,12 @@
 # The published catalogue
 
-The catalogue is the list of free and trial allowances Muse knows about: AI services, storage, compute, chain and messaging, plus the consumer subscriptions that are hand-off only. It is written by hand in `config/providers.yaml` and `config/resources/*.yaml`. This page describes the copy that is published as JSON for other projects to read, and the weekly check that says when a source page has changed.
+The catalogue is the list of free and trial allowances Wardmuse knows about: AI services, storage, compute, chain and messaging, plus the consumer subscriptions that are hand-off only. It is written by hand in `config/providers.yaml` and `config/resources/*.yaml`. This page describes the copy that is published as JSON for other projects to read, and the weekly check that says when a source page has changed.
 
 The decision to publish it was taken on 2026-11-13 (work package A15). No maintained, machine-readable list of this kind was found in the ecosystem review (`docs/ecosystem-review-2026-11.md`, part 3.1).
 
 ## Licence
 
-The published catalogue (the files under `catalogue/`) is licensed **CC BY 4.0**, chosen by the owner on 2026-11-15. The text is in `catalogue/LICENSE`. Anyone may copy and adapt it, provided they credit the source ("Muse Stack service catalogue", with a link to this repository) and say what they changed. The rest of the repository, including the code that builds the catalogue, is Apache-2.0 (`LICENSE` at the root).
+The published catalogue (the files under `catalogue/`) is licensed **CC BY 4.0**, chosen by the owner on 2026-11-15. The text is in `catalogue/LICENSE`. Anyone may copy and adapt it, provided they credit the source ("Wardmuse Stack service catalogue", with a link to this repository) and say what they changed. The rest of the repository, including the code that builds the catalogue, is Apache-2.0 (`LICENSE` at the root).
 
 The setting is `LICENCE_SPDX` at the top of `scripts/publish_catalogue.py`; the JSON carries the same statement in its `licence` field. The catalogue states facts read from providers' own pages on the dates given; it is not advice, and providers change their terms.
 
@@ -80,7 +80,7 @@ The output is deterministic. Entries are in a fixed order and no clock is read, 
 ## The weekly page check
 
 ```bash
-muse catalog check --pages --report            # writes catalog-check.json in the Muse home folder
+muse catalog check --pages --report            # writes catalog-check.json in the Wardmuse home folder
 muse catalog check --pages --report FILE --max-pages 40 --delay 2 --leads
 ```
 
@@ -129,4 +129,4 @@ Hugging Face was to be added as an AI service with a sign-in connection. The sig
 - Allowance: the "Included Monthly Credits" table reads Free Users: None, with extra usage "yes (credits purchase required)". PRO users get $2.00 a month; Team and Enterprise get $2.00 per seat. Source: <https://huggingface.co/docs/inference-providers/pricing>. The pricing page agrees: "$2 of included inference credits monthly" appears under PRO only (<https://huggingface.co/pricing>).
 - Routing: the installed LiteLLM 1.108.5 lists `huggingface` as a provider and resolves the `huggingface/` model prefix. This was checked in the installed package only; no provider was called.
 
-The catalogue lists free and trial allowances that Muse can suggest. An entry that offered a one-tap sign-in and then failed on the first request for want of credits would mislead. So no entry was added. If the owner wants it listed as a paid service, it needs: tier `paid`; one variable (`HF_TOKEN`) added to `.env.example`; model ids confirmed on Hugging Face's own model pages; prices, since a paid model is used automatically only when it has one; and a sign-in flow in `muse/connect.py`, which today implements only OpenRouter's. That flow would need an OAuth app registered with Hugging Face (a client id), the device-code or PKCE exchange, and a decision on token lifetime and refresh.
+The catalogue lists free and trial allowances that Wardmuse can suggest. An entry that offered a one-tap sign-in and then failed on the first request for want of credits would mislead. So no entry was added. If the owner wants it listed as a paid service, it needs: tier `paid`; one variable (`HF_TOKEN`) added to `.env.example`; model ids confirmed on Hugging Face's own model pages; prices, since a paid model is used automatically only when it has one; and a sign-in flow in `muse/connect.py`, which today implements only OpenRouter's. That flow would need an OAuth app registered with Hugging Face (a client id), the device-code or PKCE exchange, and a decision on token lifetime and refresh.

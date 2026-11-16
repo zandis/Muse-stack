@@ -20,6 +20,30 @@ from typing import Any, Mapping
 
 import yaml
 
+
+def envget(environ, key, default=""):
+    """WARDMUSE_<suffix> if set and non-blank, else MUSE_<suffix>, else default.
+
+    Same rule as wardmuse.envutil.envget. This file stays free of that import so
+    the proxy can render even when the package is not what is being started.
+    """
+    if key.startswith("WARDMUSE_"):
+        suffix = key[len("WARDMUSE_"):]
+    elif key.startswith("MUSE_"):
+        suffix = key[len("MUSE_"):]
+    else:
+        suffix = key
+    new_key, old_key = f"WARDMUSE_{suffix}", f"MUSE_{suffix}"
+    if new_key in environ and str(environ[new_key]).strip() != "":
+        return environ[new_key]
+    if old_key in environ:
+        return environ[old_key]
+    if new_key in environ:
+        return environ[new_key]
+    return default
+
+
+
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CATALOG = ROOT / "config" / "providers.yaml"
 DEFAULT_OUT = ROOT / "config" / "generated" / "litellm.yaml"
@@ -27,8 +51,8 @@ DEFAULT_OUT = ROOT / "config" / "generated" / "litellm.yaml"
 TRUTHY = {"1", "true", "yes", "on"}
 LOCAL_PLACEHOLDER_KEY = "local-no-key"
 ALIASES_ORDER = ("fast", "cheap", "smart", "long-context", "vision", "embed", "rerank")
-HOOK_CALLBACK = "muse.hook.handler"
-CUSTOM_AUTH = "muse.auth.user_api_key_auth"
+HOOK_CALLBACK = "wardmuse.hook.handler"
+CUSTOM_AUTH = "wardmuse.auth.user_api_key_auth"
 PAID_TIERS = {"paid", "metered"}
 PAID_ORDER_OFFSET = 20
 FALSY = {"0", "false", "no", "off"}
@@ -77,7 +101,7 @@ def cooldown_fallback(environ: Mapping[str, str]) -> float:
 
     MUSE_COOLDOWN_FALLBACK_S, 1 to 3600; anything else means the default (30).
     """
-    raw = environ.get("MUSE_COOLDOWN_FALLBACK_S", "").strip()
+    raw = envget(environ, "MUSE_COOLDOWN_FALLBACK_S", "").strip()
     try:
         value = float(raw)
     except ValueError:
@@ -95,7 +119,7 @@ def paid_cap_positive(environ: Mapping[str, str]) -> bool:
     """
     from decimal import Decimal, InvalidOperation
 
-    raw = environ.get("MUSE_DAILY_PAID_CAP_USD", "")
+    raw = envget(environ, "MUSE_DAILY_PAID_CAP_USD", "")
     if not str(raw).strip():
         return True
     try:
@@ -112,7 +136,7 @@ def paid_fallback_enabled(environ: Mapping[str, str]) -> bool:
     true value -> on (the paid gate still refuses at request time if the cap
     is 0); unset or empty -> on exactly when the daily paid cap is > 0.
     """
-    explicit = environ.get("MUSE_ALLOW_PAID_FALLBACK", "").strip().lower()
+    explicit = envget(environ, "MUSE_ALLOW_PAID_FALLBACK", "").strip().lower()
     if explicit in FALSY:
         return False
     if explicit in TRUTHY:
@@ -121,7 +145,7 @@ def paid_fallback_enabled(environ: Mapping[str, str]) -> bool:
 
 
 def _disabled(environ: Mapping[str, str]) -> set[str]:
-    raw = environ.get("MUSE_DISABLE_PROVIDERS", "")
+    raw = envget(environ, "MUSE_DISABLE_PROVIDERS", "")
     return {part.strip().lower() for part in raw.split(",") if part.strip()}
 
 
@@ -141,10 +165,15 @@ def _enabled(provider: Mapping[str, Any], environ: Mapping[str, str], disabled: 
 
 
 def local_catalog_path(environ: Mapping[str, str]) -> Path:
-    explicit = environ.get("MUSE_LOCAL_CATALOG", "").strip()
+    explicit = envget(environ, "MUSE_LOCAL_CATALOG", "").strip()
     if explicit:
         return Path(explicit)
-    home = environ.get("MUSE_HOME", "").strip() or str(Path.home() / ".muse")
+    raw_home = str(envget(environ, "MUSE_HOME", "") or "").strip()
+    if raw_home:
+        home = raw_home
+    else:
+        new_home, old_home = Path.home() / ".wardmuse", Path.home() / ".muse"
+        home = str(new_home if new_home.exists() or not old_home.exists() else old_home)
     return Path(home) / "local.yaml"
 
 
@@ -170,7 +199,7 @@ def load_local_deployments(environ: Mapping[str, str]) -> dict[str, list[dict[st
 
 def _local_order(environ: Mapping[str, str]) -> int:
     try:
-        return int(environ.get("MUSE_LOCAL_ORDER", "5"))
+        return int(envget(environ, "MUSE_LOCAL_ORDER", "5"))
     except ValueError:
         return 5
 
@@ -314,7 +343,7 @@ _LOOPBACK_BINDS = {"", "127.0.0.1", "localhost", "::1"}
 
 def bind_is_loopback(environ: Mapping[str, str]) -> bool:
     """Unset MUSE_BIND means the compose and native default, which is loopback."""
-    return environ.get("MUSE_BIND", "").strip().lower() in _LOOPBACK_BINDS
+    return envget(environ, "MUSE_BIND", "").strip().lower() in _LOOPBACK_BINDS
 
 
 def _model_info(provider: Mapping[str, Any], deployment: Mapping[str, Any], deployment_id: str) -> dict[str, Any]:
@@ -473,7 +502,7 @@ def render(catalog: Mapping[str, Any], environ: Mapping[str, str]) -> tuple[dict
         # on loopback. Compose publishes MUSE_BIND; the process inside the
         # container always listens on 0.0.0.0, so the bind has to be checked here.
         raise SystemExit(
-            f"LITELLM_MASTER_KEY is empty and MUSE_BIND={environ.get('MUSE_BIND', '').strip()} "
+            f"LITELLM_MASTER_KEY is empty and MUSE_BIND={envget(environ, 'MUSE_BIND', '').strip()} "
             "is not loopback. Refusing to start an unauthenticated proxy off this machine."
         )
     else:

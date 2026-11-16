@@ -1,6 +1,7 @@
 """`muse home serve|token|call` and `python -m muse.home` through their entry points."""
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import io
 import json
@@ -15,10 +16,10 @@ from pathlib import Path
 import pytest
 
 from home_fakes import ROOT, running, short_dir
-from muse import cli
-from muse.home import api, auth
-from muse.home import cli as home_cli
-from muse.home.client import HomeClient
+from wardmuse import cli
+from wardmuse.home import api, auth
+from wardmuse.home import cli as home_cli
+from wardmuse.home.client import HomeClient
 
 KEY_CANARY = "gsk_CANARYkey0123456789abcdefABCDEF"
 
@@ -152,10 +153,10 @@ def test_call_reads_a_body_from_stdin_or_a_file_and_keeps_keys_off_the_command_l
     sock = ["--socket", str(srv.socket_path)]
     code, out, err = run(["home", "call", "POST", "/v1/keys/groq", "--data", json.dumps({"key": KEY_CANARY}), *sock], monkeypatch)
     assert code == 2 and "must not be typed on the command line" in err and KEY_CANARY not in out + err
-    assert not Path(os.environ["MUSE_ENV_FILE"]).exists()
+    assert not Path(envget(os.environ, "MUSE_ENV_FILE")).exists()
     code, out, err = run(["home", "call", "POST", "/v1/keys/groq", "--data", "-", *sock], monkeypatch, stdin=json.dumps({"key": KEY_CANARY}))
     assert code == 0 and json.loads(out)["stored"] == ["GROQ_API_KEY"] and KEY_CANARY not in out + err
-    assert KEY_CANARY in Path(os.environ["MUSE_ENV_FILE"]).read_text()
+    assert KEY_CANARY in Path(envget(os.environ, "MUSE_ENV_FILE")).read_text()
     body = tmp_path / "job.json"
     body.write_text(json.dumps({"prompt": "hello"}))
     code, out, err = run(["home", "call", "POST", "/v1/jobs", "--data", f"@{body}", *sock], monkeypatch)

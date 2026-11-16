@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from muse import paths
-from muse.ledger import RETENTION_SECONDS, SCHEMA_VERSION, Ledger
-from muse.quota import ObservedLimit
+from wardmuse import paths
+from wardmuse.ledger import RETENTION_SECONDS, SCHEMA_VERSION, Ledger
+from wardmuse.quota import ObservedLimit
 
 
 def ts(text: str) -> float:

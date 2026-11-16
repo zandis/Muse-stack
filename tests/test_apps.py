@@ -1,6 +1,7 @@
 """muse.apps: registry file safety, token hashing, constant-time lookup, reload, validation."""
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import hashlib
 import multiprocessing
@@ -12,8 +13,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from muse import apps
-from muse.apps import ANONYMOUS, OWNER, AppError
+from wardmuse import apps
+from wardmuse.apps import ANONYMOUS, OWNER, AppError
 
 
 @pytest.fixture()
@@ -22,7 +23,7 @@ def env(tmp_path: Path) -> dict[str, str]:
 
 
 def path(env) -> Path:
-    return Path(env["MUSE_HOME"]) / "apps.yaml"
+    return Path(envget(env, "MUSE_HOME")) / "apps.yaml"
 
 
 def test_absent_file_is_no_apps(env):
@@ -186,7 +187,7 @@ def test_cache_returns_copies(env):
 def test_atomic_write_leaves_no_temp_files(env):
     for i in range(5):
         apps.add_app(f"a{i}", "normal", environ=env)
-    leftovers = [p.name for p in Path(env["MUSE_HOME"]).iterdir() if p.name.startswith(".apps-")]
+    leftovers = [p.name for p in Path(envget(env, "MUSE_HOME")).iterdir() if p.name.startswith(".apps-")]
     assert leftovers == []
 
 
@@ -197,7 +198,7 @@ def _adder(home: str, prefix: str, n: int) -> None:
 
 def test_concurrent_writers_lose_nothing(env):
     ctx = multiprocessing.get_context("spawn")
-    procs = [ctx.Process(target=_adder, args=(env["MUSE_HOME"], f"p{w}-", 8)) for w in range(3)]
+    procs = [ctx.Process(target=_adder, args=(envget(env, "MUSE_HOME"), f"p{w}-", 8)) for w in range(3)]
     for proc in procs:
         proc.start()
     for proc in procs:

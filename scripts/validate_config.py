@@ -372,8 +372,8 @@ def scenario_paid_cap_default() -> None:
     # One default for the router and the app: NT$30 at the fixed rate of 32 (muse.ration; standard library only).
     from decimal import Decimal
 
-    from muse import ration
-    from muse.home import app_money
+    from wardmuse import ration
+    from wardmuse.home import app_money
 
     check(ration.DEFAULT_PAID_CAP_USD == Decimal("30") / Decimal("32") > 0, "the router's default cap should be NT$30 at 32")
     check(ration.parse_paid_cap(None) == ration.DEFAULT_PAID_CAP_USD == ration.Settings.from_env({}).paid_cap_usd,
@@ -479,7 +479,7 @@ def scenario_auth_and_no_secrets() -> None:
 
 def scenario_catalogue_v2() -> None:
     """The v2 fields, resource files and subscriptions pass the schema checks in muse/catalog.py."""
-    from muse import catalog
+    from wardmuse import catalog
 
     problems = catalog.validate_catalog()
     check(not problems, "catalogue v2: " + "; ".join(problems[:5]) + (f" (+{len(problems) - 5} more)" if len(problems) > 5 else ""))
@@ -553,7 +553,7 @@ def scenario_min_output_tokens() -> None:
     import copy
     from datetime import date
 
-    from muse import catalog as catalog_mod
+    from wardmuse import catalog as catalog_mod
 
     catalog = load_catalog(CATALOG_PATH)
     keys = {str(p["env"]): "k" for p in catalog["providers"] if p.get("env")}
@@ -622,7 +622,7 @@ def scenario_reasoning() -> None:
     import copy
     from datetime import date
 
-    from muse import catalog as catalog_mod
+    from wardmuse import catalog as catalog_mod
 
     catalog = load_catalog(CATALOG_PATH)
     keys = {str(p["env"]): "k" for p in catalog["providers"] if p.get("env")}

@@ -40,13 +40,15 @@ case "${1:-}" in -h|--help) sed -n '2,31p' "$0"; exit 0 ;; esac
 
 RELEASE_DIR="$(cd "$HERE/../.." && pwd)"
 VERSION="$(basename "$RELEASE_DIR")"
-BASE="${MUSE_BASE:-/opt/muse}"
+BASE="$(wm_dir BASE /opt/wardmuse /opt/muse /opt/muse-stack)"
 RUN_USER="${MUSE_USER:-muse}"
-STATE_ROOT="${MUSE_STATE_ROOT:-/var/lib/muse}"
-HOME_DIR="${MUSE_HOME:-$STATE_ROOT/home}"
-VM_STATE="${MUSE_VM_STATE:-$STATE_ROOT/vm}"
-ENV_FILE="${MUSE_ENV_FILE:-$STATE_ROOT/muse.env}"
-SETUP_DIR="${MUSE_SETUP_DIR:-/var/lib/muse-setup}"
+STATE_ROOT="$(wm_dir STATE_ROOT /var/lib/wardmuse /var/lib/muse)"
+if val="$(wm_env HOME)"; then HOME_DIR="$val"; else HOME_DIR="$STATE_ROOT/home"; fi
+VM_STATE="$(wm_dir VM_STATE "$STATE_ROOT/vm" /var/lib/wardmuse/vm /var/lib/muse/vm)"
+if val="$(wm_env ENV_FILE)"; then ENV_FILE="$val"; else ENV_FILE="$STATE_ROOT/wardmuse.env"; fi
+# An existing secrets file keeps its name. A new install uses wardmuse.env.
+if [ ! -f "$ENV_FILE" ] && [ -f "$STATE_ROOT/muse.env" ]; then ENV_FILE="$STATE_ROOT/muse.env"; fi
+SETUP_DIR="${MUSE_SETUP_DIR:-/var/lib/wardmuse-setup}"
 TZ_NAME="${MUSE_TZ:-Asia/Taipei}"
 REBOOT_TIME="${MUSE_OS_REBOOT_TIME:-03:30}"
 TESTER_SSH="${MUSE_TESTER_SSH:-no}"
@@ -103,7 +105,7 @@ do_account() {
 }
 
 do_folders() {
-  install -d -m 0755 -o root -g root "$BASE" "$BASE/releases" "$SYSROOT/etc/muse" "$SYSROOT/etc/apt/apt.conf.d" "$SYSROOT/etc/sysctl.d" "$SYSROOT/usr/local/bin"
+  install -d -m 0755 -o root -g root "$BASE" "$BASE/releases" "$SYSROOT/etc/wardmuse" "$SYSROOT/etc/apt/apt.conf.d" "$SYSROOT/etc/sysctl.d" "$SYSROOT/usr/local/bin"
   install -d -m 0700 -o "$RUN_USER" -g "$RUN_USER" "$STATE_ROOT" "$HOME_DIR" "$VM_STATE"
   chown -R root:root "$RELEASE_DIR"
   chmod -R go-w "$RELEASE_DIR"
@@ -114,15 +116,15 @@ do_os() {
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
 CONF
-  cat > "$SYSROOT/etc/apt/apt.conf.d/52muse-unattended-upgrades" <<CONF
+  cat > "$SYSROOT/etc/apt/apt.conf.d/52wardmuse-unattended-upgrades" <<CONF
 // Security updates install by themselves; a reboot, when one is needed, happens at this time.
 Unattended-Upgrade::Automatic-Reboot "true";
 Unattended-Upgrade::Automatic-Reboot-Time "$REBOOT_TIME";
 Unattended-Upgrade::Remove-Unused-Dependencies "true";
 CONF
   # The cloud network lets no ICMP in, so let TCP find the path MTU by itself.
-  printf 'net.ipv4.tcp_mtu_probing = 1\n' > "$SYSROOT/etc/sysctl.d/60-muse.conf"
-  sysctl -q -p "$SYSROOT/etc/sysctl.d/60-muse.conf" || true
+  printf 'net.ipv4.tcp_mtu_probing = 1\n' > "$SYSROOT/etc/sysctl.d/60-wardmuse.conf"
+  sysctl -q -p "$SYSROOT/etc/sysctl.d/60-wardmuse.conf" || true
   if command -v timedatectl >/dev/null 2>&1; then timedatectl set-timezone "$TZ_NAME" || true; fi
 }
 
@@ -178,20 +180,29 @@ do_backupkey() {
 }
 
 do_command() {
-  cat > "$SYSROOT/usr/local/bin/muse" <<WRAP
+  cat > "$SYSROOT/usr/local/bin/wardmuse" <<WRAP
 #!/bin/sh
-# The muse CLI on this VM: runs as the service user with the VM's settings.
-#   sudo muse status        sudo muse keys set GEMINI_API_KEY
+# The Wardmuse CLI on this VM: runs as the service user with the VM's settings.
+#   sudo wardmuse status        sudo wardmuse keys set GEMINI_API_KEY
 if [ "\$(id -un)" != "$RUN_USER" ]; then
-  [ "\$(id -u)" -eq 0 ] || { echo "run as root (sudo muse ...) or as $RUN_USER" >&2; exit 1; }
+  [ "\$(id -u)" -eq 0 ] || { echo "run as root (sudo wardmuse ...) or as $RUN_USER" >&2; exit 1; }
   exec runuser -u "$RUN_USER" -- "\$0" "\$@"
 fi
+export WARDMUSE_HOME="$HOME_DIR" WARDMUSE_ENV_FILE="$ENV_FILE" WARDMUSE_TZ="$TZ_NAME" WARDMUSE_BIND=127.0.0.1
 export MUSE_HOME="$HOME_DIR" MUSE_ENV_FILE="$ENV_FILE" MUSE_TZ="$TZ_NAME" MUSE_BIND=127.0.0.1
 export PYTHONPATH="$BASE/current" PATH="$BASE/current/venv/bin:/usr/bin:/bin"
-cd "$BASE/current" && exec "$BASE/current/venv/bin/python" -m muse "\$@"
+cd "$BASE/current" && exec "$BASE/current/venv/bin/python" -m wardmuse "\$@"
+WRAP
+  chmod 755 "$SYSROOT/usr/local/bin/wardmuse"
+  cat > "$SYSROOT/usr/local/bin/muse" <<'WRAP'
+#!/bin/sh
+# Compatibility name. Prefer wardmuse.
+echo "wardmuse: the 'muse' command is now 'wardmuse'" >&2
+exec /usr/local/bin/wardmuse "$@"
 WRAP
   chmod 755 "$SYSROOT/usr/local/bin/muse"
   ln -sfn "$BASE/current/deploy/vm/muse-vm-status" "$SYSROOT/usr/local/bin/muse-vm-status"
+  ln -sfn "$BASE/current/deploy/vm/muse-vm-status" "$SYSROOT/usr/local/bin/wardmuse-vm-status"
 }
 
 do_services() {
@@ -200,7 +211,7 @@ do_services() {
 }
 
 do_health() {
-  wait_for_proxy 240 || die "the router did not answer on 127.0.0.1:4000 within 4 minutes (journalctl -u muse-proxy)"
+  wait_for_proxy 240 || die "the router did not answer on 127.0.0.1:4000 within 4 minutes (journalctl -u wardmuse-proxy or journalctl -u muse-proxy)"
   only_loopback_listeners "$TESTER_SSH" || die "something listens beyond loopback; refusing to leave it running"
   say "router is up on 127.0.0.1:4000; nothing listens beyond loopback"
 }
@@ -229,4 +240,4 @@ CURRENT_STEP="health"; say "health"; do_health
 
 CURRENT_STEP="done"
 printf 'version=%s\ntime=%s\n' "$VERSION" "$(utc_now)" > "$SETUP_DIR/DONE"
-say "first boot finished: Muse $VERSION is running. Nothing was opened to the internet."
+say "first boot finished: Wardmuse $VERSION is running. Nothing was opened to the internet."

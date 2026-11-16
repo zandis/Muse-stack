@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
 from render_config import (  # noqa: E402
     DEFAULT_CATALOG,
     dumps,
+    envget,
     load_catalog,
     paid_cap_positive,
     paid_fallback_enabled,
@@ -21,11 +22,11 @@ from render_config import (  # noqa: E402
     write_config,
 )
 
-OUT = Path(os.environ.get("MUSE_CONFIG_PATH", "/tmp/muse-config.yaml"))
+OUT = Path(envget(os.environ, "MUSE_CONFIG_PATH", "/tmp/wardmuse-config.yaml"))
 
 
 def main() -> None:
-    catalog = load_catalog(Path(os.environ.get("MUSE_CATALOG", str(DEFAULT_CATALOG))))
+    catalog = load_catalog(Path(envget(os.environ, "MUSE_CATALOG", str(DEFAULT_CATALOG))))
     config, enabled = render(catalog, os.environ)
     text = dumps(config, enabled)
     write_config(text, OUT)
@@ -44,7 +45,7 @@ def main() -> None:
         )
     else:
         paid = paid_fallback_enabled(os.environ)
-        cap = os.environ.get("MUSE_DAILY_PAID_CAP_USD", "").strip() or "0.9375 (default, NT$30 at 32)"
+        cap = envget(os.environ, "MUSE_DAILY_PAID_CAP_USD", "").strip() or "0.9375 (default, NT$30 at 32)"
         cap_text = f"daily paid cap ${cap}" if paid_cap_positive(os.environ) else "daily paid cap 0 (paid never used)"
         print(
             f"muse-stack: enabled providers: {', '.join(enabled)}. "

@@ -2,7 +2,7 @@
 name = "muse-app"
 version = "0.1.0"
 edition = "2021"
-description = "The Muse desktop app shell (Tauri v2): the window, the menu-bar icon and its small panel, and the bridge to the home."
+description = "The Wardmuse desktop app shell (Tauri v2): the window, the menu-bar icon and its small panel, and the bridge to the home."
 publish = false
 license = "Apache-2.0"
 

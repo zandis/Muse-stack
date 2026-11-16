@@ -12,9 +12,9 @@ import pytest
 import yaml
 
 import render_config
-from muse import catalog, cli
-from muse.catalog import CATALOG_PATH, RESOURCES_DIR
-from muse.status import build_snapshot
+from wardmuse import catalog, cli
+from wardmuse.catalog import CATALOG_PATH, RESOURCES_DIR
+from wardmuse.status import build_snapshot
 
 TODAY = date(2026, 11, 15)
 
@@ -351,7 +351,7 @@ def test_gain_only_from_verified_numbers():
 
 
 def test_string_tables_are_complete():
-    from muse import connect
+    from wardmuse import connect
 
     for table in (catalog.STRINGS, connect.CONNECT_STRINGS):
         assert set(table) == {"en", "zh-TW"}
@@ -464,7 +464,7 @@ def test_status_line_and_older_snapshots(_isolated_muse_home: Path):
 
 
 def test_status_line_zh(monkeypatch):
-    from muse import connect
+    from wardmuse import connect
 
     snap = {"suggestions": [{"id": "gemini", "name": "Gemini", "text": {"en": {"meta": "about 4 min, 3 steps"}, "zh-TW": {"meta": "約 4 分鐘，3 個步驟"}}}]}
     assert connect.next_helper_line(snap, "zh-TW") == "下一個建議新增的幫手：Gemini（約 4 分鐘，3 個步驟）"

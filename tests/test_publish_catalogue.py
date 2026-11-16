@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from muse import catalog, cli
+from wardmuse import catalog, cli
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "catalogue"

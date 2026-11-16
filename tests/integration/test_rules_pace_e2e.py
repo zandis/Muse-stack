@@ -16,9 +16,9 @@ from typing import Any, Callable
 import pytest
 
 from ration_catalog import PRICE_IN, PRICE_OUT, build_rules_catalog, mark_oneoff
-from muse import apps, quota
-from muse.ledger import Ledger
-from muse.ration import parse_options
+from wardmuse import apps, quota
+from wardmuse.ledger import Ledger
+from wardmuse.ration import parse_options
 
 
 def ledger(proxy) -> Ledger:

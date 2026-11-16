@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from muse import types as mtypes
-from muse.dashboard import server as dash
+from wardmuse import types as mtypes
+from wardmuse.dashboard import server as dash
 
 DASH = Path(dash.__file__).parent
 INDEX = (DASH / "index.html").read_text(encoding="utf-8")
@@ -119,7 +119,7 @@ def test_503_without_traceback():
 
 def test_default_snapshot_missing_module_is_503(monkeypatch):
     import sys
-    monkeypatch.setitem(sys.modules, "muse.status", None)  # makes the import fail
+    monkeypatch.setitem(sys.modules, "wardmuse.status", None)  # makes the import fail
     s = dash.make_server("127.0.0.1", 0)
     threading.Thread(target=s.serve_forever, daemon=True).start()
     try:

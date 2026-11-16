@@ -31,6 +31,12 @@ machine. See docs/deploy/update.md.
 """
 
 from __future__ import annotations
+import sys as _sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parents[1]
+if str(_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_ROOT))
+from wardmuse.envutil import envget, envhas
 
 import argparse
 import base64
@@ -127,7 +133,7 @@ def sign_bytes(manifest: bytes, seed: bytes) -> bytes:
 
 def _read_seed(path: Path | None) -> bytes:
     if path is None:
-        text = os.environ.get("MUSE_RELEASE_SIGNING_KEY", "")
+        text = envget(os.environ, "MUSE_RELEASE_SIGNING_KEY", "")
         if not text.strip():
             raise SignError("set --key or MUSE_RELEASE_SIGNING_KEY")
         return _decode_seed(text)

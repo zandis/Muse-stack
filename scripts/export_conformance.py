@@ -45,8 +45,8 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from muse import cache, quota, ration  # noqa: E402
-from muse.records import vectors as records_vectors  # noqa: E402  (records: both sides are new, so Python is the reference)
+from wardmuse import cache, quota, ration  # noqa: E402
+from wardmuse.records import vectors as records_vectors  # noqa: E402  (records: both sides are new, so Python is the reference)
 
 DEFAULT_OUT = ROOT / "core" / "conformance"
 TIME_ERRORS = (ValueError, OverflowError, OSError)
@@ -1024,7 +1024,7 @@ PDAY = 86_400
 
 
 def permissions_available() -> bool:
-    from muse.permissions import available
+    from wardmuse.permissions import available
 
     return available()
 
@@ -1050,8 +1050,8 @@ def permission_base_draft(issuer: str) -> dict[str, Any]:
 
 def make_python_fixtures() -> dict[str, Any]:
     """Tokens and entries made by the Python twin, for the Rust core to read. Run once."""
-    from muse import permissions as P
-    from muse.permissions import codec
+    from wardmuse import permissions as P
+    from wardmuse.permissions import codec
 
     fx = json.loads((FIXTURES / "permission_tokens.json").read_text(encoding="utf-8"))
     root = P.parse_private_key(fx["root_private"])
@@ -1092,8 +1092,8 @@ def make_python_fixtures() -> dict[str, Any]:
 
 
 def permissions_vectors() -> Area:
-    from muse import permissions as P
-    from muse.permissions import codec
+    from wardmuse import permissions as P
+    from wardmuse.permissions import codec
 
     fx = load_permission_fixtures()
     tokens, entries = fx["tokens"], fx["revocations"]

@@ -55,7 +55,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from muse import catalog  # noqa: E402
+from wardmuse import catalog  # noqa: E402
 
 # --------------------------------------------------------------------------
 # THE ONE LICENCE SETTING. Chosen by the owner on 2026-11-15: the published

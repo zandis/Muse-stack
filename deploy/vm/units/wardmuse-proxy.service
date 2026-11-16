@@ -1,0 +1,52 @@
+# The router: LiteLLM on 127.0.0.1:4000, started by `muse up --native`.
+# It is the only Wardmuse process that holds provider keys (read from the 0600
+# dotenv file named by MUSE_ENV_FILE) and the only long-running one that needs
+# the internet. The bind address is MUSE_BIND in that file; first boot writes
+# 127.0.0.1 and refuses anything else.
+[Unit]
+Description=Wardmuse router (LiteLLM on 127.0.0.1:4000)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@MUSE_USER@
+Group=@MUSE_USER@
+WorkingDirectory=@MUSE_ROOT@
+EnvironmentFile=-@MUSE_CONF@
+Environment=PATH=@MUSE_VENV@/bin:/usr/bin:/bin
+Environment=PYTHONPATH=@MUSE_ROOT@
+Environment=PYTHONUNBUFFERED=1
+Environment=WARDMUSE_BIND=127.0.0.1
+Environment=MUSE_BIND=127.0.0.1
+ExecStart=@MUSE_VENV@/bin/python -m wardmuse up --native
+Restart=on-failure
+RestartSec=5
+MemoryHigh=2G
+MemoryMax=3G
+CPUQuota=150%
+TasksMax=256
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=@PROTECT_HOME@
+ReadWritePaths=@MUSE_STATE@
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

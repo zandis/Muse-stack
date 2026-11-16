@@ -1,6 +1,7 @@
 """muse.home.cards: the card format and the pending-approval store."""
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import json
 import os
@@ -14,9 +15,9 @@ from pathlib import Path
 import pytest
 
 from home_fakes import ROOT, card_schema, schema_errors
-from muse.home import cards
-from muse.home.cards import CardAlreadyAnswered, CardError, CardExpired, CardNotFound, CardStore
-from muse.home.fake import demo_cards, seed_cards
+from wardmuse.home import cards
+from wardmuse.home.cards import CardAlreadyAnswered, CardError, CardExpired, CardNotFound, CardStore
+from wardmuse.home.fake import demo_cards, seed_cards
 
 SECRET = "gsk_" + "Zx9" * 12  # shaped like a provider key
 T0 = 1_800_000_000.0
@@ -366,7 +367,7 @@ def test_wait_times_out_still_pending_and_sees_expiry(store, clock):
 def test_the_database_is_private_and_separate():
     store = CardStore()
     save_file(store)
-    home = Path(os.environ["MUSE_HOME"])
+    home = Path(envget(os.environ, "MUSE_HOME"))
     assert store.path == home / "cards.sqlite"
     assert stat.S_IMODE(store.path.stat().st_mode) == 0o600
     assert stat.S_IMODE(home.stat().st_mode) == 0o700
@@ -383,7 +384,7 @@ def test_a_loosened_file_is_tightened_again():
 
 ANSWER_SCRIPT = """
 import sys, time
-from muse.home.cards import CardStore, CardError
+from wardmuse.home.cards import CardStore, CardError
 card_id, device, decision, go_at = sys.argv[1], sys.argv[2], sys.argv[3], float(sys.argv[4])
 store = CardStore()
 time.sleep(max(0.0, go_at - time.time()))

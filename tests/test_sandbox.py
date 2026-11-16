@@ -9,6 +9,7 @@ No network and no real provider: the router is queue_fakes.FakeProxy.
 """
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import dataclasses
 import json
@@ -24,11 +25,11 @@ from pathlib import Path
 
 import pytest
 
-from muse import cli, sandbox
-from muse.sandbox import Capabilities, Policy, Report, launch, lockdown, protocol
-from muse.sandbox import host as sandbox_host
-from muse.sandbox.policy import mode_for
-from muse.skills import loader, runner
+from wardmuse import cli, sandbox
+from wardmuse.sandbox import Capabilities, Policy, Report, launch, lockdown, protocol
+from wardmuse.sandbox import host as sandbox_host
+from wardmuse.sandbox.policy import mode_for
+from wardmuse.skills import loader, runner
 from queue_fakes import embeddings, privacy_403, ration_429
 from test_sandbox_support import (  # noqa: F401
     CANARY_ENV, CANARY_HOME, CANARY_OUTSIDE, FIXTURES, LAYERS, LINUX, attempt, box, caps, chat, env, need, proxy, real_home_skills, run,
@@ -400,7 +401,7 @@ def test_the_shipped_files_answer_skill_gives_the_same_result_sandboxed(env, pro
                                      "says": "The monthly rent is 18,500 dollars"}], "not_found": False})
     results = []
     for mode in ("off", "require" if caps().can_require else "auto"):
-        shutil.rmtree(Path(env["MUSE_HOME"]) / "skills-data", ignore_errors=True)
+        shutil.rmtree(Path(envget(env, "MUSE_HOME")) / "skills-data", ignore_errors=True)
         proxy.push(*chat(answer))
         result, report = sandbox.run_skill("files-answer", {"question": "How much is the monthly rent?", "embeddings": "off"},
                                            roots=[docs], mode=mode, environ=env)
@@ -431,7 +432,7 @@ def test_pdfs_are_read_the_same_way_sandboxed_and_hostile_ones_end_no_run(env, p
                                      "says": "The monthly mooring fee is 380 dollars"}], "not_found": False})
     results = []
     for mode in ("off", "require" if caps().can_require else "auto"):
-        shutil.rmtree(Path(env["MUSE_HOME"]) / "skills-data", ignore_errors=True)
+        shutil.rmtree(Path(envget(env, "MUSE_HOME")) / "skills-data", ignore_errors=True)
         proxy.push(*chat(answer))
         result, report = sandbox.run_skill("files-answer", {"question": "What is the monthly mooring fee?", "embeddings": "off",
                                                             "top_k": 1}, roots=[docs], mode=mode, environ=env)
@@ -472,7 +473,7 @@ def test_the_shipped_research_report_recovers_empty_answers_the_same_way_sandbox
     proxy.responder = respond
     results = []
     for mode in ("off", "require" if caps().can_require else "auto"):
-        shutil.rmtree(Path(env["MUSE_HOME"]) / "skills-data", ignore_errors=True)
+        shutil.rmtree(Path(envget(env, "MUSE_HOME")) / "skills-data", ignore_errors=True)
         proxy.requests.clear()
         result, report = sandbox.run_skill("research-report", {"question": "Rent and end date of the lease?", "embeddings": "off"},
                                            roots=[docs], mode=mode, environ=env)
@@ -660,7 +661,7 @@ def scripted_executor(frames: list[bytes]) -> tuple[sandbox_host.Executor, objec
     executor._chan = protocol.Channel(r, back_w, 1 << 16)
     executor._proc = FakeProc()  # type: ignore[assignment]
     executor._deadline = time.monotonic() + 2
-    executor._skill = loader.find("polite", {"MUSE_SKILLS_DIR": str(FIXTURES), "MUSE_HOME": os.environ["MUSE_HOME"]})
+    executor._skill = loader.find("polite", {"MUSE_SKILLS_DIR": str(FIXTURES), "MUSE_HOME": envget(os.environ, "MUSE_HOME")})
     workspace = runner.Workspace([], None)
     return executor, workspace
 
@@ -780,7 +781,7 @@ def test_a_skill_of_your_own_always_runs_with_require(box, proxy, monkeypatch):
     real_home_skills(monkeypatch)
     # This test is about the sandbox. A skill of your own is also always checked against permissions (`enforce`,
     # muse/compiler/guard.py), which would refuse it here for want of one; tests/test_compiler_guard.py covers that.
-    from muse.compiler import guard as guard_mod
+    from wardmuse.compiler import guard as guard_mod
 
     monkeypatch.setattr(guard_mod, "mode_for", lambda source, env: "off")
     write_skill(box.home, "mine")
@@ -815,7 +816,7 @@ def test_a_skill_of_your_own_is_refused_where_the_sandbox_is_incomplete(box, pro
     env_ = {k: v for k, v in box.env.items() if k != "MUSE_SKILLS_DIR"}
     result = runner.run("mine", {"q": "hi"}, environ=env_, sandbox="off")
     assert result.status == "failed" and not proxy.requests
-    assert result.notes == ["skill 'mine' is not one of Muse's own, so it runs only inside the sandbox, and the sandbox is not complete "
+    assert result.notes == ["skill 'mine' is not one of Wardmuse's own, so it runs only inside the sandbox, and the sandbox is not complete "
                             "here: nothing here can cut a skill off from the network (needs bubblewrap, or seccomp). See `muse doctor`."]
 
 
@@ -843,9 +844,9 @@ def test_shipped_skills_that_read_muse_state_stay_in_process_under_auto_and_are_
     names = {name: sandbox_host.in_process_reason(loader.find(name, env)) for name in
              ("files-answer", "research-report", "recurring-chore", "setup-services")}
     assert not names["files-answer"] and not names["research-report"]
-    assert "Muse's own state" in names["recurring-chore"] and "Muse's own state" in names["setup-services"]
+    assert "Wardmuse's own state" in names["recurring-chore"] and "Wardmuse's own state" in names["setup-services"]
     result, report = sandbox.run_skill("setup-services", {}, mode="auto", environ=env)
-    assert report.ran == "in-process" and "Muse's own state" in report.reason and result.sandbox["isolated"] is False
+    assert report.ran == "in-process" and "Wardmuse's own state" in report.reason and result.sandbox["isolated"] is False
     assert "Ran without isolation (this shipped skill" in report.sentence()
     result, report = sandbox.run_skill("setup-services", {}, mode="require", environ=env)
     assert result.status == "failed" and report.ran == "refused" and "which the sandbox hides" in result.notes[0]

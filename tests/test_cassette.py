@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from muse import cassette
-from muse.fakeprov import FakeProvider
+from wardmuse import cassette
+from wardmuse.fakeprov import FakeProvider
 
 ROOT = Path(__file__).resolve().parents[1]
 SHAPES = ROOT / "tests" / "cassettes"

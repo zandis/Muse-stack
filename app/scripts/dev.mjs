@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { FAKE_TOKEN, startFakeHome } from './fake-home.mjs';
 
 const appDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const state = process.env.MUSE_FAKE_STATE || 'normal';
+const state = process.env.WARDMUSE_FAKE_STATE || process.env.MUSE_FAKE_STATE || 'normal';
 const home = await startFakeHome({ state });
 console.log(`fake home: 127.0.0.1:${home.port} (state: ${state})`);
 

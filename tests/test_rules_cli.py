@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from muse import cli, keys, paths, queue
+from wardmuse import cli, keys, paths, queue
 from queue_fakes import Clock, FakeProxy
 
 

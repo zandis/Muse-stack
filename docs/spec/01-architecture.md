@@ -1,4 +1,4 @@
-# Muse v1 specification, part 1: modules and how they work together
+# Wardmuse v1 specification, part 1: modules and how they work together
 
 Written 2026-11-13. Part 2 is the user experience (`02-ux.md`); part 3 is the build plan (`03-plan.md`). This specification follows `docs/ecosystem-review-2026-11.md` and replaces the module list in `docs/muse-plan.md` §10. Product positioning, the rationing rules and the helper's operating rules in the earlier documents still stand.
 
@@ -104,7 +104,7 @@ Each module has one job, a small interface, and a named owner in the code. "Exis
   5. Each skill checks its own output. A failed check retries once on a stronger allowance, then offers the three choices.
   6. Every step writes a receipt.
 - **State.** Jobs and their steps in the queue database; memory in the vault (readable and editable by the person).
-- **Reuse.** The `SKILL.md` folder format; MCP for tools; FastMCP for the tools Muse ships. No third-party agent framework is embedded.
+- **Reuse.** The `SKILL.md` folder format; MCP for tools; FastMCP for the tools Wardmuse ships. No third-party agent framework is embedded.
 
 ### 2.4 Skill sandbox (new; on the home)
 
@@ -115,7 +115,7 @@ Each module has one job, a small interface, and a named owner in the code. "Exis
   - On Linux and the VM: bubblewrap with Landlock. On macOS: the system sandbox profile. On Windows: a restricted token and job object. Pure-compute tools may run as WebAssembly instead.
   - A skill is installed by content hash. Before first use the person sees, in plain words, what it asks for.
 - **Interface.** `run(tool, args, token) -> result | refusal`. The sandbox verifies the token itself; it does not trust the helper's word.
-- **Out of scope for v1.** A public skill marketplace. Skills come from Muse's own set or from a folder the person adds.
+- **Out of scope for v1.** A public skill marketplace. Skills come from Wardmuse's own set or from a folder the person adds.
 
 ### 2.5 Queue (exists; Python)
 
@@ -180,7 +180,7 @@ Each module has one job, a small interface, and a named owner in the code. "Exis
   | Target | What is made | Enforced by | Setting |
   |---|---|---|---|
   | Router | For a holder `app:` or `device:` granted `llm.call` / `llm.paid`: an entry in `apps.yaml` carrying `mandate`, `valid_from`, `valid_until`; daily request cap from the `requests` limit, `allow_paid` only with `llm.paid`, default privacy = the mandate's class. The app key is returned once and never stored | `muse/auth.py`: refused (403, "permission stopped" / "has ended") the moment the mandate is stopped or expires, and for a looser `x-muse-privacy`. Reads `MUSE_HOME/permissions/stopped.json`, re-read only when the file changes; no Biscuit library in the proxy | always |
-  | Skills | For holder `helper:<id>`: one stored narrowed token per skill (`job: skill.<name>`), and each named folder on `MUSE_HOME/skill-folders.json` tagged with the mandate id | `muse/compiler/guard.py` in the runner, the home's skill runs and the sandbox's `Policy.authorize`: folder reads, proposed and applied writes, model calls (privacy class), paid calls (estimated amount, usage so far) | `MUSE_PERMISSIONS=off\|advise\|enforce`, default `advise`; a skill not shipped with Muse is always `enforce` |
+  | Skills | For holder `helper:<id>`: one stored narrowed token per skill (`job: skill.<name>`), and each named folder on `MUSE_HOME/skill-folders.json` tagged with the mandate id | `muse/compiler/guard.py` in the runner, the home's skill runs and the sandbox's `Policy.authorize`: folder reads, proposed and applied writes, model calls (privacy class), paid calls (estimated amount, usage so far) | `MUSE_PERMISSIONS=off\|advise\|enforce`, default `advise`; a skill not shipped with Wardmuse is always `enforce` |
   | Records | `mandate.issue` on issue, `mandate.revoke` on stop or expiry | the record chain | always |
 
   Payments, connectors and the health add-on appear in the plan as `not_built` with a plain reason, never as a green mark. The artifact table is `MUSE_HOME/compiler.sqlite` (0600): a row is written before its artifact and removed after it, so a crash leaves work for the sweep and never an artifact nobody knows about. `muse permissions sweep` (safe every minute) removes artifacts of stopped, expired or missing mandates and remakes missing ones of live mandates (except an app key, which cannot be shown again). The tools server's `check_permission` answers from the host device's own mandate when there is one (`muse hosts setup --permission`), else by the labelled interim rule. Not built: payments, connectors, health, approval with a passkey (v1: an `owner` device), syncing the revocation list to other devices, a usage figure from the router's own ledger (the guard counts a mandate's usage in `compiler.sqlite`).
@@ -214,7 +214,7 @@ Each module has one job, a small interface, and a named owner in the code. "Exis
   | Calendar | Events | Proposed events | |
   | Subscriptions | Nothing | Nothing | Opens the person's own ChatGPT, Claude or Gemini app with the question; hand-off only |
 
-- **Interface.** Each connector is an MCP server Muse ships, run in the sandbox, holding its service token only inside its own process.
+- **Interface.** Each connector is an MCP server Wardmuse ships, run in the sandbox, holding its service token only inside its own process.
 
 ### 2.12 Pay (new; test network only) **(assumed: Base Sepolia)**
 
@@ -226,7 +226,7 @@ Each module has one job, a small interface, and a named owner in the code. "Exis
   - Receiving: an x402 endpoint in front of a result the helper produced.
   - Proof: receipt roots anchored as attestations.
 - **Rules.**
-  - Muse never holds the person's key or funds. No pooled contract. Credits cannot be redeemed for money in v1.
+  - Wardmuse never holds the person's key or funds. No pooled contract. Credits cannot be redeemed for money in v1.
   - Every payment over the mandate's confirm threshold is a card first.
   - Client-side checks run before the chain's, so a refusal costs nothing.
 - **Interface.** `quote(url) -> price`, `pay(quote, token) -> receipt | refusal`, `limits() -> remaining today`, `revoke(mandate_id)`.
@@ -244,7 +244,7 @@ Each module has one job, a small interface, and a named owner in the code. "Exis
 - **Design.**
   - Records are FHIR R4 resources (TW Core, International Patient Summary, mCODE for oncology) stored as vault records.
   - Ingestion, first route: a photo or PDF of the person's own record copy, read on the device, with every extracted value marked draft until the person confirms it against the source image.
-  - Sharing: a SMART Health Link, encrypted, with a passcode and an expiry. Muse relays ciphertext only.
+  - Sharing: a SMART Health Link, encrypted, with a passcode and an expiry. Wardmuse relays ciphertext only.
   - A health mandate compiles to a FHIR Consent; its receipt follows ISO/IEC TS 27560; its purpose uses GA4GH DUO codes.
 - **Gates before any real use.** A regulator's view on "explain my report"; a Taiwan entity or hospital partner; a lawyer's review of consent wording. No real patient data until then.
 
@@ -280,7 +280,7 @@ Helper → Mandates      narrow(M → skill "digest")
 Helper → Sandbox       run(fetch feeds, token)        allowed: listed hosts only
 Helper → Router        summarise (x-muse-task: light, background priority)
 Router                 held if the allowance is behind its pacing line → Queue retries after Retry-After
-Helper → App           confirm card: "Save digest to Documents/Muse?"   (M says confirm each write)
+Helper → App           confirm card: "Save digest to Documents/Wardmuse?"   (M says confirm each write)
 Person → App           approve
 Helper → Sandbox       run(write file, token narrowed to that path)
 Helper → Receipts      append(write, resource hash, cost 0)
@@ -370,7 +370,7 @@ The home writes a record (section 2.9, `docs/spec/interfaces/record-format.md`) 
 | `POST /v1/jobs`, `DELETE /v1/jobs/{id}` | owner, host (its own) | Queue or cancel a job |
 | `GET /v1/cards`, `GET /v1/cards/{id}` | owner, host (its own), viewer | Approvals: the cards waiting for the person, and their answers |
 | `POST /v1/cards/{id}/answer` | owner | Answer a card. An approved card that stands for a file a skill proposed makes the home write that file, once; a declined or expired one throws it away |
-| `POST /v1/cards` | owner, host | A device asks the person a question (added 13 November 2026 for the Muse tools server, part 5): one waiting card, by the card store's rules; at most 20 waiting per device; the asking device cannot answer it |
+| `POST /v1/cards` | owner, host | A device asks the person a question (added 13 November 2026 for the Wardmuse tools server, part 5): one waiting card, by the card store's rules; at most 20 waiting per device; the asking device cannot answer it |
 | `GET /v1/apps`, `POST /v1/apps`, `PATCH /v1/apps/{name}`, `DELETE /v1/apps/{name}`, `POST /v1/apps/{name}/rotate` | owner | The apps that share the router; a new app token is returned once |
 | `POST /v1/pause`, `POST /v1/resume` | owner | The one switch |
 | `GET /v1/receipts?since=&action=&left_device=&limit=&before=` | owner, viewer | The records on the home, newest first in bounded pages, with whether the chain checks out and what the last seal covers |
@@ -416,7 +416,7 @@ Rust functions exposed to the shell through Tauri commands: the Vault, Mandates,
 | Health records (add-on) | Vault | Yes | Only between the person's own devices |
 | Wallet keys | Device secure hardware or the wallet provider | Yes | Never |
 
-Nothing is stored on a Muse server in v1. The only shared infrastructure is the iroh relays (ciphertext), a stateless push relay that forwards an empty wake signal to phones and never sees content, and whatever the person connects themselves.
+Nothing is stored on a Wardmuse server in v1. The only shared infrastructure is the iroh relays (ciphertext), a stateless push relay that forwards an empty wake signal to phones and never sees content, and whatever the person connects themselves.
 
 ---
 
@@ -445,4 +445,4 @@ Not defended in v1, and stated as such: an attacker with full control of an unlo
 - Real health data.
 - Phones running chores unattended.
 - A Rust router.
-- Any Muse-run server that stores or sees a person's data. (The stateless push relay for phones is the one service Muse runs.)
+- Any Wardmuse-run server that stores or sees a person's data. (The stateless push relay for phones is the one service Wardmuse runs.)

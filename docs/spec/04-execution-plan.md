@@ -1,4 +1,4 @@
-# Muse v1 specification, part 4: the plan to completion
+# Wardmuse v1 specification, part 4: the plan to completion
 
 Written 2026-11-13. Parts 1 to 3 say what is built and in what order. This part says how the work is run so that it finishes: the tracks, the critical path, every work package with its size and dependencies, the gates, and who does what.
 
@@ -35,7 +35,7 @@ Also confirmed by the owner on 2026-11-13:
 | Default daily spending limit | NT$30 |
 | Catalogue | Published openly as dated JSON |
 | First testers | Get the always-on helper flow as well as the desktop app |
-| Phone push | A minimal relay that forwards an empty wake signal and never sees content. It is the only service Muse runs |
+| Phone push | A minimal relay that forwards an empty wake signal and never sees content. It is the only service Wardmuse runs |
 
 Decided on 2026-11-15:
 
@@ -176,9 +176,9 @@ Sizes are working days for one person or one Claude session, including tests. "N
 | D5 | Moving the home between desktop and VM | 3 | D2, D3, D4 | Keys move only inside the pairing channel |
 | D6 | LINE reply bot; pushed messages as an allowance; public webhook via a tunnel | 5 | A3, Owner (LINE account) | A card opens from the person's own chat |
 | D7 | Lost device: revoke, rotate, re-wrap | 3 | D3, C2 | The lost device cannot approve or read new data |
-| D8 | Push notifications for cards (iOS, Android) without a Muse server holding content | 4 | D3 | The push carries no private text; the app fetches the card over the Link |
+| D8 | Push notifications for cards (iOS, Android) without a Wardmuse server holding content | 4 | D3 | The push carries no private text; the app fetches the card over the Link |
 
-D8 uses a minimal relay that forwards an empty "wake" signal only; it never sees content (confirmed by the owner). It is the one exception to "no Muse-run server" in part 1 §5 and §7, and must be stateless, hold no account data, and be replaceable by fetching approvals when the app is opened.
+D8 uses a minimal relay that forwards an empty "wake" signal only; it never sees content (confirmed by the owner). It is the one exception to "no Wardmuse-run server" in part 1 §5 and §7, and must be stateless, hold no account data, and be replaceable by fetching approvals when the app is opened.
 
 ### Track E: Pay (test network)
 

@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from muse import apps, cli, keys, presets, queue
-from muse.ledger import Ledger
+from wardmuse import apps, cli, keys, presets, queue
+from wardmuse.ledger import Ledger
 from queue_fakes import CANARY_PROMPT, CANARY_REPLY, FakeProxy
 
 

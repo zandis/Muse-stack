@@ -91,7 +91,7 @@ def test_every_ported_function_has_vectors(fresh):
         "ration.json": {"previous_midnight_pacific", "window_bounds", "window_reset", "burn_rate", "pace_position",
                         "pace_release_at", "pace_holds", "options_trailer", "parse_options"},
         "cache.json": {"cacheable", "cache_key"},
-        "records.json": set(__import__("muse.records.vectors", fromlist=["FUNCTIONS"]).FUNCTIONS),
+        "records.json": set(__import__("wardmuse.records.vectors", fromlist=["FUNCTIONS"]).FUNCTIONS),
     }
     for name, functions in wanted.items():
         assert {v["fn"] for v in json.loads((fresh / name).read_text(encoding="utf-8"))} == functions
@@ -106,7 +106,7 @@ def test_vectors_agree_with_the_existing_tables(fresh):
     assert quota_vectors["classify_failure: caller 400"]["expected"] == {"ok": None}
     assert quota_vectors["next_midnight_utc: nan"]["expected"] == {"err": "TimeOutOfRange"}
     cache_vectors = {v["name"]: v for v in json.loads((fresh / "cache.json").read_text(encoding="utf-8"))}
-    from muse import cache
+    from wardmuse import cache
     assert cache_vectors["cache_key: base"]["expected"]["ok"] == cache.cache_key(
         "fast", {"messages": [{"role": "user", "content": "hello"}], "temperature": 0}, "standard", "standard")
     assert cache_vectors["cacheable: temperature integer too large for a float"]["expected"] == {"err": "OverflowError"}

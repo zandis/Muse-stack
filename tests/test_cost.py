@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from muse import cost
+from wardmuse import cost
 
 
 def info(tier="paid", price=None, kind="cloud"):

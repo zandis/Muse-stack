@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from muse import apps, cli, queue, types as mtypes
-from muse.ledger import Ledger
-from muse.status import build_snapshot
+from wardmuse import apps, cli, queue, types as mtypes
+from wardmuse.ledger import Ledger
+from wardmuse.status import build_snapshot
 
 from test_cli import NOW, iso, typical_snapshot
 from test_dashboard import DEMO, _check_td, _start, INDEX

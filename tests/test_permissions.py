@@ -20,9 +20,9 @@ from pathlib import Path
 
 import pytest
 
-from muse import cli, keys
-from muse import permissions as P
-from muse.permissions import codec, store
+from wardmuse import cli, keys
+from wardmuse import permissions as P
+from wardmuse.permissions import codec, store
 
 ROOT = Path(__file__).resolve().parent.parent
 needs_library = pytest.mark.skipif(not P.available(), reason="biscuit-python is not installed (pip install -e '.[permissions]')")

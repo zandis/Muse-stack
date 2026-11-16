@@ -7,14 +7,14 @@ import time
 
 import pytest
 
-from muse import permissions as P
+from wardmuse import permissions as P
 from test_ration_e2e import message, models, start
 
 pytestmark = pytest.mark.skipif(not P.available(), reason="biscuit-python is not installed (pip install -e '.[permissions]')")
 
 
 def test_a_stopped_permission_stops_its_app_key_at_the_next_request(make_proxy, upstream):
-    from muse.compiler.core import Compiler
+    from wardmuse.compiler.core import Compiler
 
     proxy = start(make_proxy)
     env = {"MUSE_HOME": str(proxy.home), "MUSE_TZ": "UTC"}

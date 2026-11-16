@@ -11,11 +11,11 @@ import sys
 import pytest
 
 from home_fakes import client_for, running
-from muse import apps, auth as proxy_auth, cli, keys
-from muse import permissions as P
-from muse.home import api
-from muse.home.auth import StaticVerifier
-from muse.mcp import tools
+from wardmuse import apps, auth as proxy_auth, cli, keys
+from wardmuse import permissions as P
+from wardmuse.home import api
+from wardmuse.home.auth import StaticVerifier
+from wardmuse.mcp import tools
 
 needs_library = pytest.mark.skipif(not P.available(), reason="biscuit-python is not installed (pip install -e '.[permissions]')")
 
@@ -115,7 +115,7 @@ def test_hosts_setup_with_a_permission_ties_the_hosts_key_to_it(monkeypatch):
     assert "Gave this host the permission" in out
     app = apps.load_apps()["openmausbot"]
     assert app.mandate and app.allow_paid is False and refused(token) is None  # the same app, adopted, not a second one
-    from muse.compiler.core import Compiler
+    from wardmuse.compiler.core import Compiler
 
     m = Compiler().find(app.mandate)
     assert m.draft.holder == "device:openmausbot-tools" and "llm.paid" not in m.draft.actions
@@ -136,8 +136,8 @@ def test_hosts_setup_without_a_permission_says_how_to_add_one(monkeypatch):
 
 @needs_library
 def test_check_permission_answers_from_the_hosts_permission_and_falls_back_to_the_labelled_interim_rule(monkeypatch):
-    from muse.compiler import hosts as host_permission
-    from muse.compiler.core import Compiler
+    from wardmuse.compiler import hosts as host_permission
+    from wardmuse.compiler.core import Compiler
 
     home = api.Home(proxy_running=lambda: False)
     verifier = StaticVerifier({"bot-tools": "tok-host", "phone": "tok-phone"}, roles={"bot-tools": "host"})

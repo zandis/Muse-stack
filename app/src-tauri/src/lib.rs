@@ -1,4 +1,4 @@
-//! The Muse desktop shell (Tauri v2).
+//! The Wardmuse desktop shell (Tauri v2).
 //!
 //! It owns three things and nothing else:
 //!   1. the commands the web view may call: `home_request` (the bridge to the home; the
@@ -99,9 +99,9 @@ fn toggle_panel(panel: &WebviewWindow, anchor: Option<(f64, f64)>) {
 /// The two words of the tray menu, in the system's language (zh-TW or English).
 pub fn menu_labels(locale: Option<&str>) -> (&'static str, &'static str, &'static str) {
     if locale.is_some_and(|l| l.to_ascii_lowercase().starts_with("zh")) {
-        ("打開 Muse", "小面板", "結束 Muse")
+        ("打開 守繆思", "小面板", "結束 守繆思")
     } else {
-        ("Open Muse", "Small panel", "Quit Muse")
+        ("Open Wardmuse", "Small panel", "Quit Wardmuse")
     }
 }
 
@@ -117,7 +117,7 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let menu = Menu::with_items(app, &[&open, &panel, &quit])?;
 
     let mut tray = TrayIconBuilder::with_id("muse")
-        .tooltip("Muse")
+        .tooltip("Wardmuse")
         .menu(&menu)
         // Left click opens the panel; the menu is for the right click. On Linux the tray
         // sends no click events, so there the menu (which holds "Small panel") is the way in.
@@ -174,7 +174,7 @@ pub fn run() {
             }
         })
         .run(tauri::generate_context!())
-        .expect("the Muse app could not start");
+        .expect("the Wardmuse app could not start");
 }
 
 #[cfg(test)]
@@ -206,8 +206,8 @@ mod tests {
 
     #[test]
     fn the_menu_is_in_the_systems_language() {
-        assert_eq!(menu_labels(Some("zh_TW.UTF-8")).0, "打開 Muse");
-        assert_eq!(menu_labels(Some("en_GB.UTF-8")).0, "Open Muse");
-        assert_eq!(menu_labels(None).2, "Quit Muse");
+        assert_eq!(menu_labels(Some("zh_TW.UTF-8")).0, "打開 守繆思");
+        assert_eq!(menu_labels(Some("en_GB.UTF-8")).0, "Open Wardmuse");
+        assert_eq!(menu_labels(None).2, "Quit Wardmuse");
     }
 }

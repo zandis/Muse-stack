@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from muse import cli, keys
+from wardmuse import cli, keys
 
 NOW = datetime(2026, 11, 12, 12, 0, 0, tzinfo=timezone.utc)
 SECRET = "gsk_CLISECRETVALUE0987654321"
@@ -153,14 +153,14 @@ def test_status_ascii_fallback_fits_too():
 
 def test_status_empty_prints_getting_started():
     text = cli.render_status(empty_snapshot(), now=NOW)
-    assert "muse keys set GEMINI_API_KEY" in text and "muse up" in text
+    assert "wardmuse keys set GEMINI_API_KEY" in text and "wardmuse up" in text
     assert "(no calls recorded yet)" in text
     assert "not checked" in text
 
 
 def test_status_typical_content():
     text = cli.render_status(typical_snapshot(), now=NOW)
-    assert "muse keys set" not in text  # configured: no onboarding
+    assert "wardmuse keys set" not in text  # configured: no onboarding
     gem = next(line for line in text.splitlines() if line.startswith("gemini"))
     assert "trains" in gem and "42 req 123k tok" in gem and "free" in gem
     assert "resets in 3h 12m" in text
@@ -216,14 +216,14 @@ def test_no_color_and_tty(monkeypatch):
 
 def stub_status(monkeypatch, snap):
     calls = []
-    mod = types.ModuleType("muse.status")
+    mod = types.ModuleType("wardmuse.status")
 
     def build_snapshot(now=None, environ=None, check_proxy=False):
         calls.append({"check_proxy": check_proxy})
         return copy.deepcopy(snap)
 
     mod.build_snapshot = build_snapshot
-    monkeypatch.setitem(sys.modules, "muse.status", mod)
+    monkeypatch.setitem(sys.modules, "wardmuse.status", mod)
     return calls
 
 
@@ -240,12 +240,12 @@ def test_status_command_plain_and_json(monkeypatch, capsys):
 
 
 def test_status_when_snapshot_missing_or_broken(monkeypatch, capsys):
-    monkeypatch.setitem(sys.modules, "muse.status", None)  # import fails
+    monkeypatch.setitem(sys.modules, "wardmuse.status", None)  # import fails
     assert cli.main(["status"]) == 1
     assert "status.py" in capsys.readouterr().err
-    mod = types.ModuleType("muse.status")
+    mod = types.ModuleType("wardmuse.status")
     mod.build_snapshot = lambda **kw: (_ for _ in ()).throw(RuntimeError("boom"))
-    monkeypatch.setitem(sys.modules, "muse.status", mod)
+    monkeypatch.setitem(sys.modules, "wardmuse.status", mod)
     assert cli.main(["status"]) == 1
 
 
@@ -529,9 +529,9 @@ def test_ask_429_shows_soonest_reset(monkeypatch, proxy, capsys):
 def test_ask_429_without_snapshot_still_clear(monkeypatch, proxy, capsys):
     healthy_env(monkeypatch)
     proxy(lambda m, p, h, b: (429, {}, {}))
-    monkeypatch.setitem(sys.modules, "muse.status", None)
+    monkeypatch.setitem(sys.modules, "wardmuse.status", None)
     assert cli.main(["ask", "hi"]) == 1
-    assert "muse status" in capsys.readouterr().err
+    assert "wardmuse status" in capsys.readouterr().err
 
 
 def test_ask_policy_refusal_names_class(monkeypatch, proxy, capsys):
@@ -551,7 +551,7 @@ def test_ask_other_errors_and_unreachable(monkeypatch, proxy, capsys):
     assert cli.main(["ask", "hi"]) == 1
     monkeypatch.setenv("MUSE_PROXY_URL", f"http://127.0.0.1:{free_port()}")
     assert cli.main(["ask", "hi"]) == 1
-    assert "muse up" in capsys.readouterr().err
+    assert "wardmuse up" in capsys.readouterr().err
 
 
 # --------------------------------------------------------------- up / env
@@ -569,14 +569,14 @@ def test_up_generates_master_key_without_printing_and_forwards_keychain_keys(tmp
     monkeypatch.setenv("OLLAMA_API_BASE", "http://127.0.0.1:11434")
     ran = {}
 
-    def fake_run(cmd, cwd=None, env=None, check=False):
+    def fake_run(cmd, cwd=None, env=None, check=False, **_kwargs):
         ran.update(cmd=cmd, env=env)
-        return types.SimpleNamespace(returncode=0)
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(cli.subprocess, "run", fake_run)
     assert cli.main(["up"]) == 0
     cap = capsys.readouterr()
-    assert ran["cmd"] == ["docker", "compose", "up", "-d"]
+    assert ran["cmd"] == ["docker", "compose", "-p", "wardmuse", "up", "-d"]
     master = store[(keys.SERVICE, "LITELLM_MASTER_KEY")]
     assert master.startswith("sk-muse-")
     assert master not in cap.out + cap.err and SECRET not in cap.out + cap.err
@@ -589,7 +589,7 @@ def test_up_generates_master_key_without_printing_and_forwards_keychain_keys(tmp
 
 
 def test_up_show_master_key_prints_once_and_second_run_does_not_regenerate(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(cli.subprocess, "run", lambda *a, **k: types.SimpleNamespace(returncode=0))
+    monkeypatch.setattr(cli.subprocess, "run", lambda *a, **k: types.SimpleNamespace(returncode=0, stdout="", stderr=""))
     assert cli.main(["up", "--show-master-key"]) == 0
     out = capsys.readouterr().out
     line = next(line for line in out.splitlines() if line.startswith("LITELLM_MASTER_KEY=sk-muse-"))
@@ -628,9 +628,9 @@ def test_env_never_prints_the_key(monkeypatch, tmp_path, capsys):
 
 def test_dash_calls_serve(monkeypatch):
     seen = {}
-    mod = types.ModuleType("muse.dashboard.server")
+    mod = types.ModuleType("wardmuse.dashboard.server")
     mod.serve = lambda host="127.0.0.1", port=4180: seen.update(host=host, port=port)
-    monkeypatch.setitem(sys.modules, "muse.dashboard.server", mod)
+    monkeypatch.setitem(sys.modules, "wardmuse.dashboard.server", mod)
     assert cli.main(["dash", "--port", "5000", "--no-open"]) == 0
     assert seen == {"host": "127.0.0.1", "port": 5000}
 
@@ -641,7 +641,7 @@ def test_local_discover_and_list_cli(tmp_path, monkeypatch, capsys):
     assert cli.main(["local", "discover", "--json"]) == 0
     data = json.loads(capsys.readouterr().out)
     assert data["found"] == {} and len(data["runtimes"]) == 2
-    from muse import local
+    from wardmuse import local
 
     monkeypatch.setattr(local, "discover", lambda env=None: {"ollama": [{"id": "ollama-a", "model": "ollama_chat/a", "mode": "chat", "aliases": ["fast"], "notes": ""}]})
     assert cli.main(["local", "discover", "--write"]) == 0
@@ -654,12 +654,12 @@ def test_local_discover_and_list_cli(tmp_path, monkeypatch, capsys):
 
 def test_version(capsys):
     assert cli.main(["version"]) == 0
-    assert capsys.readouterr().out.startswith("muse 0.")
+    assert capsys.readouterr().out.startswith("wardmuse 0.")
 
 
 def test_ask_distinguishes_provider_401_from_master_key_401(monkeypatch, capsys):
     """A 401 that passed the proxy's auth (hook header present) is a provider key problem."""
-    from muse import cli
+    from wardmuse import cli
 
     def provider_401(method, url, headers, body=None, timeout=0):
         return 401, {"X-Muse-Privacy": "standard"}, b'{"error":{"message":"AuthenticationError: bad key"}}'

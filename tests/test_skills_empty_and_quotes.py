@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from muse.skills import llm, loader, runner
+from wardmuse.skills import llm, loader, runner
 from queue_fakes import ration_429
 from test_skills_support import chat, env, proxy  # noqa: F401  (fixtures)
 

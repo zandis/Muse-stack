@@ -24,8 +24,9 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=deploy/vm/lib.sh
 . "$HERE/lib.sh"
 
-RUN_USER="" ROOT="" VENV="" STATE="" BASE="" CONF="/etc/muse/vm.conf"
-UNITS="" ENABLE="no" DEST="/etc/systemd/system" SETUP="/var/lib/muse-setup"
+RUN_USER="" ROOT="" VENV="" STATE="" BASE="" CONF="${MUSE_VM_CONF:-/etc/wardmuse/vm.conf}"
+UNITS="" ENABLE="no" DEST="/etc/systemd/system" SETUP="/var/lib/wardmuse-setup"
+NAMES="wardmuse"
 while [ $# -gt 0 ]; do
   case "$1" in
     --user) shift; RUN_USER="${1:?}" ;;
@@ -37,6 +38,7 @@ while [ $# -gt 0 ]; do
     --units) shift; UNITS="${1:?}" ;;
     --dest) shift; DEST="${1:?}" ;;
     --setup) shift; SETUP="${1:?}" ;;
+    --names) shift; NAMES="${1:?}" ;;
     --enable) ENABLE="yes" ;;
     -h|--help) sed -n '2,21p' "$0"; exit 0 ;;
     *) die "unknown option: $1" ;;
@@ -58,14 +60,16 @@ done
 PROTECT_HOME="yes"
 case "$ROOT $VENV $STATE" in /home/*|*" /home/"*|/root/*|*" /root/"*) PROTECT_HOME="read-only" ;; esac
 
-ALL="muse-proxy.service muse-home.service muse-queue.service muse-chores.service muse-chores.timer
-muse-catalog-check.service muse-catalog-check.timer muse-backup.service muse-backup.timer
-muse-update.service muse-update.timer muse-heartbeat.service muse-heartbeat.timer muse-vm-monitor.service"
+ALL="wardmuse-proxy.service wardmuse-home.service wardmuse-queue.service wardmuse-chores.service wardmuse-chores.timer
+wardmuse-catalog-check.service wardmuse-catalog-check.timer wardmuse-backup.service wardmuse-backup.timer
+wardmuse-update.service wardmuse-update.timer wardmuse-heartbeat.service wardmuse-heartbeat.timer wardmuse-vm-monitor.service"
+case "$NAMES" in wardmuse|muse) ;; *) die "--names must be wardmuse or muse" ;; esac
 if [ -z "$UNITS" ]; then
   FILES="$ALL"
 else
   FILES=""
   for name in $UNITS; do
+    case "$name" in muse-*) name="wardmuse-${name#muse-}" ;; esac
     found=""
     for file in $ALL; do
       case "$file" in "$name".service|"$name".timer) FILES="$FILES $file"; found=1 ;; esac
@@ -78,25 +82,35 @@ mkdir -p "$DEST"
 for file in $FILES; do
   src="$HERE/units/$file"
   [ -f "$src" ] || die "missing template: $src"
-  tmp="$DEST/.$file.tmp.$$"
+  out="$file"
+  if [ "$NAMES" = "muse" ]; then
+    out="${file/wardmuse-/muse-}"
+  fi
+  tmp="$DEST/.$out.tmp.$$"
   sed -e "s|@MUSE_USER@|$RUN_USER|g" -e "s|@MUSE_ROOT@|$ROOT|g" -e "s|@MUSE_VENV@|$VENV|g" \
       -e "s|@MUSE_STATE@|$STATE|g" -e "s|@MUSE_BASE@|$BASE|g" -e "s|@MUSE_CONF@|$CONF|g" \
       -e "s|@PROTECT_HOME@|$PROTECT_HOME|g" "$src" > "$tmp"
+  if [ "$NAMES" = "muse" ]; then
+    sed -e 's/wardmuse-/muse-/g' -e 's/-m wardmuse /-m muse /g' "$tmp" > "$tmp.names"
+    mv -f "$tmp.names" "$tmp"
+  fi
   if grep -q '@[A-Z_]*@' "$tmp"; then rm -f "$tmp"; die "unfilled placeholder in $file"; fi
   chmod 0644 "$tmp"
-  mv -f "$tmp" "$DEST/$file"
-  echo "installed $DEST/$file"
+  mv -f "$tmp" "$DEST/$out"
+  echo "installed $DEST/$out"
 done
 
 if [ "$ENABLE" = "yes" ]; then
   systemctl daemon-reload
   for file in $FILES; do
-    case "$file" in
-      *.timer) systemctl enable --now "$file" ;;
+    out="$file"
+    if [ "$NAMES" = "muse" ]; then out="${file/wardmuse-/muse-}"; fi
+    case "$out" in
+      *.timer) systemctl enable --now "$out" ;;
       *.service)
         # A service driven by a timer is started by its timer, not at boot.
         if [ -f "$HERE/units/${file%.service}.timer" ]; then continue; fi
-        systemctl enable --now "$file" ;;
+        systemctl enable --now "$out" ;;
     esac
   done
 fi

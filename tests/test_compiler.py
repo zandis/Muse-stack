@@ -5,6 +5,7 @@ The gate (what the proxy runs) and the app registry's new fields need nothing ex
 """
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import json
 import logging
@@ -14,11 +15,11 @@ from pathlib import Path
 
 import pytest
 
-from muse import apps, auth
-from muse import permissions as P
-from muse.compiler import gate
-from muse.compiler.plan import TARGETS, app_name, plan
-from muse.home import folders
+from wardmuse import apps, auth
+from wardmuse import permissions as P
+from wardmuse.compiler import gate
+from wardmuse.compiler.plan import TARGETS, app_name, plan
+from wardmuse.home import folders
 
 needs_library = pytest.mark.skipif(not P.available(), reason="biscuit-python is not installed (pip install -e '.[permissions]')")
 
@@ -47,7 +48,7 @@ def clock() -> Clock:
 
 @pytest.fixture()
 def compiler(home, clock):
-    from muse.compiler.core import Compiler
+    from wardmuse.compiler.core import Compiler
 
     c = Compiler(home, clock=clock)
     c.ensure_root()
@@ -231,10 +232,10 @@ def test_issue_makes_the_router_app_and_returns_its_key_exactly_once(compiler, h
     row = compiler.table.get(mandate.id, "router", "app")
     assert row["artifact_id"] == applied.app_name and row["state"] == "active"
     # The key is nowhere on disk: not in the table, not in the registry, not in the token files.
-    for path in Path(home["MUSE_HOME"]).rglob("*"):
+    for path in Path(envget(home, "MUSE_HOME")).rglob("*"):
         if path.is_file():
             assert applied.app_token.encode() not in path.read_bytes(), path.name
-    assert stat.S_IMODE((Path(home["MUSE_HOME"]) / "compiler.sqlite").stat().st_mode) == 0o600
+    assert stat.S_IMODE((Path(envget(home, "MUSE_HOME")) / "compiler.sqlite").stat().st_mode) == 0o600
 
 
 @needs_library
@@ -252,11 +253,11 @@ def test_issue_for_the_helper_makes_tokens_folders_and_a_consent_record(compiler
     name, token = compiler.skill_token(mandate, "files-answer")
     assert token.id == mandate.id and token.jobs() == ("skill.files-answer",) and name in compiler.store.names()
     assert compiler.skill_token(mandate, "files-answer")[0] == name  # made once, then read back
-    from muse.records.home import HomeRecords
+    from wardmuse.records.home import HomeRecords
 
     records = HomeRecords(home).records()
     assert [(r["action"], r["mandate"], r["actor"], r["egress"]) for r in records] == [("mandate.issue", mandate.id, "person", "none")]
-    from muse.records import format as fmt
+    from wardmuse.records import format as fmt
 
     assert compiler.table.get(mandate.id, "records", "consent")["artifact_id"] == fmt.record_hash(records[0])
     assert "Gave a permission to the helper home: 3 actions" in records[0]["summary"]
@@ -286,7 +287,7 @@ def test_not_built_targets_show_as_not_built_with_a_reason(compiler):
 
 @needs_library
 def test_a_failed_record_is_reported_and_retried_by_the_sweep(home, clock):
-    from muse.compiler.core import Compiler
+    from wardmuse.compiler.core import Compiler
 
     broken = Compiler(home, clock=clock, record=lambda *a, **k: None)  # as when `cryptography` is missing
     broken.ensure_root()
@@ -301,7 +302,7 @@ def test_a_failed_record_is_reported_and_retried_by_the_sweep(home, clock):
 @needs_library
 def test_an_existing_host_app_is_adopted_not_duplicated(compiler, home):
     _, key = apps.add_app("openbot", "interactive", environ=home, note="host bot")
-    from muse.compiler.hosts import default_draft
+    from wardmuse.compiler.hosts import default_draft
 
     mandate, applied = compiler.issue(default_draft(compiler.root_public(), "openbot-tools", now=T0, daily_requests=40),
                                       adopt_app="openbot")
@@ -336,7 +337,7 @@ def test_revoke_removes_everything_and_writes_the_revocation_first(compiler, hom
     assert gate.stopped_ids(home) == {helper.id, app.id}
     revoked = compiler.revocations()
     assert all(revoked.contains(P.revocation_ids(m)[0]) for m in (helper, app))
-    from muse.records.home import HomeRecords
+    from wardmuse.records.home import HomeRecords
 
     actions = [(r["action"], r["mandate"]) for r in HomeRecords(home).records()]
     assert actions == [("mandate.issue", helper.id), ("mandate.issue", app.id), ("mandate.revoke", helper.id), ("mandate.revoke", app.id)]
@@ -425,7 +426,7 @@ def test_the_sweep_removes_what_an_expired_permission_left(compiler, home, clock
     assert gate.refusal(apps.find_by_token(applied.app_token, home), home, clock.now) == gate.EXPIRED  # refused before any sweep
     result = compiler.sweep()
     assert result["removed"] == [mandate.id] and apps.load_apps(home) == {} and compiler.table.rows() == []
-    from muse.records.home import HomeRecords
+    from wardmuse.records.home import HomeRecords
 
     last = HomeRecords(home).records()[-1]
     assert (last["action"], last["actor"], last["mandate"]) == ("mandate.revoke", "system", mandate.id) and "time ran out" in last["summary"]
@@ -534,10 +535,10 @@ def test_no_token_or_key_reaches_the_table_the_status_or_the_log(compiler, home,
         compiler.status(mandate.id)
         compiler.revoke(mandate.id)
         compiler.sweep()
-    root_key = (Path(home["MUSE_HOME"]) / "root.key").read_text().strip()
+    root_key = (Path(envget(home, "MUSE_HOME")) / "root.key").read_text().strip()
     token_text = mandate.to_base64()
-    table = (Path(home["MUSE_HOME"]) / "compiler.sqlite").read_bytes()
-    records = (Path(home["MUSE_HOME"]) / "records.sqlite").read_bytes()
+    table = (Path(envget(home, "MUSE_HOME")) / "compiler.sqlite").read_bytes()
+    records = (Path(envget(home, "MUSE_HOME")) / "records.sqlite").read_bytes()
     for secret in (root_key, root_key.split("/", 1)[1], token_text, applied.app_token):
         assert secret.encode() not in table and secret.encode() not in records
         assert secret not in caplog.text

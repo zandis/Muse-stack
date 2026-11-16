@@ -25,6 +25,12 @@ Exit code: 0 when the run (or replay) finished, 2 on a usage problem.
 """
 
 from __future__ import annotations
+import sys as _sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parents[1]
+if str(_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_ROOT))
+from wardmuse.envutil import envget, envhas
 
 import argparse
 import hashlib
@@ -840,9 +846,9 @@ def local_view(env: Mapping[str, str]) -> dict[str, dict[str, Any]]:
     try:
         import render_config
 
-        from muse import paths
+        from wardmuse import paths
 
-        catalog = render_config.load_catalog(Path(env.get("MUSE_CATALOG", "") or paths.CATALOG_PATH))
+        catalog = render_config.load_catalog(Path(envget(env, "MUSE_CATALOG", "") or paths.CATALOG_PATH))
         config, _ = render_config.render(catalog, env)
     except (SystemExit, Exception):
         return {}
@@ -1001,7 +1007,7 @@ def run_item(proxy: Proxy, target: Mapping[str, Any], item: Mapping[str, Any], a
 
 def new_report(items: list[dict[str, Any]], proxy: str | None, auth: str) -> dict[str, Any]:
     try:
-        from muse import __version__ as version
+        from wardmuse import __version__ as version
     except Exception:
         version = "unknown"
     counts = Counter((i["lang"], i["tier"]) for i in items)
@@ -1030,10 +1036,10 @@ def find_auth(env: Mapping[str, str]) -> tuple[str | None, str, bool]:
     master key is the owner, who may pay; an app token is looked up in the apps
     file (by hash) to see whether its app may.
     """
-    token = str(env.get("MUSE_EVAL_APP_TOKEN", "")).strip()
+    token = str(envget(env, "MUSE_EVAL_APP_TOKEN", "")).strip()
     if token:
         try:
-            from muse import apps
+            from wardmuse import apps
 
             app = apps.find_by_token(token, env)
         except Exception:
@@ -1051,7 +1057,7 @@ def find_auth(env: Mapping[str, str]) -> tuple[str | None, str, bool]:
 def merged_env(environ: Mapping[str, str] | None) -> dict[str, str]:
     """Environment, .env and key store merged the way scripts/real_key_check.py does it (muse.keys.export_env)."""
     try:
-        from muse import keys
+        from wardmuse import keys
 
         return dict(keys.export_env(environ))
     except Exception:
@@ -1243,10 +1249,10 @@ def main(argv: list[str] | None = None, environ: Mapping[str, str] | None = None
         if str(extra) not in sys.path:
             sys.path.insert(0, str(extra))
     env = merged_env(environ)
-    args.proxy_url = args.proxy_url or env.get("MUSE_PROXY_URL", "").strip() or f"http://127.0.0.1:{env.get('MUSE_PORT', '').strip() or '4000'}"
+    args.proxy_url = args.proxy_url or envget(env, "MUSE_PROXY_URL", "").strip() or f"http://127.0.0.1:{envget(env, 'MUSE_PORT', '').strip() or '4000'}"
     if not args.report:
         try:
-            from muse import paths
+            from wardmuse import paths
 
             args.report = str(paths.home(env) / "eval-report.json")
         except Exception:

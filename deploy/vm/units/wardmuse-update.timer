@@ -1,0 +1,11 @@
+[Unit]
+Description=Wardmuse update check: nightly at 03:00
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+RandomizedDelaySec=15min
+Persistent=true
+Unit=wardmuse-update.service
+
+[Install]
+WantedBy=timers.target

@@ -11,8 +11,8 @@ import json
 
 import pytest
 
-from muse import catalog, cli
-from muse.skills import loader, runner
+from wardmuse import catalog, cli
+from wardmuse.skills import loader, runner
 from queue_fakes import ration_429
 from test_skills_support import chat, env, proxy  # noqa: F401  (fixtures)
 

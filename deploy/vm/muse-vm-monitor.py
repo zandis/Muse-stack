@@ -58,6 +58,12 @@ Settings (environment, normally from /etc/muse/vm.conf):
 """
 
 from __future__ import annotations
+import sys as _sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parents[2]
+if str(_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_ROOT))
+from wardmuse.envutil import envget, envhas
 
 import json
 import os
@@ -75,7 +81,7 @@ BACK_OFF_PCT = 10.0          # other work above this share of the processor stop
 MAX_DUTY = 0.9               # one thread never runs more than this share of one core
 SLICE_S = 0.1                # busy/sleep period of the guard's duty cycle
 KEEP_MONTHS = 2
-PROC = Path(os.environ.get("MUSE_PROC_ROOT", "/proc"))
+PROC = Path(envget(os.environ, "MUSE_PROC_ROOT", "/proc"))
 
 
 # ----------------------------------------------------------------- readers
@@ -140,10 +146,10 @@ def cpu_count() -> int:
 
 def guard_settings(environ: dict[str, str] | os._Environ[str]) -> tuple[bool, float, str]:
     """(on, target %, why) from MUSE_IDLE_GUARD, MUSE_ACCOUNT_TYPE and MUSE_IDLE_GUARD_TARGET_PCT."""
-    account = environ.get("MUSE_ACCOUNT_TYPE", "always_free").strip().lower() or "always_free"
+    account = envget(environ, "MUSE_ACCOUNT_TYPE", "always_free").strip().lower() or "always_free"
     if account not in ("always_free", "paid"):
         account = "always_free"
-    setting = environ.get("MUSE_IDLE_GUARD", "off").strip().lower() or "off"
+    setting = envget(environ, "MUSE_IDLE_GUARD", "off").strip().lower() or "off"
     if setting in ("off", "0", "false", "no"):
         enabled, why = False, "MUSE_IDLE_GUARD=off"
     elif setting in ("on", "1", "true", "yes"):
@@ -155,7 +161,7 @@ def guard_settings(environ: dict[str, str] | os._Environ[str]) -> tuple[bool, fl
     else:
         enabled, why = False, "MUSE_IDLE_GUARD=off"
     try:
-        target = float(environ.get("MUSE_IDLE_GUARD_TARGET_PCT", "25"))
+        target = float(envget(environ, "MUSE_IDLE_GUARD_TARGET_PCT", "25"))
     except ValueError:
         target = 25.0
     target = max(ORACLE_IDLE_PCT + 0.5, min(40.0, target))
@@ -248,7 +254,12 @@ def daily_line(day: str, enabled: bool, why: str, target: float, stats: dict[str
 # ----------------------------------------------------------------- samples
 
 def state_dir(environ: dict[str, str] | os._Environ[str]) -> Path:
-    return Path(environ.get("MUSE_VM_STATE", "/var/lib/muse/vm"))
+    raw = str(envget(environ, "MUSE_VM_STATE", "") or "").strip()
+    if raw:
+        return Path(raw)
+    new = Path("/var/lib/wardmuse/vm")
+    old = Path("/var/lib/muse/vm")
+    return new if new.exists() or not old.exists() else old
 
 
 def append_sample(directory: Path, sample: dict[str, float]) -> Path:

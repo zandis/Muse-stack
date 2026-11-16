@@ -16,7 +16,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from muse.mail.agentmail import AgentMailClient, AgentMailError
+from wardmuse.mail.agentmail import AgentMailClient, AgentMailError
 
 
 def main(argv: list[str] | None = None) -> int:

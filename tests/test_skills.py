@@ -4,6 +4,7 @@ No network and no real provider: a scripted stand-in for the router (queue_fakes
 """
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import json
 import os
@@ -11,10 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from muse import apps, cli
-from muse.skills import format as fmt
-from muse.skills import llm, loader, runner
-from muse.skills.workspace import NeedsViolation, Workspace
+from wardmuse import apps, cli
+from wardmuse.skills import format as fmt
+from wardmuse.skills import llm, loader, runner
+from wardmuse.skills.workspace import NeedsViolation, Workspace
 from queue_fakes import Clock, FakeProxy, completion, error, privacy_403, ration_429
 from test_skills_support import ECHO, chat, env, proxy, skill_md, write_skill  # noqa: F401  (fixtures)
 
@@ -402,7 +403,7 @@ def test_proposed_writes_are_checked_and_touch_nothing(tmp_path):
 
 
 def test_a_run_that_passes_its_check_is_done(env, proxy):
-    write_skill(env["MUSE_HOME"])
+    write_skill(envget(env, "MUSE_HOME"))
     proxy.push(*chat("GOOD answer", task="light", provider="groq"))
     seen: list[dict] = []
     result = runner.run("echo", {"q": CANARY}, environ=env, on_event=seen.append)
@@ -421,7 +422,7 @@ def test_a_run_that_passes_its_check_is_done(env, proxy):
 
 
 def test_a_failed_check_retries_once_on_the_next_tier_up(env, proxy):
-    write_skill(env["MUSE_HOME"])
+    write_skill(envget(env, "MUSE_HOME"))
     proxy.push(*chat("weak answer", task="light"))
     proxy.push(*chat("GOOD answer", task="everyday", provider="gemini"))
     result = runner.run("echo", {}, environ=env)
@@ -433,7 +434,7 @@ def test_a_failed_check_retries_once_on_the_next_tier_up(env, proxy):
 
 
 def test_the_retry_happens_once_only_and_then_a_choice_is_needed(env, proxy):
-    write_skill(env["MUSE_HOME"])
+    write_skill(envget(env, "MUSE_HOME"))
     proxy.push(*chat("weak", task="light"))
     proxy.push(*chat("still weak", task="everyday"))
     proxy.push(*chat("GOOD but never asked for", task="heavy"))
@@ -445,7 +446,7 @@ def test_the_retry_happens_once_only_and_then_a_choice_is_needed(env, proxy):
 
 
 def test_after_two_failed_checks_the_handoff_is_offered_only_if_the_router_suggested_it(env, proxy):
-    write_skill(env["MUSE_HOME"])
+    write_skill(envget(env, "MUSE_HOME"))
     proxy.push(*chat("weak", task="everyday"))
     proxy.push(*chat("still weak", task="heavy", **{"x-muse-handoff": "suggest"}))
     result = runner.run("echo", {}, task="everyday", environ=env)
@@ -454,14 +455,14 @@ def test_after_two_failed_checks_the_handoff_is_offered_only_if_the_router_sugge
 
 
 def test_a_skill_already_on_heavy_is_not_retried(env, proxy):
-    write_skill(env["MUSE_HOME"])
+    write_skill(envget(env, "MUSE_HOME"))
     proxy.push(*chat("weak", task="heavy"))
     result = runner.run("echo", {"step": "heavy"}, environ=env)
     assert len(proxy.requests) == 1 and result.status == "needs_choice" and result.check["status"] == "failed"
 
 
 def test_a_deferral_gives_needs_choice_with_exactly_what_the_router_offered(env, proxy):
-    write_skill(env["MUSE_HOME"])
+    write_skill(envget(env, "MUSE_HOME"))
     proxy.push(*ration_429("defer:reserve", 3600, "wait:2026-11-14T00:00:00Z,pay:0.041000"))
     result = runner.run("echo", {}, environ=env)
     assert result.status == "needs_choice" and result.output is None and result.check["status"] == "not-run"
@@ -476,7 +477,7 @@ def test_a_deferral_gives_needs_choice_with_exactly_what_the_router_offered(env,
 
 
 def test_when_the_stronger_tier_is_not_free_the_first_answer_is_kept_and_the_choices_shown(env, proxy):
-    write_skill(env["MUSE_HOME"])
+    write_skill(envget(env, "MUSE_HOME"))
     proxy.push(*chat("weak", task="light"))
     proxy.push(*ration_429("defer:reserve", 900, "wait:2026-11-13T18:00:00Z,handoff"))
     result = runner.run("echo", {}, environ=env)
@@ -486,7 +487,7 @@ def test_when_the_stronger_tier_is_not_free_the_first_answer_is_kept_and_the_cho
 
 
 def test_the_runner_may_sit_out_a_short_deferral_when_told_to(env, proxy):
-    write_skill(env["MUSE_HOME"])
+    write_skill(envget(env, "MUSE_HOME"))
     proxy.push(*ration_429("defer:yield", 3, "wait:2026-11-13T18:00:00Z"))
     proxy.push(*chat("GOOD", task="light"))
     clock = Clock()
@@ -499,7 +500,7 @@ def test_the_runner_may_sit_out_a_short_deferral_when_told_to(env, proxy):
 
 
 def test_a_privacy_refusal_is_final_and_never_downgraded(env, proxy):
-    write_skill(env["MUSE_HOME"])
+    write_skill(envget(env, "MUSE_HOME"))
     proxy.push(*privacy_403("local"))
     proxy.push(*chat("GOOD from a cloud provider that must never be asked"))
     result = runner.run("echo", {}, privacy="local", environ=env)
@@ -518,7 +519,7 @@ def test_budget_overrides_and_running_out(env, proxy):
     def check(output, ctx):
         return []
     """
-    write_skill(env["MUSE_HOME"], code=code)
+    write_skill(envget(env, "MUSE_HOME"), code=code)
     result = runner.run("echo", {}, budget={"requests": 2}, environ=env)
     assert result.status == "failed" and len(proxy.requests) == 2  # the third call was never sent
     assert any("budget of 2 requests" in n for n in result.notes) and result.used["requests"] == 2
@@ -527,7 +528,7 @@ def test_budget_overrides_and_running_out(env, proxy):
 
 
 def test_a_money_budget_uses_the_paid_app_and_says_so_to_the_router(env, proxy):
-    write_skill(env["MUSE_HOME"])
+    write_skill(envget(env, "MUSE_HOME"))
     proxy.push(*chat("GOOD", provider="paidp", cost="0.004100"))
     result = runner.run("echo", {}, budget={"paid_usd": 0.05}, environ=env)
     request = proxy.requests[0]
@@ -539,7 +540,7 @@ def test_a_money_budget_uses_the_paid_app_and_says_so_to_the_router(env, proxy):
 
 
 def test_the_token_is_repaired_once_after_a_rotation(env, proxy):
-    write_skill(env["MUSE_HOME"])
+    write_skill(envget(env, "MUSE_HOME"))
     assert runner.run("echo", {}, environ=env).status in ("done", "needs_choice")
     first = proxy.requests[0]["auth"]
     apps.rotate_token("skills", env)
@@ -563,7 +564,7 @@ def test_notes_partial_and_stop(env, proxy):
     def check(output, ctx):
         return None
     """
-    write_skill(env["MUSE_HOME"], code=code)
+    write_skill(envget(env, "MUSE_HOME"), code=code)
     result = runner.run("echo", {}, environ=env)
     assert result.status == "partial" and result.exit_code == 3 and result.notes == ["Two files could not be read."]
     progress = next(e for e in result.events if e["kind"] == "skill.progress")
@@ -580,18 +581,18 @@ def test_a_crashing_skill_fails_without_leaking_its_message(env, proxy):
     def check(output, ctx):
         return []
     """
-    write_skill(env["MUSE_HOME"], code=code)
+    write_skill(envget(env, "MUSE_HOME"), code=code)
     result = runner.run("echo", {}, environ=env)
     assert result.status == "failed" and result.exit_code == 1
     assert "RuntimeError at skill.py:3" in result.notes[0] and CANARY not in json.dumps(result.public(), default=str)
 
 
 def test_folders_are_given_only_to_skills_that_asked(env, proxy, tmp_path):
-    write_skill(env["MUSE_HOME"])
+    write_skill(envget(env, "MUSE_HOME"))
     result = runner.run("echo", {}, folders=[tmp_path], environ=env)
     assert result.status == "failed" and "did not ask to read folders" in result.notes[0] and proxy.requests == []
     assert runner.run("echo", {}, out_dir=tmp_path, environ=env).status == "failed"
-    write_skill(env["MUSE_HOME"], name="netty", muse_needs={"files.read": [], "files.write": [], "net": ["api.example.com"]})
+    write_skill(envget(env, "MUSE_HOME"), name="netty", muse_needs={"files.read": [], "files.write": [], "net": ["api.example.com"]})
     result = runner.run("netty", {}, environ=env)
     assert result.status == "failed" and "needs the sandbox" in result.notes[0]
 
@@ -617,7 +618,7 @@ def test_a_skill_cannot_read_outside_the_folders_named_for_the_run(env, proxy, t
     (docs / "a.txt").write_text("12345")
     (other / "secret.txt").write_text(CANARY)
     (docs / "link.txt").symlink_to(other / "secret.txt")
-    write_skill(env["MUSE_HOME"], code=READER, **READS)
+    write_skill(envget(env, "MUSE_HOME"), code=READER, **READS)
     assert runner.run("echo", {"path": str(docs / "a.txt")}, folders=[docs], environ=env).output == "GOOD 5"
     for escape in (str(other / "secret.txt"), "../other/secret.txt", str(docs / "link.txt"), "/etc/passwd"):
         result = runner.run("echo", {"path": escape}, folders=[docs], environ=env)
@@ -630,7 +631,7 @@ def test_writes_are_proposals_until_the_caller_agrees(env, proxy, tmp_path):
     docs, out = tmp_path / "docs", tmp_path / "out"
     docs.mkdir()
     (docs / "a.txt").write_text("abc")
-    write_skill(env["MUSE_HOME"], code=READER, **READS)
+    write_skill(envget(env, "MUSE_HOME"), code=READER, **READS)
     inputs = {"path": str(docs / "a.txt"), "write": "copy.txt"}
     result = runner.run("echo", inputs, folders=[docs], out_dir=out, environ=env)
     assert result.status == "done" and len(result.writes) == 1 and result.writes[0].path == str(out.resolve() / "copy.txt")
@@ -648,7 +649,7 @@ def test_writes_are_proposals_until_the_caller_agrees(env, proxy, tmp_path):
     assert result.writes == [] and not (out / "third.txt").exists()
     result = runner.run("echo", {**inputs, "write": "../outside.txt"}, folders=[docs], out_dir=out, environ=env, apply_writes=True)
     assert result.status == "failed" and not (tmp_path / "outside.txt").exists()
-    assert (Path(env["MUSE_HOME"]) / "skills-data").exists() is False  # the data folder is made only when a skill uses it
+    assert (Path(envget(env, "MUSE_HOME")) / "skills-data").exists() is False  # the data folder is made only when a skill uses it
 
 
 # ================================================================ the command line
@@ -661,7 +662,7 @@ def run_cli(capsys, *argv: str) -> tuple[int, str, str]:
 
 
 def test_cli_list_show_and_approve(env, proxy, capsys):
-    write_skill(env["MUSE_HOME"], approve=False, metadata={"author": "Ann Example"})
+    write_skill(envget(env, "MUSE_HOME"), approve=False, metadata={"author": "Ann Example"})
     code, out, _ = run_cli(capsys, "skills", "list")
     assert code == 0 and "files-answer" in out and "ready" in out and "echo" in out and "not approved" in out
     code, out, _ = run_cli(capsys, "skills", "show", "files-answer")
@@ -678,13 +679,13 @@ def test_cli_list_show_and_approve(env, proxy, capsys):
     code, _, err = run_cli(capsys, "skills", "show", "nope")
     assert code == 1 and "no skill named" in err
     assert run_cli(capsys, "skills")[0] == 2
-    write_skill(env["MUSE_HOME"], name="broken", approve=False, muse_colour=1)
+    write_skill(envget(env, "MUSE_HOME"), name="broken", approve=False, muse_colour=1)
     code, out, _ = run_cli(capsys, "skills", "list")
     assert code == 1 and "cannot be loaded" in out and "muse.colour: unknown key" in out
 
 
 def test_cli_run_prints_the_answer_the_grey_line_and_the_exit_codes(env, proxy, capsys):
-    write_skill(env["MUSE_HOME"])
+    write_skill(envget(env, "MUSE_HOME"))
     proxy.push(*chat("GOOD answer", provider="groq"))
     code, out, err = run_cli(capsys, "skills", "run", "echo", "--input", "q=hello", "--privacy", "private", "--task", "everyday")
     assert code == 0 and out.strip() == "GOOD answer"
@@ -723,7 +724,7 @@ def test_cli_partial_exit_code_and_writes_need_yes(env, proxy, capsys, tmp_path)
     docs, out_dir = tmp_path / "docs", tmp_path / "out"
     docs.mkdir()
     (docs / "a.txt").write_text("abc")
-    write_skill(env["MUSE_HOME"], code=READER, **READS)
+    write_skill(envget(env, "MUSE_HOME"), code=READER, **READS)
     args = ("skills", "run", "echo", "--folder", str(docs), "--out", str(out_dir), "--input", f"path={docs / 'a.txt'}",
             "--input", "write=copy.txt")
     code, out, err = run_cli(capsys, *args)  # not a terminal, no --yes: proposed, not written
@@ -731,7 +732,7 @@ def test_cli_partial_exit_code_and_writes_need_yes(env, proxy, capsys, tmp_path)
     code, out, err = run_cli(capsys, *args, "--yes")
     assert code == 0 and (out_dir / "copy.txt").read_text() == "GOOD abc" and f"Wrote {out_dir.resolve() / 'copy.txt'}" in err
 
-    write_skill(env["MUSE_HOME"], name="half", code="""
+    write_skill(envget(env, "MUSE_HOME"), name="half", code="""
     def run(ctx):
         ctx.note("One source could not be reached.", incomplete=True)
         return "GOOD"
@@ -744,7 +745,7 @@ def test_cli_partial_exit_code_and_writes_need_yes(env, proxy, capsys, tmp_path)
 
 
 def test_the_grey_line_wording():
-    from muse.skills.cli import grey_line
+    from wardmuse.skills.cli import grey_line
     assert grey_line({"requests": 0}) == "No model was used. Nothing spent."
     assert grey_line({"requests": 1, "providers": {"groq": {}}, "cost_usd": 0}) == "Answered by groq. Nothing spent."
     assert grey_line({"requests": 2, "providers": {"cache": {}}, "cost_usd": 0}) == "Answered from Muse's own cache. Nothing spent."

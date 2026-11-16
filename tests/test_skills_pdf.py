@@ -17,8 +17,8 @@ from pathlib import Path
 import pytest
 
 import pdf_fixtures as pf
-from muse.skills import loader, runner
-from muse.skills.workspace import Workspace
+from wardmuse.skills import loader, runner
+from wardmuse.skills.workspace import Workspace
 from test_skills_support import chat, env, proxy  # noqa: F401  (fixtures)
 
 try:

@@ -13,6 +13,7 @@ is skipped without it; the plain stage is tested either way.
 """
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import base64
 import datetime as dt
@@ -710,16 +711,17 @@ def test_first_boot_dry_run_sets_everything_up_once_and_prints_no_secret(tmp_pat
     units = paths["sysroot"] / "etc" / "systemd" / "system"
     assert {p.name for p in units.iterdir()} == {p.name for p in unit_files()}
     calls = paths["log"].read_text()
-    for unit in ("muse-proxy.service", "muse-home.service", "muse-queue.service", "muse-vm-monitor.service", "muse-chores.timer", "muse-backup.timer"):
+    for unit in ("wardmuse-proxy.service", "wardmuse-home.service", "wardmuse-queue.service", "wardmuse-vm-monitor.service", "wardmuse-chores.timer", "wardmuse-backup.timer"):
         assert f"systemctl enable --now {unit}" in calls, unit
-    assert "systemctl enable --now muse-chores.service" not in calls, "timer-driven services are started by their timers"
+    assert "systemctl enable --now wardmuse-chores.service" not in calls, "timer-driven services are started by their timers"
     assert "systemctl mask ssh.socket ssh.service" in calls, "no tester key: sshd is switched off"
     assert "apt-get install -y -qq --no-install-recommends python3-venv age curl ca-certificates unattended-upgrades" in calls
     assert "docker" not in calls and "useradd" not in calls
-    apt = (paths["sysroot"] / "etc" / "apt" / "apt.conf.d" / "52muse-unattended-upgrades").read_text()
+    apt = (paths["sysroot"] / "etc" / "apt" / "apt.conf.d" / "52wardmuse-unattended-upgrades").read_text()
     assert 'Automatic-Reboot "true"' in apt and 'Automatic-Reboot-Time "03:30"' in apt
-    wrapper = (paths["sysroot"] / "usr" / "local" / "bin" / "muse").read_text()
-    assert "MUSE_BIND=127.0.0.1" in wrapper and "-m muse" in wrapper and key not in wrapper
+    wrapper = (paths["sysroot"] / "usr" / "local" / "bin" / "wardmuse").read_text()
+    assert "MUSE_BIND=127.0.0.1" in wrapper and "-m wardmuse" in wrapper and key not in wrapper
+    assert "wardmuse" in (paths["sysroot"] / "usr" / "local" / "bin" / "muse").read_text()
     assert (paths["state"] / "home" / "backup-key" / "identity.txt").is_file()
     assert (paths["state"].stat().st_mode & 0o777) == 0o700
 
@@ -749,7 +751,7 @@ def test_first_boot_failure_leaves_a_marker_and_nothing_running(tmp_path):
     assert "step=python" in marker and not (paths["setup"] / "DONE").exists()
     assert not paths["env"].exists(), "no key is made when the install fails"
     assert not (paths["sysroot"] / "etc" / "systemd" / "system").exists(), "no unit is installed"
-    assert "systemctl disable --now" in paths["log"].read_text() and "enable --now muse-proxy" not in paths["log"].read_text()
+    assert "systemctl disable --now" in paths["log"].read_text() and "enable --now wardmuse-proxy" not in paths["log"].read_text()
     assert 'stopped at step "python"' in failed.stderr
 
     # Something listens beyond loopback after the services start: everything is stopped and disabled.
@@ -764,7 +766,7 @@ def test_first_boot_failure_leaves_a_marker_and_nothing_running(tmp_path):
     assert "step=health" in (paths["setup"] / "FAILED").read_text() and not (paths["setup"] / "DONE").exists()
     calls = paths["log"].read_text()
     assert calls.rindex("systemctl disable --now") > calls.rindex("systemctl enable --now"), "the last word is: stop everything"
-    assert all(unit in calls.split("systemctl disable --now")[-1] for unit in ("muse-proxy.service", "muse-home.service", "muse-queue.service", "muse-chores.timer"))
+    assert all(unit in calls.split("systemctl disable --now")[-1] for unit in ("wardmuse-proxy.service", "wardmuse-home.service", "wardmuse-queue.service", "wardmuse-chores.timer"))
 
     # sshd on port 22 is tolerated only when a tester key was given.
     (exposed / "stubs" / "extra-listener").write_text("LISTEN 0 128 0.0.0.0:22 0.0.0.0:*\n")
@@ -781,8 +783,8 @@ def test_first_boot_failure_leaves_a_marker_and_nothing_running(tmp_path):
 
 HARDENING = ["NoNewPrivileges=yes", "ProtectSystem=strict", "PrivateTmp=yes", "ProtectHome=", "ReadWritePaths=", "RestrictAddressFamilies=",
              "MemoryMax=", "CPUQuota="]
-LOCAL_ONLY = {"muse-home.service", "muse-queue.service", "muse-chores.service", "muse-vm-monitor.service"}
-NEEDS_INTERNET = {"muse-proxy.service", "muse-catalog-check.service", "muse-backup.service", "muse-update.service", "muse-heartbeat.service"}
+LOCAL_ONLY = {"wardmuse-home.service", "wardmuse-queue.service", "wardmuse-chores.service", "wardmuse-vm-monitor.service"}
+NEEDS_INTERNET = {"wardmuse-proxy.service", "wardmuse-catalog-check.service", "wardmuse-backup.service", "wardmuse-update.service", "wardmuse-heartbeat.service"}
 
 
 def unit_files() -> list[Path]:
@@ -795,10 +797,10 @@ def unit_lines(path: Path) -> list[str]:
 
 def test_expected_units_exist():
     names = {p.name for p in unit_files()}
-    assert names == {"muse-proxy.service", "muse-home.service", "muse-queue.service", "muse-chores.service", "muse-chores.timer",
-                     "muse-catalog-check.service", "muse-catalog-check.timer", "muse-backup.service", "muse-backup.timer",
-                     "muse-update.service", "muse-update.timer", "muse-heartbeat.service", "muse-heartbeat.timer",
-                     "muse-vm-monitor.service"}
+    assert names == {"wardmuse-proxy.service", "wardmuse-home.service", "wardmuse-queue.service", "wardmuse-chores.service", "wardmuse-chores.timer",
+                     "wardmuse-catalog-check.service", "wardmuse-catalog-check.timer", "wardmuse-backup.service", "wardmuse-backup.timer",
+                     "wardmuse-update.service", "wardmuse-update.timer", "wardmuse-heartbeat.service", "wardmuse-heartbeat.timer",
+                     "wardmuse-vm-monitor.service"}
     assert LOCAL_ONLY | NEEDS_INTERNET == {n for n in names if n.endswith(".service")}
     listed = re.search(r'ALL="([^"]*)"', (VM / "install-services.sh").read_text()).group(1).split()
     assert set(listed) == names
@@ -820,13 +822,13 @@ def test_every_service_is_hardened():
         assert "AF_PACKET" not in value["RestrictAddressFamilies"]
         if path.name in LOCAL_ONLY:
             assert "IPAddressDeny=any" in lines, f"{path.name} needs no internet and must not have it"
-            if path.name == "muse-vm-monitor.service":
+            if path.name == "wardmuse-vm-monitor.service":
                 assert "IPAddressAllow=localhost" not in lines and value["RestrictAddressFamilies"] == "AF_UNIX"
             else:
                 assert "IPAddressAllow=localhost" in lines
         else:
             assert "IPAddressDeny=any" not in lines
-        if path.name == "muse-update.service":
+        if path.name == "wardmuse-update.service":
             assert "User=" not in "".join(lines), "the updater installs under /opt and restarts units, so it is root"
         else:
             assert "User=@MUSE_USER@" in lines and "CapabilityBoundingSet=" in lines
@@ -835,7 +837,7 @@ def test_every_service_is_hardened():
     def gb(name: str) -> float:
         text = next(line for line in unit_lines(UNITS / name) if line.startswith("MemoryMax=")).split("=")[1]
         return float(text[:-1]) / (1024 if text.endswith("M") else 1)
-    assert sum(gb(n) for n in ("muse-proxy.service", "muse-home.service", "muse-queue.service", "muse-chores.service", "muse-vm-monitor.service")) <= 10.0
+    assert sum(gb(n) for n in ("wardmuse-proxy.service", "wardmuse-home.service", "wardmuse-queue.service", "wardmuse-chores.service", "wardmuse-vm-monitor.service")) <= 10.0
     assert sum(gb(p.name) for p in unit_files() if p.suffix == ".service") <= 12.0 + 2.0   # the nightly jobs never all overlap
 
 
@@ -845,39 +847,39 @@ def test_nothing_binds_publicly():
         assert "0.0.0.0" not in code, path.name
         assert not re.search(r"(?<![\w:\[])::(?![\w:1])|\[::\](?!1)", code.replace("[::1]", "").replace("[::ffff:127.", "")), path.name
         assert "--host" not in code and "INADDR_ANY" not in code, path.name
-    proxy = unit_lines(UNITS / "muse-proxy.service")
+    proxy = unit_lines(UNITS / "wardmuse-proxy.service")
     assert "Environment=MUSE_BIND=127.0.0.1" in proxy, "the unit pins loopback even if the dotenv file were edited"
-    home = unit_lines(UNITS / "muse-home.service")
-    assert any(line.endswith("-m muse home serve") for line in home), "the home API uses its Unix socket, no --tcp"
+    home = unit_lines(UNITS / "wardmuse-home.service")
+    assert any(line.endswith("-m wardmuse home serve") for line in home), "the home API uses its Unix socket, no --tcp"
     boot = (VM / "bootstrap.sh").read_text(encoding="utf-8")
     assert 'only_loopback_listeners "$TESTER_SSH" || die' in boot
     assert '[ "$bind" = "127.0.0.1" ] || die' in boot
 
 
 def test_units_call_commands_the_cli_really_has():
-    from muse.cli import build_parser
+    from wardmuse.cli import build_parser
 
     parser = build_parser()
     seen = []
     for path in unit_files():
         for line in unit_lines(path):
-            match = re.match(r"ExecStart=@MUSE_VENV@/bin/python -m muse (.+)$", line)
+            match = re.match(r"ExecStart=@MUSE_VENV@/bin/python -m wardmuse (.+)$", line)
             if match:
                 args = match.group(1).split()
                 parser.parse_args(args)           # raises SystemExit on an unknown subcommand or flag
                 seen.append(" ".join(args))
     assert seen == ["chores tick", "home serve", "up --native", "queue run"]
     wrapper = (VM / "muse-catalog-check.sh").read_text(encoding="utf-8")
-    match = re.search(r'-m muse (catalog check [^>]+)>', wrapper)
+    match = re.search(r'-m wardmuse (catalog check [^>]+)>', wrapper)
     parser.parse_args(match.group(1).split())
     assert "--pages" in match.group(1) and "--json" in match.group(1)
-    for timer, service in (("muse-chores.timer", "muse-chores.service"), ("muse-catalog-check.timer", "muse-catalog-check.service"),
-                           ("muse-backup.timer", "muse-backup.service"), ("muse-update.timer", "muse-update.service"),
-                           ("muse-heartbeat.timer", "muse-heartbeat.service")):
+    for timer, service in (("wardmuse-chores.timer", "wardmuse-chores.service"), ("wardmuse-catalog-check.timer", "wardmuse-catalog-check.service"),
+                           ("wardmuse-backup.timer", "wardmuse-backup.service"), ("wardmuse-update.timer", "wardmuse-update.service"),
+                           ("wardmuse-heartbeat.timer", "wardmuse-heartbeat.service")):
         assert f"Unit={service}" in unit_lines(UNITS / timer) and "WantedBy=timers.target" in unit_lines(UNITS / timer)
-    assert "OnCalendar=minutely" in unit_lines(UNITS / "muse-chores.timer")
-    assert any(line.startswith("OnCalendar=Sun ") for line in unit_lines(UNITS / "muse-catalog-check.timer"))
-    assert any(re.match(r"OnCalendar=\*-\*-\* \d\d:\d\d:\d\d", line) for line in unit_lines(UNITS / "muse-backup.timer"))
+    assert "OnCalendar=minutely" in unit_lines(UNITS / "wardmuse-chores.timer")
+    assert any(line.startswith("OnCalendar=Sun ") for line in unit_lines(UNITS / "wardmuse-catalog-check.timer"))
+    assert any(re.match(r"OnCalendar=\*-\*-\* \d\d:\d\d:\d\d", line) for line in unit_lines(UNITS / "wardmuse-backup.timer"))
     # Scripts the units start exist in the tree they run from.
     for path in unit_files():
         for line in unit_lines(path):
@@ -896,16 +898,16 @@ def test_install_services_renders_every_unit(tmp_path):
         assert "@" not in re.sub(r"\S+@\S+\.\S+", "", text), f"unfilled placeholder in {path.name}"
         if path.suffix == ".service":
             assert "ProtectHome=yes" in text
-    proxy = (dest / "muse-proxy.service").read_text()
-    assert "ExecStart=/opt/muse/current/venv/bin/python -m muse up --native" in proxy and "User=muse" in proxy
-    assert "ReadWritePaths=/opt/muse /var/lib/muse /etc/systemd/system" in (dest / "muse-update.service").read_text()
+    proxy = (dest / "wardmuse-proxy.service").read_text()
+    assert "ExecStart=/opt/muse/current/venv/bin/python -m wardmuse up --native" in proxy and "User=muse" in proxy
+    assert "ReadWritePaths=/opt/muse /var/lib/muse /etc/systemd/system" in (dest / "wardmuse-update.service").read_text()
     # The manual layout: a clone in the home folder, a chosen subset of units.
     manual = tmp_path / "manual"
     result = run(["bash", str(VM / "install-services.sh"), "--user", "ubuntu", "--root", "/home/ubuntu/muse-stack", "--venv", "/home/ubuntu/.muse-venv",
                   "--state", "/home/ubuntu/.muse", "--dest", str(manual), "--units", "muse-home muse-chores"])
     assert result.returncode == 0, result.stderr
-    assert {p.name for p in manual.iterdir()} == {"muse-home.service", "muse-chores.service", "muse-chores.timer"}
-    assert "ProtectHome=read-only" in (manual / "muse-home.service").read_text()
+    assert {p.name for p in manual.iterdir()} == {"wardmuse-home.service", "wardmuse-chores.service", "wardmuse-chores.timer"}
+    assert "ProtectHome=read-only" in (manual / "wardmuse-home.service").read_text()
     assert run(["bash", str(VM / "install-services.sh"), "--user", "root", "--root", "/a", "--venv", "/b", "--state", "/c", "--dest", str(dest)]).returncode != 0
     assert run(["bash", str(VM / "install-services.sh"), "--user", "muse", "--root", "/a", "--venv", "/b", "--state", "/c", "--dest", str(dest), "--units", "nope"]).returncode != 0
     if shutil.which("systemd-analyze"):
@@ -1459,7 +1461,7 @@ def test_idle_guard_uses_the_processor_only_and_backs_off():
     assert round(monitor.memory_used_pct(meminfo), 1) == 25.0
     assert monitor.parse_cpu("cpu  100 0 100 700 100 0 0 0 0 0\ncpu0 1 2 3 4\n") == (200, 1000)
     assert monitor.parse_net("h1\nh2\n    lo: 500 0 0 0 0 0 0 0 500 0\n  ens3: 1000 0 0 0 0 0 0 0 2000 0 0 0 0 0 0 0\n") == 3000
-    unit = "\n".join(unit_lines(UNITS / "muse-vm-monitor.service"))
+    unit = "\n".join(unit_lines(UNITS / "wardmuse-vm-monitor.service"))
     assert "MemoryMax=128M" in unit and "OOMScoreAdjust=1000" in unit, "small, and first to go if memory runs short"
     assert "CPUQuota=100%" in unit and "CPUWeight=1" in unit and "Nice=19" in unit, "at most one core, always behind real work"
     assert "IPAddressDeny=any" in unit and "RestrictAddressFamilies=AF_UNIX" in unit
@@ -1536,7 +1538,7 @@ def test_monitor_samples_and_status_json(tmp_path):
 def test_catalog_check_wrapper_keeps_the_result(tmp_path):
     state = tmp_path / "vm"
     fake = tmp_path / "fake-python"
-    fake.write_text("#!/bin/bash\n# stands in for `python -m muse catalog check --pages --json`\n"
+    fake.write_text("#!/bin/bash\n# stands in for `python -m wardmuse catalog check --pages --json`\n"
                     "if [ \"$1\" = -m ]; then echo '{\"stale\": []}'; exit 3; fi\nexec " + sys.executable + " \"$@\"\n", encoding="utf-8")
     fake.chmod(0o755)
     result = run(["bash", str(VM / "muse-catalog-check.sh")], env={"MUSE_VM_STATE": str(state), "MUSE_PYTHON": str(fake)})
@@ -1628,7 +1630,7 @@ def test_no_second_copy_of_the_litellm_pin():
         # Docker mode calls the compose client. The image digest stays in the signed
         # release's compose file; these scripts must not name an image or pull one themselves.
         if re.search(r"docker (run|pull|compose)", text):
-            assert path.name in {"lib.sh", "muse-update.sh", "migrate-from-clone.sh"}, path.name
+            assert path.name in {"lib.sh", "muse-update.sh", "migrate-from-clone.sh", "migrate-to-wardmuse.sh"}, path.name
         assert "docker run" not in text and "docker pull" not in text, path.name
         assert not re.search(r"ghcr\.io/berriai|litellm/litellm", text), path.name
         assert not re.search(r"(curl|wget)[^\n|]*\|\s*(sudo\s+)?(ba)?sh", text), f"{path.name} pipes a download into a shell"

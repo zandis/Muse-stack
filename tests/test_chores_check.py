@@ -4,6 +4,7 @@ No network and no real provider. The router is queue_fakes.FakeProxy; the skills
 """
 
 from __future__ import annotations
+from wardmuse.envutil import envget, envhas
 
 import csv
 import json
@@ -139,7 +140,7 @@ def test_the_guard_checks_a_pdf_fixture_against_its_source_without_parsing_it(tm
 
 def test_what_the_skill_reads_from_each_pdf_fixture_holds_the_expected_facts():
     pytest.importorskip("pypdf")
-    from muse.skills import loader
+    from wardmuse.skills import loader
 
     pdf = loader.import_skill(loader.find("files-answer"), "pdf")
     found, _ = cc.load_tasks(cc.TASKS_DIR)
@@ -275,7 +276,7 @@ def check(env, tasks_dir: Path, *argv: str) -> int:
 
 
 def report_of(env) -> dict:
-    return json.loads((Path(env["MUSE_HOME"]) / "chores-report.json").read_text(encoding="utf-8"))
+    return json.loads((Path(envget(env, "MUSE_HOME")) / "chores-report.json").read_text(encoding="utf-8"))
 
 
 def test_plan_is_printed_and_nothing_is_sent_without_confirmation(env, proxy, tasks_dir, capsys, monkeypatch):
@@ -289,7 +290,7 @@ def test_plan_is_printed_and_nothing_is_sent_without_confirmation(env, proxy, ta
     assert "app: skills (never paid)   privacy: standard" in out
     assert re.search(r"ghost-skill\s+skipped: this skill is not installed here, so its 5 tasks were not run", out)
     assert "no document text, prompts or answers" in out
-    assert proxy.requests == [] and not (Path(env["MUSE_HOME"]) / "chores-report.json").exists()
+    assert proxy.requests == [] and not (Path(envget(env, "MUSE_HOME")) / "chores-report.json").exists()
 
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True, raising=False)
     monkeypatch.setattr("builtins.input", lambda prompt="": "n")
@@ -345,13 +346,13 @@ def test_full_run_report_shape_deferred_accounting_and_no_leaks(env, proxy, task
     assert "reported apart: neither passes nor failures" in out and "ghost-skill: skipped" in out
 
     # One CSV line per run, and nothing from a document, a prompt, an answer or a key anywhere.
-    csv_path = Path(env["MUSE_HOME"]) / "chores-runs.csv"
+    csv_path = Path(envget(env, "MUSE_HOME")) / "chores-runs.csv"
     rows = list(csv.DictReader(csv_path.open(encoding="utf-8")))
     assert len(rows) == 5 and tuple(rows[0]) == cc.CSV_FIELDS
     assert {r["task"]: r["outcome"] for r in rows}["t-held"] == "deferred" and all(r["cost_usd"] == "0.000000" for r in rows)
     assert {r["task"]: r["independent"] for r in rows} == {"t-right": "pass", "t-wrong": "fail", "t-none": "pass", "t-held": "", "t-bad": "fail"}
-    stored = (Path(env["MUSE_HOME"]) / "chores-report.json").read_text(encoding="utf-8") + csv_path.read_text(encoding="utf-8") + out
-    token = env.get("MUSE_SKILLS_APP_TOKEN", "")
+    stored = (Path(envget(env, "MUSE_HOME")) / "chores-report.json").read_text(encoding="utf-8") + csv_path.read_text(encoding="utf-8") + out
+    token = envget(env, "MUSE_SKILLS_APP_TOKEN", "")
     for needle in (CANARY_DOC, CANARY_REPLY, CANARY_QUESTION, "Harbour Street", "18,500", "Tomatoes", "door code", "Bearer", "kept"):
         assert needle not in stored, needle
     assert proxy.requests and proxy.requests[0]["auth"].startswith("Bearer ")
@@ -422,7 +423,7 @@ def test_deferred_runs_in_a_row_stop_the_skill_and_the_rest_is_not_run(env, prox
 
 
 def test_a_short_retry_after_is_waited_for_and_a_long_one_is_not(env, proxy, tasks_dir, monkeypatch):
-    from muse.skills import runner
+    from wardmuse.skills import runner
     sleeps: list[float] = []
     real = runner.run
     monkeypatch.setattr(runner, "run", lambda *a, **k: real(*a, **{**k, "sleep": sleeps.append}))
@@ -513,7 +514,7 @@ def test_replay_of_a_missing_directory_is_refused(env, tasks_dir, capsys, tmp_pa
 
 def test_record_then_replay_does_not_call_the_router_again(env, proxy, tasks_dir, tmp_path):
     """The gate can be repeated from cassettes. The second run never reaches the router."""
-    from muse import cassette
+    from wardmuse import cassette
 
     route(proxy)
     recorded = tmp_path / "tapes"
@@ -590,7 +591,7 @@ def test_typed_facts_are_validated_and_the_shipped_dates_times_and_amounts_are_t
 def test_keep_failures_writes_wrong_and_failed_runs_with_quotes_only_and_mode_0600(env, proxy, tasks_dir):
     route(proxy)
     check(env, tasks_dir, "--yes", "--quiet")
-    path = Path(env["MUSE_HOME"]) / cc.FAILURES_FILE
+    path = Path(envget(env, "MUSE_HOME")) / cc.FAILURES_FILE
     assert not path.exists()  # nothing is kept by default
     check(env, tasks_dir, "--yes", "--quiet", "--keep-failures")
     assert (path.stat().st_mode & 0o777) == 0o600

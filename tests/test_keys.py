@@ -9,7 +9,7 @@ import types
 
 import pytest
 
-from muse import keys
+from wardmuse import keys
 
 SECRET = "gsk_SUPERSECRETVALUE1234567890"
 

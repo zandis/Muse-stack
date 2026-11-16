@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from muse import catalog, cli, connect, keys
+from wardmuse import catalog, cli, connect, keys
 
 CANARY = "sk-or-v1-CANARYKEY0123456789abcdefABCDEF"
 CODE = "authcode-CANARY-9f8e7d6c"
@@ -669,7 +669,7 @@ def test_muse_lang_environment_default(capsys, monkeypatch, tmp_path):
 
 
 def test_connect_local_wraps_discovery(tmp_path, monkeypatch):
-    from muse import local
+    from wardmuse import local
 
     class P:
         provider, base, reachable, error, models = "ollama", "http://127.0.0.1:11434", True, None, ["m"]

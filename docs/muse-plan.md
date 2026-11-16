@@ -1,6 +1,6 @@
-# Muse: detailed plan
+# Wardmuse: detailed plan
 
-2026-11-12. Drafted from the owner's answers (recorded in `docs/plan-infra-first.md`) and two research passes done today: a competitive check and a free-tier inventory. This document adds the reasoning: where Muse is competitive, how rationing creates the most value, and what the user sees.
+2026-11-12. Drafted from the owner's answers (recorded in `docs/plan-infra-first.md`) and two research passes done today: a competitive check and a free-tier inventory. This document adds the reasoning: where Wardmuse is competitive, how rationing creates the most value, and what the user sees.
 
 **Evidence.** Research figures are mostly from secondary sources; where a provider's own page was read, the text says so. Prices and free limits change monthly. Legal points are design judgment, not advice. Section 12 lists what was not verified.
 
@@ -8,7 +8,7 @@
 
 ## 1. The product in one page
 
-**Muse is a helper that does your chores using the AI services you already qualify for, and never surprises your wallet.**
+**Wardmuse is a helper that does your chores using the AI services you already qualify for, and never surprises your wallet.**
 
 Under it is one engine: a router that knows every allowance the user has, when each refills, and what each is good for, and spends them in the order that gets the most done for nothing.
 
@@ -32,7 +32,7 @@ Fixed decisions: any individual, non-technical; desktop and mobile on one Rust c
 - A Taiwan Fair Trade Commission survey released 29 October 2026 found 87.9% of generative-AI users use ChatGPT and 67.8% use Gemini. Of those who do not pay, 89.5% say the free allowance is enough.
 - Chunghwa Telecom and Taiwan Mobile bundle paid AI tiers with phone plans.
 
-For plain chat, free ChatGPT plus free Gemini already serve most people. Muse must not compete there.
+For plain chat, free ChatGPT plus free Gemini already serve most people. Wardmuse must not compete there.
 
 ### 2.2 Where the value is
 
@@ -45,7 +45,7 @@ Chores, research and file indexing use roughly ten times the tokens of chat. Tha
 | Lindy | from about US$30–50 a month | Expensive |
 | OpenClaw (self-hosted) | free | Heavy public security record; cut off from Claude subscriptions in 2026 |
 
-So the claim Muse can defend is: **the same kind of helper, running on allowances you already have, with a hard ceiling on spending and a record of everything it did.**
+So the claim Wardmuse can defend is: **the same kind of helper, running on allowances you already have, with a hard ceiling on spending and a record of everything it did.**
 
 ### 2.3 The gap nobody fills
 
@@ -67,11 +67,11 @@ That is consistent with 2.2: the helper is the heavy user, and rationing is what
 
 Three statements tested against the evidence, strongest first:
 
-1. **"Works with the ChatGPT and Gemini you already use."** Fits existing habits (87.9% and 67.8%). Muse hands hard questions to the user's own app and takes care of everything those apps do not do.
+1. **"Works with the ChatGPT and Gemini you already use."** Fits existing habits (87.9% and 67.8%). Wardmuse hands hard questions to the user's own app and takes care of everything those apps do not do.
 2. **"A helper that never surprises your wallet."** Answers the main complaint about paid agents. Speaks to the 39.8% of Taiwan AI users who have paid for something.
 3. **"Private, with a receipt for everything."** Credible against the security record of open agents. No evidence found that consumers pay for privacy, so this builds trust; it does not drive revenue.
 
-What Muse does not say: "unlimited free AI", "bypass limits", "cheaper ChatGPT". The first two are also legally unwise (see `docs/plan-infra-first.md` §8).
+What Wardmuse does not say: "unlimited free AI", "bypass limits", "cheaper ChatGPT". The first two are also legally unwise (see `docs/plan-infra-first.md` §8).
 
 ---
 
@@ -79,7 +79,7 @@ What Muse does not say: "unlimited free AI", "bypass limits", "cheaper ChatGPT".
 
 ### 4.1 Closest alternatives
 
-| Alternative | For whom | Price | It does, Muse does not | Muse does, it does not |
+| Alternative | For whom | Price | It does, Wardmuse does not | Wardmuse does, it does not |
 |---|---|---|---|---|
 | Free ChatGPT / Gemini apps | Everyone | Free; about NT$270–290 for ChatGPT Go | Best models, voice, images, brand | Chores on a schedule, answers across your files, a spending cap, an endpoint for other apps, receipts |
 | Carrier bundles (Chunghwa + Google AI, Taiwan Mobile + Perplexity) | Their subscribers | Free for a period | A frontier paid tier at no cost | Works across providers; automation |
@@ -91,7 +91,7 @@ What Muse does not say: "unlimited free AI", "bypass limits", "cheaper ChatGPT".
 | LINE and Kakao built-in AI | Their users | Free so far | Already in the app people open daily | Cross-provider; your own data control |
 | AI Horde | Hobbyists sharing GPUs | Free; credits earned by serving | A working compute exchange today | Credits that decay; a general helper |
 
-### 4.2 Where Muse wins
+### 4.2 Where Wardmuse wins
 
 - The only product found that leads with rationing and a hard spending cap for non-developers.
 - A helper whose running cost is near zero for the user, against agents priced by opaque credits.
@@ -99,7 +99,7 @@ What Muse does not say: "unlimited free AI", "bypass limits", "cheaper ChatGPT".
 - Honest hand-off to the user's own subscription app.
 - One endpoint ordinary people can give to other apps.
 
-### 4.3 Where Muse loses
+### 4.3 Where Wardmuse loses
 
 - Plain chat: the free apps are better and already installed.
 - Model strength: free allowances are mostly smaller models. Chores must be designed to succeed on them, with hand-off for the rest.
@@ -226,7 +226,7 @@ Guided key sign-up is the riskiest step in the product: no published data shows 
 
 | Step | Screen | Taps |
 |---|---|---|
-| 1 | Language, one sentence on what Muse is, one on what it is not | 1 |
+| 1 | Language, one sentence on what Wardmuse is, one on what it is not | 1 |
 | 2 | "Connect your first helper": one button that opens OpenRouter's own approval page and returns with a key the app receives directly | 2 |
 | 3 | "Ask something, or pick a first chore" with three suggestions | 1 |
 
@@ -240,12 +240,12 @@ The helper suggests the next service when it would have helped: *"That would hav
 
 For services with no one-tap connection:
 
-1. Muse opens the provider's own key page.
+1. Wardmuse opens the provider's own key page.
 2. A card over the page shows the current step, one at a time, in the user's language.
-3. When the user copies the key, Muse notices and asks "Use this key?"
-4. Muse tests it and shows what was gained.
+3. When the user copies the key, Wardmuse notices and asks "Use this key?"
+4. Wardmuse tests it and shows what was gained.
 
-Muse guides; it never operates the provider's website for the user. Steps live in the catalogue as data, so the discovery bot can flag a guide when a provider changes its page.
+Wardmuse guides; it never operates the provider's website for the user. Steps live in the catalogue as data, so the discovery bot can flag a guide when a provider changes its page.
 
 Order of suggestions: most allowance gained per minute of setup. From the inventory (judgment, not measured): OpenRouter, Gemini, Groq, Cloudflare Workers AI, Mistral.
 
@@ -260,14 +260,14 @@ Order of suggestions: most allowance gained per minute of setup. From the invent
 | **Activity** | Every action as a readable line, newest first. Filters: "anything that left my device", "anything that cost money". Undo for reversible actions. The pause switch. |
 | **Settings** | Daily cap, default privacy, permissions granted, memory (readable and editable), languages, export. |
 
-Desktop adds a menu-bar icon with the gauge and next refill, and a page that gives other apps Muse's endpoint with a key per app.
+Desktop adds a menu-bar icon with the gauge and next refill, and a page that gives other apps Wardmuse's endpoint with a key per app.
 
 ### 6.5 Hand-off to a subscription
 
 1. The helper recognises a frontier question, or the user taps "Open in my ChatGPT".
-2. Muse prepares the question with the relevant context and opens the provider's own app with it.
+2. Wardmuse prepares the question with the relevant context and opens the provider's own app with it.
 3. The user runs it there, under their own subscription.
-4. Sharing the answer back to Muse (the phone's share sheet, or copy) files it with the conversation.
+4. Sharing the answer back to Wardmuse (the phone's share sheet, or copy) files it with the conversation.
 
 Nothing is routed through the subscription. This is always within the providers' terms.
 

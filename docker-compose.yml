@@ -1,4 +1,11 @@
-# Muse stack: LiteLLM proxy. Provider keys come from .env and are optional.
+# Wardmuse: LiteLLM proxy. Provider keys come from .env and are optional.
+#
+# Project name `wardmuse` makes the container `wardmuse-litellm-1`.
+# The previous container was `muse-stack-litellm-1` (project `muse-stack`).
+# `docker compose -p muse-stack` still addresses the old container. The updater
+# keeps that project while `muse-stack-litellm-1` exists. See docs/deploy/update.md.
+name: wardmuse
+
 #
 #   cp .env.example .env
 #   # set LITELLM_MASTER_KEY at minimum
@@ -29,10 +36,11 @@ services:
       LITELLM_NUM_WORKERS: ${LITELLM_NUM_WORKERS:-1}
       # Paid use: empty override = follow the daily cap (paid joins the aliases
       # last when the cap is > 0); true/false forces it on/off. See .env.example.
+      WARDMUSE_ALLOW_PAID_FALLBACK:
       MUSE_ALLOW_PAID_FALLBACK:
-      MUSE_DISABLE_PROVIDERS: ${MUSE_DISABLE_PROVIDERS:-}
+      MUSE_DISABLE_PROVIDERS: ${WARDMUSE_DISABLE_PROVIDERS:-${MUSE_DISABLE_PROVIDERS:-}}
       # Bare names pass a value through from the shell that runs compose, so
-      # `muse up` can hand over keychain-stored keys without writing them to disk.
+      # `wardmuse up` can hand over keychain-stored keys without writing them to disk.
       # Unset in the shell means the .env value (if any) applies.
       GEMINI_API_KEY:
       GROQ_API_KEY:
@@ -50,39 +58,51 @@ services:
       NVIDIA_NIM_API_KEY:
       OLLAMA_API_BASE:
       LM_STUDIO_API_BASE:
+      WARDMUSE_LOCAL_OPENAI_BASE:
       MUSE_LOCAL_OPENAI_BASE:
-      MUSE_LOCAL_ORDER: ${MUSE_LOCAL_ORDER:-5}
-      MUSE_DEFAULT_PRIVACY: ${MUSE_DEFAULT_PRIVACY:-standard}
+      MUSE_LOCAL_ORDER: ${WARDMUSE_LOCAL_ORDER:-${MUSE_LOCAL_ORDER:-5}}
+      MUSE_DEFAULT_PRIVACY: ${WARDMUSE_DEFAULT_PRIVACY:-${MUSE_DEFAULT_PRIVACY:-standard}}
       # The port mapping above uses this same value. The renderer refuses to
       # boot with an empty master key unless it is loopback.
-      MUSE_BIND: ${MUSE_BIND:-127.0.0.1}
-      # 1/true/on: muse/hook.py raises a request to private when it spots sensitive content.
-      MUSE_AUTO_PRIVACY: ${MUSE_AUTO_PRIVACY:-}
-      # Rationing between apps (muse/ration.py). Unset means the documented default.
+      MUSE_BIND: ${WARDMUSE_BIND:-${MUSE_BIND:-127.0.0.1}}
+      # 1/true/on: wardmuse/hook.py raises a request to private when it spots sensitive content.
+      MUSE_AUTO_PRIVACY: ${WARDMUSE_AUTO_PRIVACY:-${MUSE_AUTO_PRIVACY:-}}
+      # Rationing between apps (wardmuse/ration.py). Unset means the documented default.
+      WARDMUSE_DAILY_PAID_CAP_USD:
       MUSE_DAILY_PAID_CAP_USD:
+      WARDMUSE_TZ:
       MUSE_TZ:
+      WARDMUSE_COOLDOWN_FALLBACK_S:
       MUSE_COOLDOWN_FALLBACK_S:
+      WARDMUSE_ACTIVE_WINDOW_S:
       MUSE_ACTIVE_WINDOW_S:
+      WARDMUSE_RESERVE_BACKGROUND:
       MUSE_RESERVE_BACKGROUND:
+      WARDMUSE_RESERVE_NORMAL:
       MUSE_RESERVE_NORMAL:
+      WARDMUSE_EXPIRING_DAY_S:
       MUSE_EXPIRING_DAY_S:
+      WARDMUSE_EXPIRING_MONTH_S:
       MUSE_EXPIRING_MONTH_S:
+      WARDMUSE_LOCAL_YIELD:
       MUSE_LOCAL_YIELD:
-      # State shared with the muse CLI and dashboard on the host.
-      MUSE_HOME: /opt/muse/home
-      PYTHONPATH: /opt/muse
+      # State shared with the wardmuse CLI and dashboard on the host.
+      WARDMUSE_HOME: /opt/wardmuse/home
+      MUSE_HOME: /opt/wardmuse/home
+      PYTHONPATH: /opt/wardmuse
     ports:
       # Loopback by default. Set MUSE_BIND=0.0.0.0 only behind a firewall or TLS proxy.
-      - "${MUSE_BIND:-127.0.0.1}:${MUSE_PORT:-4000}:4000"
+      - "${WARDMUSE_BIND:-${MUSE_BIND:-127.0.0.1}}:${WARDMUSE_PORT:-${MUSE_PORT:-4000}}:4000"
     volumes:
-      - ./config:/opt/muse/config:ro
-      - ./scripts:/opt/muse/scripts:ro
-      - ./muse:/opt/muse/muse:ro
-      - ${MUSE_HOME:-${HOME}/.muse}:/opt/muse/home
+      - ./config:/opt/wardmuse/config:ro
+      - ./scripts:/opt/wardmuse/scripts:ro
+      - ./wardmuse:/opt/wardmuse/wardmuse:ro
+      - ./muse:/opt/wardmuse/muse:ro
+      - ${WARDMUSE_HOME:-${MUSE_HOME:-${HOME}/.wardmuse}}:/opt/wardmuse/home
     extra_hosts:
       # Lets the container reach Ollama or LM Studio on the host (Linux needs this line).
       - "host.docker.internal:host-gateway"
-    entrypoint: ["/bin/sh", "/opt/muse/scripts/entrypoint.sh"]
+    entrypoint: ["/bin/sh", "/opt/wardmuse/scripts/entrypoint.sh"]
     healthcheck:
       test:
         - CMD

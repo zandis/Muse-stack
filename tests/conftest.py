@@ -32,6 +32,6 @@ def _isolated_muse_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: p
 def _no_real_proxy_restart(monkeypatch: pytest.MonkeyPatch) -> None:
     """`POST /v1/home/restart-proxy` runs `muse restart` on a real home. No test may restart a real router: here the
     home never "manages" one unless a test says so."""
-    from muse.home import app_api
+    from wardmuse.home import app_api
 
     monkeypatch.setattr(app_api.AppBackend, "manages_proxy", lambda self: (False, []))
