@@ -1008,7 +1008,7 @@ def test_tick_runs_a_due_chore_and_leaves_a_save_file_card(env, proxy, feeds, tm
     run = store.runs(chore.id)[0]
     assert run.status == "waiting_card" and run.summary == "4 source(s) summarised, 0 not read; waiting for your approval"
     assert run.requests == 5 and run.cost_usd == 0.0 and not (tmp_path / "out").exists()
-    card = CardStore(env).get(run.card_id)
+    card = CardStore(env, clock=clock.now).get(run.card_id)
     assert card["kind"] == "save_file" and card["status"] == "pending" and card["title"] == "Save a file"
     assert card["thing"] == "feed-digest-2026-11-16.md" and card["where"].endswith("/out")
     assert card["under"]["text"] == "Feed digest chore" and card["cost"] == {"nothing": True}
@@ -1018,7 +1018,7 @@ def test_tick_runs_a_due_chore_and_leaves_a_save_file_card(env, proxy, feeds, tm
     assert after.runs == 1 and after.last_status == "waiting_card" and local(after.next_run, TPE) == "2026-11-17 08:00"
 
     assert chores.tick(env, clock=clock.now)["ran"] == [] and len(proxy.requests) == 5  # still waiting: nothing is redone
-    CardStore(env).answer(run.card_id, "approve", "phone")
+    CardStore(env, clock=clock.now).answer(run.card_id, "approve", "phone")
     settled = chores.tick(env, clock=clock.now)["settled"]
     assert [r["status"] for r in settled] == ["done"]
     written = tmp_path / "out" / "feed-digest-2026-11-16.md"
@@ -1059,7 +1059,7 @@ def test_tick_can_wait_a_bounded_time_for_the_answer(env, proxy, feeds, tmp_path
         while time.time() < deadline:
             waiting = store.runs(chore.id, statuses=["waiting_card"])
             if waiting:
-                CardStore(env).answer(waiting[0].card_id, "approve", "desktop")
+                CardStore(env, clock=clock.now).answer(waiting[0].card_id, "approve", "desktop")
                 return
             time.sleep(0.05)
 
@@ -1085,7 +1085,7 @@ def test_an_approved_result_never_overwrites_a_file_that_appeared_meanwhile(env,
     run = store.runs(chore.id)[0]
     (tmp_path / "out").mkdir()
     (tmp_path / "out" / "feed-digest-2026-11-16.md").write_text("someone else's file")
-    CardStore(env).answer(run.card_id, "approve", "phone")
+    CardStore(env, clock=clock.now).answer(run.card_id, "approve", "phone")
     chores.tick(env, clock=clock.now)
     assert (tmp_path / "out" / "feed-digest-2026-11-16.md").read_text() == "someone else's file"
     done = store.get_run(run.id)
