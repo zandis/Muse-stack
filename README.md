@@ -373,6 +373,21 @@ Free and trial tiers are not a place for clinical records.
 
 Use it for synthetic notes, public guidelines, and code. Keep identifiable health data off it.
 
+### Citation lookup
+
+`wardmuse cite` looks up a public citation or a Taiwan drug record. It needs no account. Do not put patient data in the query.
+
+```bash
+wardmuse cite pubmed "10.1056/NEJMoa2034577"          # PMID, DOI, title, journal, year, URL
+wardmuse cite europepmc "BNT162b2 vaccine" --json
+wardmuse cite tfda "metformin"                        # TFDA drug licence
+wardmuse cite nhi "metformin"                         # NHI reimbursement price
+```
+
+PubMed uses NCBI E-utilities (`esearch`, then `esummary`, then `efetch`) with `tool=wardmuse` and an email. Calls stay at or below 3 per second. `NCBI_API_KEY` is sent only when that variable is already set; the lookup works without it. Set `NCBI_EMAIL` if you want NCBI to have a real contact address. Europe PMC is one call to the public REST search on `www.ebi.ac.uk`.
+
+Drug licences are the TFDA open file for [data.gov.tw dataset 9123](https://data.gov.tw/dataset/9123) (non-cancelled licences, `https://data.fda.gov.tw/data/opendata/export/37/json`). NHI prices are [dataset 23715](https://data.gov.tw/dataset/23715) (`https://info.nhi.gov.tw/api/iode0000s01/Dataset?rId=A21030000I-E41001-001`). Both are bulk files, cached under the Wardmuse home for 7 days. They are labelling and reimbursement records, not a clinical decision. Tests replay saved responses and do not call these hosts.
+
 ## How a request is routed
 
 LiteLLM treats every `model_list` entry with the same `model_name` as one group. The public aliases are those group names.
@@ -613,6 +628,7 @@ Every test gets its own `MUSE_HOME` and temporary folders and binds port 0, and 
 | `scripts/smoke_test.py` | Health check plus one call per configured alias |
 | `scripts/validate_config.py` | The CI checks |
 | `muse/home/` | The home control API: server, device tokens with roles, cards, records and skills through the API, the fake home |
+| `wardmuse/cite/` | Public citation and Taiwan drug lookup (`wardmuse cite`): PubMed, Europe PMC, TFDA, NHI. No account |
 | `muse/mcp/` | The Wardmuse tools server for host bots (MCP over stdio), host settings and the read-only host check |
 | `docs/spec/interfaces/` | `home-api.v1.yaml` (OpenAPI) and `card.schema.json` |
 | `muse/permissions/`, `core/src/permissions.rs` | Signed permission tokens (Python and Rust twins) |

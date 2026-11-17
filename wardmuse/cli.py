@@ -1970,6 +1970,7 @@ def build_parser() -> argparse.ArgumentParser:
     v = sub.add_parser("version", help="print the version")
     v.set_defaults(func=cmd_version)
     add_rules_parser(sub)
+    register_cite_commands(sub)
     register_skills_commands(sub)
     register_records_commands(sub)
     add_permissions_parser(sub)
@@ -2041,6 +2042,16 @@ def add_rules_parser(sub: Any) -> None:
 # ============================================================ end routing rules
 
 
+# ===== BEGIN cite: `wardmuse cite` (logic lives in wardmuse/cite/cli.py) =====
+
+
+def register_cite_commands(sub: Any) -> None:
+    from wardmuse.cite.cli import register
+
+    register(sub)
+
+
+# ===== END cite =====
 # ===== BEGIN skills: `wardmuse skills list|show|approve|run` (own block; logic lives in muse/skills/cli.py) =====
 
 
