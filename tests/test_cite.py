@@ -20,6 +20,8 @@ from wardmuse.cite import http
 from wardmuse.cite.drugs import (
     NHI_DATASET,
     NHI_ENDPOINT,
+    TFDA_CANCELLED_DATASET,
+    TFDA_CANCELLED_ENDPOINT,
     TFDA_DATASET,
     TFDA_ENDPOINT,
     lookup_nhi,
@@ -214,8 +216,15 @@ def test_europepmc_recorded_search():
     assert lookup_europepmc("nothing-matches-this", fetch=empty) == []
 
 
-def _tfda_zip() -> bytes:
-    rows = [
+def _zip(name: str, rows: list[dict[str, object]]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(name, json.dumps(rows, ensure_ascii=False))
+    return buffer.getvalue()
+
+
+def _tfda_rows() -> list[dict[str, object]]:
+    return [
         {
             "許可證字號": "測署藥製字第TEST0001號",
             "註銷狀態": "",
@@ -242,37 +251,140 @@ def _tfda_zip() -> bytes:
             "申請商地址": ADDRESS,
         },
     ]
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w") as archive:
-        archive.writestr("37.json", json.dumps(rows, ensure_ascii=False))
-    return buffer.getvalue()
+
+
+def _tfda_zip() -> bytes:
+    return _zip("37.json", _tfda_rows())
+
+
+def _tfda_cancelled_rows() -> list[dict[str, object]]:
+    return [
+        {
+            "許可證字號": "測署藥製字第TEST0009號",
+            "註銷狀態": "已註銷",
+            "註銷日期": "2018/01/17",
+            "註銷理由": "自請註銷",
+            "有效日期": "2031/01/01",
+            "發證日期": "2009/07/27",
+            "中文品名": "舊範例西林錠",
+            "英文品名": "Old Examplecillin tablets",
+            "主成分略述": "EXAMPLECILLIN",
+            "劑型": "錠劑",
+            "申請商名稱": "Former Pharma",
+            "申請商地址": ADDRESS,
+            "申請商統一編號": "11111111",
+        },
+        {
+            "許可證字號": "測署藥製字第TEST0008號",
+            "註銷狀態": "已廢止",
+            "註銷日期": "2015/06/01",
+            "有效日期": "2016/06/01",
+            "發證日期": "2005/06/01",
+            "中文品名": "廢止藥",
+            "英文品名": "Abolished tablets",
+            "主成分略述": "ABOLISHINE",
+            "劑型": "錠劑",
+            "申請商名稱": "Gone Co",
+            "申請商地址": ADDRESS,
+        },
+        {
+            "許可證字號": "測署藥製字第TEST0099號",
+            "註銷狀態": "",
+            "有效日期": "2030/01/01",
+            "發證日期": "2020/01/02",
+            "中文品名": "僅在全集",
+            "英文品名": "Only In The Full File",
+            "主成分略述": "GHOSTCILLIN",
+            "劑型": "錠劑",
+            "申請商名稱": "Ghost Pharma",
+            "申請商地址": ADDRESS,
+        },
+        {
+            "許可證字號": "測署藥製字第TEST0001號",
+            "註銷狀態": "已註銷",
+            "有效日期": "2019/01/01",
+            "發證日期": "2000/01/01",
+            "中文品名": "範例西林錠",
+            "英文品名": "Examplecillin tablets 250 mg",
+            "主成分略述": "EXAMPLECILLIN",
+            "劑型": "錠劑",
+            "申請商名稱": "Example Pharma",
+            "申請商地址": ADDRESS,
+        },
+    ]
+
+
+def _tfda_cancelled_zip() -> bytes:
+    return _zip("36.json", _tfda_cancelled_rows())
+
+
+def _tfda_fetch(active: bytes, cancelled: bytes):
+    seen: list[str] = []
+
+    def fetch(url: str, timeout: float) -> tuple[int, bytes]:
+        seen.append(url)
+        if url == TFDA_ENDPOINT:
+            return 200, active
+        if url == TFDA_CANCELLED_ENDPOINT:
+            return 200, cancelled
+        raise AssertionError(url)
+
+    return fetch, seen
 
 
 def test_tfda_licence_from_a_zip_fixture_omits_addresses():
-    body = _tfda_zip()
-    fetch, seen = _response({})
-
-    def grab(url: str, timeout: float) -> tuple[int, bytes]:
-        seen.append(url)
-        assert url == TFDA_ENDPOINT
-        return 200, body
-
-    hits = lookup_tfda("examplecillin", fetch=grab, today=TODAY)
-    assert len(hits) == 1
+    active = _tfda_zip()
+    cancelled = _tfda_cancelled_zip()
+    fetch, seen = _tfda_fetch(active, cancelled)
+    hits = lookup_tfda("examplecillin", fetch=fetch, today=TODAY)
+    assert seen == [TFDA_ENDPOINT, TFDA_CANCELLED_ENDPOINT]
+    assert [hit["license_number"] for hit in hits] == ["測署藥製字第TEST0001號", "測署藥製字第TEST0009號"]
     hit = hits[0]
-    assert hit["license_number"] == "測署藥製字第TEST0001號"
     assert hit["name_en"] == "Examplecillin tablets 250 mg"
     assert hit["name_zh"] == "範例西林錠"
     assert hit["ingredient"] == "EXAMPLECILLIN"
     assert hit["issued"] == "2020-01-02"
     assert hit["valid_until"] == "2030-01-01"
-    assert hit["status"] == "未註銷"
+    assert hit["status"] == "active"
     assert hit["url"] == TFDA_DATASET
     assert hit["endpoint"] == TFDA_ENDPOINT
     assert ADDRESS not in json.dumps(hit, ensure_ascii=False)
     assert "00000000" not in json.dumps(hit)
-    expired = lookup_tfda("測署藥製字第TEST0002號", fetch=lambda *_a: (200, body), today=TODAY)
+    old = hits[1]
+    assert old["status"] == "cancelled"
+    assert old["name_en"] == "Old Examplecillin tablets"
+    assert old["valid_until"] == "2031-01-01"
+    assert old["url"] == TFDA_CANCELLED_DATASET
+    assert old["endpoint"] == TFDA_CANCELLED_ENDPOINT
+    assert ADDRESS not in json.dumps(old, ensure_ascii=False)
+    assert "11111111" not in json.dumps(old)
+    assert "自請註銷" not in json.dumps(old, ensure_ascii=False)
+    expired = lookup_tfda("測署藥製字第TEST0002號", fetch=fetch, today=TODAY)
     assert expired[0]["status"] == "逾期"
+    assert expired[0]["endpoint"] == TFDA_ENDPOINT
+    abolished = lookup_tfda("測署藥製字第TEST0008號", fetch=fetch, today=TODAY)
+    assert abolished[0]["status"] == "cancelled"
+    assert abolished[0]["endpoint"] == TFDA_CANCELLED_ENDPOINT
+    assert lookup_tfda("ghostcillin", fetch=fetch, today=TODAY) == []
+
+
+def test_tfda_caches_the_active_and_cancelled_files_for_seven_days(tmp_path: Path):
+    fetch, seen = _tfda_fetch(_tfda_zip(), _tfda_cancelled_zip())
+    first = lookup_tfda("examplecillin", fetch=fetch, cache_dir=tmp_path, today=TODAY)
+    second = lookup_tfda("examplecillin", fetch=fetch, cache_dir=tmp_path, today=TODAY)
+    assert seen == [TFDA_ENDPOINT, TFDA_CANCELLED_ENDPOINT]
+    assert [hit["status"] for hit in first] == ["active", "cancelled"]
+    assert second == first
+    names = sorted(path.name for path in tmp_path.iterdir())
+    assert names == ["tfda-36.json.zip", "tfda-37.json.zip"]
+    cancelled = tmp_path / "tfda-36.json.zip"
+    os_utime(cancelled, cancelled.stat().st_mtime - (8 * 24 * 3600))
+    lookup_tfda("examplecillin", fetch=fetch, cache_dir=tmp_path, today=TODAY)
+    assert seen == [TFDA_ENDPOINT, TFDA_CANCELLED_ENDPOINT, TFDA_CANCELLED_ENDPOINT]
+    active = tmp_path / "tfda-37.json.zip"
+    os_utime(active, active.stat().st_mtime - (8 * 24 * 3600))
+    lookup_tfda("examplecillin", fetch=fetch, cache_dir=tmp_path, today=TODAY)
+    assert seen == [TFDA_ENDPOINT, TFDA_CANCELLED_ENDPOINT, TFDA_CANCELLED_ENDPOINT, TFDA_ENDPOINT]
 
 
 NHI_CSV = (

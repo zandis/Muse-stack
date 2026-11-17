@@ -96,7 +96,7 @@ def register(sub: Any) -> None:
     specs = (
         ("pubmed", "a PubMed citation from a PMID, a DOI or words"),
         ("europepmc", "a Europe PMC citation from a PMID, a DOI or words"),
-        ("tfda", "a Taiwan TFDA drug licence (open data, dataset 9123)"),
+        ("tfda", "a Taiwan TFDA drug licence (open data, active dataset 9123 and cancelled dataset 9122)"),
         ("nhi", "a Taiwan NHI drug price (open data, dataset 23715)"),
     )
     for name, helptext in specs:

@@ -1,20 +1,24 @@
 """Taiwan drug licence and NHI price lookup from public open data.
 
-Both sources are bulk files, not a per-name query API. The addresses were read
+The sources are bulk files, not a per-name query API. The addresses were read
 from data.gov.tw on 2026-11-17:
 
 * TFDA non-cancelled drug licences, dataset 9123, resource id 37. The file is a
   ZIP of one JSON array. Download:
   ``https://data.fda.gov.tw/data/opendata/export/37/json``
+* TFDA full licence file, dataset 9122, resource id 36. The same ZIP-of-JSON
+  shape. Rows whose 註銷狀態 is set (已註銷 or 已廢止) are the cancelled
+  licences; a blank 註銷狀態 is already in dataset 9123. Download:
+  ``https://data.fda.gov.tw/data/opendata/export/36/json``
 * NHI drug items and prices, dataset 23715, resource id
   ``A21030000I-E41001-001``. The file is a UTF-8 CSV of about 96 MB.
   Download:
   ``https://info.nhi.gov.tw/api/iode0000s01/Dataset?rId=A21030000I-E41001-001``
 
-A copy is kept under the Wardmuse home for 7 days. Results cite the data.gov.tw
-dataset page and name the endpoint that supplied the bytes. Company addresses
-and business numbers are not copied out of the file. This is labelling and
-reimbursement data, not a reason to prescribe.
+A copy of each file is kept under the Wardmuse home for 7 days. Results cite
+the data.gov.tw dataset page and name the endpoint that supplied the bytes.
+Company addresses and business numbers are not copied out of the file. This is
+labelling and reimbursement data, not a reason to prescribe.
 """
 
 from __future__ import annotations
@@ -34,14 +38,21 @@ from wardmuse.cite.http import Fetch, call, clean_query, default_get
 
 TFDA_ENDPOINT = "https://data.fda.gov.tw/data/opendata/export/37/json"
 TFDA_DATASET = "https://data.gov.tw/dataset/9123"
+# Dataset 9122 is every licence. The lookup keeps the rows with 註銷狀態 set.
+TFDA_CANCELLED_ENDPOINT = "https://data.fda.gov.tw/data/opendata/export/36/json"
+TFDA_CANCELLED_DATASET = "https://data.gov.tw/dataset/9122"
 NHI_ENDPOINT = "https://info.nhi.gov.tw/api/iode0000s01/Dataset?rId=A21030000I-E41001-001"
 NHI_DATASET = "https://data.gov.tw/dataset/23715"
 
-TFDA_MAX_BYTES = 30_000_000  # the zip was 4.3 MB on 2026-11-17
-TFDA_MAX_UNCOMPRESSED = 80_000_000  # the JSON inside was 29 MB
+TFDA_MAX_BYTES = 30_000_000  # dataset 9123 zip was 4.3 MB on 2026-11-17
+TFDA_CANCELLED_MAX_BYTES = 40_000_000  # dataset 9122 zip was 11.9 MB on 2026-11-17
+TFDA_MAX_UNCOMPRESSED = 200_000_000  # 9122 JSON was 79 MB; 9123 JSON was 29 MB
 NHI_MAX_BYTES = 200_000_000  # the CSV was 96 MB on 2026-11-17
 CACHE_MAX_AGE_S = 7 * 24 * 3600
 _FIELD_CAP = 300
+_STATE = "_tfda_state"
+_DATASET = "_tfda_dataset"
+_ENDPOINT_KEY = "_tfda_endpoint"
 
 Note = Callable[[str], None]
 
@@ -229,33 +240,66 @@ def _tfda_rank(query: str, row: Mapping[str, Any]) -> int | None:
     return None
 
 
+def _cancelled_mark(row: Mapping[str, Any]) -> str:
+    """The 註銷狀態 text. Blank means the licence is still in the non-cancelled file."""
+
+    return _clip(row.get("註銷狀態"))
+
+
+def _tag_tfda(
+    rows: Iterable[Mapping[str, Any]], *, state: str, dataset: str, endpoint: str
+) -> list[dict[str, Any]]:
+    tagged: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item[_STATE] = state
+        item[_DATASET] = dataset
+        item[_ENDPOINT_KEY] = endpoint
+        tagged.append(item)
+    return tagged
+
+
 def _tfda_status(row: Mapping[str, Any], today: date) -> str:
-    cancelled = _clip(row.get("註銷狀態"))
-    if cancelled:
-        return cancelled
+    """``cancelled`` for a dataset 9122 row, otherwise ``active`` or ``逾期``.
+
+    A 註銷狀態 written into the non-cancelled file is kept as printed there.
+    """
+
+    if row.get(_STATE) == "cancelled":
+        return "cancelled"
+    marked = _cancelled_mark(row)
+    if marked:
+        return marked
     until = _gregorian(row.get("有效日期"))
     if until and date.fromisoformat(until) < today:
         return "逾期"
-    return "未註銷"
+    return "active"
 
 
 def search_tfda(rows: Iterable[Mapping[str, Any]], query: str, limit: int, today: date) -> list[dict[str, Any]]:
-    """Up to ``limit`` licences matching ``query``, best match first."""
+    """Up to ``limit`` licences matching ``query``, best match first.
 
-    ranked: list[tuple[int, str, dict[str, Any]]] = []
+    An active licence sorts ahead of a cancelled one of the same quality, and
+    the same licence number is listed once. The active copy wins that tie.
+    """
+
+    ranked: list[tuple[int, int, str, dict[str, Any]]] = []
     for row in rows:
         rank = _tfda_rank(query, row)
         if rank is None:
             continue
         licence = _clip(row.get("許可證字號"))
-        ranked.append((rank, licence, dict(row)))
-    ranked.sort(key=lambda item: (item[0], item[1]))
+        origin = 1 if row.get(_STATE) == "cancelled" else 0
+        ranked.append((rank, origin, licence, dict(row)))
+    ranked.sort(key=lambda item: (item[0], item[1], item[2]))
     hits: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for _, licence, row in ranked:
+    for _, _, licence, row in ranked:
         if licence in seen:
             continue
         seen.add(licence)
+        dataset = row.get(_DATASET) or TFDA_DATASET
+        endpoint = row.get(_ENDPOINT_KEY) or TFDA_ENDPOINT
         hits.append(
             {
                 "source": "tfda",
@@ -268,8 +312,8 @@ def search_tfda(rows: Iterable[Mapping[str, Any]], query: str, limit: int, today
                 "status": _tfda_status(row, today),
                 "issued": _gregorian(row.get("發證日期")),
                 "valid_until": _gregorian(row.get("有效日期")),
-                "url": TFDA_DATASET,
-                "endpoint": TFDA_ENDPOINT,
+                "url": dataset,
+                "endpoint": endpoint,
             }
         )
         if len(hits) >= limit:
@@ -388,6 +432,12 @@ def _finish(path: Path | None, body: bytes, parse: Callable[[bytes], Any]) -> An
         raise
 
 
+def _download_cap(url: str) -> int:
+    if url == TFDA_CANCELLED_ENDPOINT:
+        return TFDA_CANCELLED_MAX_BYTES
+    return TFDA_MAX_BYTES
+
+
 def lookup_tfda(
     query: str,
     *,
@@ -401,18 +451,22 @@ def lookup_tfda(
 ) -> list[dict[str, Any]]:
     """Drug licences whose number, name or ingredient matches ``query``.
 
-    ``fetch`` replaces the download. Without it, the ZIP is cached for 7 days.
-    ``today`` decides 逾期; tests pass a fixed day.
+    Active licences come from dataset 9123 and are marked ``active`` (or ``逾期``
+    once the validity date has passed). Cancelled and abolished licences come
+    from dataset 9122, the full file, and are marked ``cancelled``. A row in
+    that file with a blank 註銷狀態 is left to dataset 9123 so it is not listed
+    twice. ``fetch`` replaces the downloads. Without it, each ZIP is cached for
+    7 days. ``today`` decides 逾期; tests pass a fixed day.
     """
 
     text = clean_query(query, limit=limit)
     day = today or (clock() if clock else datetime.now()).date()
     use_home = fetch is None and cache_dir is None
-    path = _cache_path(cache_dir, "tfda-37.json.zip", use_home=use_home)
-    getter = fetch or (lambda url, timeout_: default_get(url, timeout_, max_bytes=TFDA_MAX_BYTES))
-    body = load_cached(
+    getter = fetch or (lambda url, timeout_: default_get(url, timeout_, max_bytes=_download_cap(url)))
+    active_path = _cache_path(cache_dir, "tfda-37.json.zip", use_home=use_home)
+    active_body = load_cached(
         TFDA_ENDPOINT,
-        path,
+        active_path,
         getter,
         max_age_s=CACHE_MAX_AGE_S,
         max_bytes=TFDA_MAX_BYTES,
@@ -421,7 +475,29 @@ def lookup_tfda(
         label="Downloading the TFDA drug-licence file (data.gov.tw dataset 9123). It is cached for 7 days.",
         what="TFDA",
     )
-    rows = _finish(path, body, parse_tfda)
+    active_rows = _finish(active_path, active_body, parse_tfda)
+    cancelled_path = _cache_path(cache_dir, "tfda-36.json.zip", use_home=use_home)
+    cancelled_body = load_cached(
+        TFDA_CANCELLED_ENDPOINT,
+        cancelled_path,
+        getter,
+        max_age_s=CACHE_MAX_AGE_S,
+        max_bytes=TFDA_CANCELLED_MAX_BYTES,
+        timeout=timeout,
+        note=note,
+        label="Downloading the TFDA licence file for cancelled licences (data.gov.tw dataset 9122). It is cached for 7 days.",
+        what="TFDA",
+    )
+    cancelled_rows = _finish(cancelled_path, cancelled_body, parse_tfda)
+    rows = _tag_tfda(active_rows, state="active", dataset=TFDA_DATASET, endpoint=TFDA_ENDPOINT)
+    rows.extend(
+        _tag_tfda(
+            (row for row in cancelled_rows if _cancelled_mark(row)),
+            state="cancelled",
+            dataset=TFDA_CANCELLED_DATASET,
+            endpoint=TFDA_CANCELLED_ENDPOINT,
+        )
+    )
     return search_tfda(rows, text, limit, day)
 
 
